@@ -4,8 +4,8 @@
 -- Apply with:  npm run db:migrate
 -- ===========================================================================
 
--- gen_random_uuid() lives in the pgcrypto extension.
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- Note: gen_random_uuid() is built into PostgreSQL core (v13+), which Azure
+-- Flexible Server runs, so no pgcrypto extension is required.
 
 -- ---------------------------------------------------------------------------
 -- users

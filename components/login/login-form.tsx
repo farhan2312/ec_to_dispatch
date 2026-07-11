@@ -2,10 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Gauge, Loader2 } from "lucide-react";
-
-const DEMO_EMAIL = "dispatch.lead@pumpflow.com";
-const DEMO_PASSWORD = "password123";
+import { Gauge, Loader2, X } from "lucide-react";
+import { login } from "@/app/login/actions";
 
 type FieldErrors = {
   email?: string;
@@ -25,7 +23,7 @@ function validatePassword(value: string): string | undefined {
   return undefined;
 }
 
-export function LoginForm() {
+export function LoginForm({ notice }: { notice?: string }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -33,6 +31,7 @@ export function LoginForm() {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showNotice, setShowNotice] = useState(Boolean(notice));
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -47,16 +46,15 @@ export function LoginForm() {
     if (nextErrors.email || nextErrors.password) return;
 
     setIsSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 700));
+    const result = await login({ email, password });
 
-    const isValid = email === DEMO_EMAIL && password === DEMO_PASSWORD;
-    if (!isValid) {
+    if (!result.ok) {
       setIsSubmitting(false);
-      setFormError("Invalid email or password.");
+      setFormError(result.error);
       return;
     }
 
-    router.push("/dashboard");
+    router.replace(result.redirectTo);
   }
 
   const inputClass =
@@ -82,6 +80,23 @@ export function LoginForm() {
           Sign in to continue to the Risansi platform.
         </p>
       </div>
+
+      {showNotice && notice && (
+        <div
+          role="status"
+          className="mb-5 flex items-start justify-between gap-3 rounded-[10px] border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700"
+        >
+          <span>{notice}</span>
+          <button
+            type="button"
+            onClick={() => setShowNotice(false)}
+            aria-label="Dismiss"
+            className="text-emerald-600 hover:text-emerald-800"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       <form noValidate onSubmit={handleSubmit}>
         {formError && (
@@ -175,9 +190,6 @@ export function LoginForm() {
         <a href="/signup" className="font-semibold text-primary hover:text-primary-hover">
           Request Access
         </a>
-      </p>
-      <p className="mt-6 text-center text-[11px] text-muted-foreground">
-        Demo: {DEMO_EMAIL} / {DEMO_PASSWORD}
       </p>
     </div>
   );

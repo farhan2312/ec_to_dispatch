@@ -17,9 +17,9 @@ CREATE TABLE IF NOT EXISTS users (
     email         TEXT         NOT NULL,
     password_hash TEXT         NOT NULL,
     role          TEXT         NOT NULL
-                               CHECK (role IN ('accounts', 'assembly')),
+                               CHECK (role IN ('admin', 'accounts', 'assembly')),
     status        TEXT         NOT NULL DEFAULT 'pending'
-                               CHECK (status IN ('pending', 'approved', 'disabled')),
+                               CHECK (status IN ('pending', 'approved', 'rejected', 'disabled')),
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
@@ -27,6 +27,16 @@ CREATE TABLE IF NOT EXISTS users (
 -- Case-insensitive unique email (so Jane@x.com == jane@x.com).
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_key
     ON users (lower(email));
+
+-- Bring existing tables up to date with the CHECK constraints above.
+-- (CREATE TABLE IF NOT EXISTS above is a no-op once the table exists, so the
+--  'admin' role and 'rejected' status must be added explicitly.)
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD  CONSTRAINT users_role_check
+    CHECK (role IN ('admin', 'accounts', 'assembly'));
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_status_check;
+ALTER TABLE users ADD  CONSTRAINT users_status_check
+    CHECK (status IN ('pending', 'approved', 'rejected', 'disabled'));
 
 -- Keep updated_at current on every UPDATE.
 CREATE OR REPLACE FUNCTION set_updated_at()

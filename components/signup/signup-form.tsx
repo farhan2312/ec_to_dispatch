@@ -3,6 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Gauge, Loader2 } from "lucide-react";
+import { requestAccess } from "@/app/signup/actions";
 
 const ROLES = [
   { value: "accounts", label: "Accounts" },
@@ -56,6 +57,7 @@ export function SignupForm() {
     role: "",
   });
   const [errors, setErrors] = useState<FieldErrors>({});
+  const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function update<K extends keyof typeof values>(key: K, value: string) {
@@ -67,12 +69,20 @@ export function SignupForm() {
 
     const nextErrors = validate(values);
     setErrors(nextErrors);
+    setFormError(null);
     if (Object.keys(nextErrors).length > 0) return;
 
     setIsSubmitting(true);
-    await new Promise((resolve) => setTimeout(resolve, 700));
+    const result = await requestAccess(values);
 
-    router.push("/login");
+    if (!result.ok) {
+      setIsSubmitting(false);
+      setFormError(result.error);
+      return;
+    }
+
+    // Back to login with a "request submitted" alert.
+    router.replace("/login?requested=1");
   }
 
   const inputClass =
@@ -101,6 +111,15 @@ export function SignupForm() {
       </div>
 
       <form noValidate onSubmit={handleSubmit}>
+        {formError && (
+          <div
+            role="alert"
+            className="mb-5 rounded-[10px] border border-danger-border bg-danger-bg px-4 py-2.5 text-sm text-danger"
+          >
+            {formError}
+          </div>
+        )}
+
         {/* full name */}
         <label htmlFor="fullName" className={labelClass}>
           Full name

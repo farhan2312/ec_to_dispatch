@@ -15,7 +15,9 @@
       "PowerShell($conns = Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue; if \\($conns\\) { $conns | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force; \"Killed PID $\\($_.OwningProcess\\)\" } } else { \"No process listening on 3001\" })",
       "Bash(node -e ' *)",
       "Bash(node -e \"try{require.resolve\\('next/font/google'\\);console.log\\('next/font/google OK'\\)}catch\\(e\\){console.log\\('MISSING',e.message\\)}\")",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(node scripts/migrate.mjs)",
+      "Bash(node -e \"try{require.resolve\\('server-only'\\);console.log\\('server-only OK'\\)}catch\\(e\\){console.log\\('MISSING server-only'\\)}\")"
     ]
   }
 }

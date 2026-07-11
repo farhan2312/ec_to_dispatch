@@ -1,0 +1,59 @@
+"use server";
+
+import {
+  createPendingUser,
+  EmailInUseError,
+  type UserRole,
+} from "@/lib/users";
+
+export type RequestAccessInput = {
+  fullName: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
+  role: string;
+};
+
+export type RequestAccessResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+const VALID_ROLES: UserRole[] = ["accounts", "assembly"];
+
+export async function requestAccess(
+  input: RequestAccessInput
+): Promise<RequestAccessResult> {
+  const fullName = input.fullName?.trim() ?? "";
+  const email = input.email?.trim() ?? "";
+  const { password, confirmPassword, role } = input;
+
+  // Server-side validation (never trust the client).
+  if (!fullName) return { ok: false, error: "Full name is required." };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    return { ok: false, error: "Enter a valid email address." };
+  if (!password || password.length < 6)
+    return { ok: false, error: "Password must be at least 6 characters." };
+  if (password !== confirmPassword)
+    return { ok: false, error: "Passwords do not match." };
+  if (!VALID_ROLES.includes(role as UserRole))
+    return { ok: false, error: "Please select a valid role." };
+
+  try {
+    await createPendingUser({
+      fullName,
+      email,
+      password,
+      role: role as UserRole,
+    });
+    return { ok: true };
+  } catch (error) {
+    if (error instanceof EmailInUseError) {
+      return { ok: false, error: error.message };
+    }
+    console.error("requestAccess failed:", error);
+    return {
+      ok: false,
+      error: "Something went wrong. Please try again.",
+    };
+  }
+}

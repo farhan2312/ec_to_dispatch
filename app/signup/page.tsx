@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
 import { BrandPanel } from "@/components/auth/brand-panel";
-import { LoginForm } from "@/components/login/login-form";
+import { SignupForm } from "@/components/signup/signup-form";
 
 export const metadata: Metadata = {
-  title: "Sign in | Pumps EC to Dispatch",
+  title: "Request access | Pumps EC to Dispatch",
 };
 
-export default function LoginPage() {
+export default function SignupPage() {
   return (
     <main className="flex min-h-screen w-full bg-background">
       {/* LEFT: brand panel */}
@@ -14,7 +14,7 @@ export default function LoginPage() {
 
       {/* RIGHT: form panel */}
       <section className="flex flex-1 basis-[54%] items-center justify-center bg-card px-6 py-12 sm:px-10">
-        <LoginForm />
+        <SignupForm />
       </section>
     </main>
   );

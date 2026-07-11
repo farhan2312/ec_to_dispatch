@@ -172,7 +172,7 @@ export function LoginForm() {
 
       <p className="mt-[30px] text-center text-[13.5px] text-muted">
         Need access?{" "}
-        <a href="#" className="font-semibold text-primary hover:text-primary-hover">
+        <a href="/signup" className="font-semibold text-primary hover:text-primary-hover">
           Request Access
         </a>
       </p>

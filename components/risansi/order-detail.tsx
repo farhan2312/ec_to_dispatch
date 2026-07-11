@@ -10,6 +10,7 @@ import {
   type OrderField,
   type OrderSection,
 } from "@/lib/order-schema";
+import { canEditSection } from "@/lib/roles";
 import type { OrderDetail as OrderDetailData } from "@/lib/orders";
 
 type Row = Record<string, unknown>;
@@ -42,10 +43,12 @@ function EditableSection({
   orderId,
   section,
   data,
+  canEdit,
 }: {
   orderId: string;
   section: OrderSection;
   data: Row | null;
+  canEdit: boolean;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -86,7 +89,7 @@ function EditableSection({
         <h2 className="font-display text-base font-semibold text-foreground">
           {section.title}
         </h2>
-        {!editing && (
+        {!editing && canEdit && (
           <button
             type="button"
             onClick={startEdit}
@@ -207,9 +210,11 @@ function ReadOnlyList({
 export function OrderDetail({
   detail,
   orderId,
+  role,
 }: {
   detail: OrderDetailData;
   orderId: string;
+  role: string;
 }) {
   const order = detail.order;
   const identity = [order.so_no, order.ec_no].filter(Boolean).join(" · ");
@@ -248,6 +253,7 @@ export function OrderDetail({
               orderId={orderId}
               section={section}
               data={data ?? null}
+              canEdit={canEditSection(role, section.table)}
             />
           );
         })}

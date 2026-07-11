@@ -1,10 +1,7 @@
 "use server";
 
-import {
-  createPendingUser,
-  EmailInUseError,
-  type UserRole,
-} from "@/lib/users";
+import { createPendingUser, EmailInUseError } from "@/lib/users";
+import { REQUESTABLE_ROLES, type Role } from "@/lib/roles";
 
 export type RequestAccessInput = {
   fullName: string;
@@ -18,7 +15,7 @@ export type RequestAccessResult =
   | { ok: true }
   | { ok: false; error: string };
 
-const VALID_ROLES: UserRole[] = ["accounts", "assembly"];
+const VALID_ROLES: Role[] = REQUESTABLE_ROLES;
 
 export async function requestAccess(
   input: RequestAccessInput
@@ -35,7 +32,7 @@ export async function requestAccess(
     return { ok: false, error: "Password must be at least 6 characters." };
   if (password !== confirmPassword)
     return { ok: false, error: "Passwords do not match." };
-  if (!VALID_ROLES.includes(role as UserRole))
+  if (!VALID_ROLES.includes(role as Role))
     return { ok: false, error: "Please select a valid role." };
 
   try {
@@ -43,7 +40,7 @@ export async function requestAccess(
       fullName,
       email,
       password,
-      role: role as UserRole,
+      role: role as Role,
     });
     return { ok: true };
   } catch (error) {

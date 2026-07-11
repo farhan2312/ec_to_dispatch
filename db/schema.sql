@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS users (
     email         TEXT         NOT NULL,
     password_hash TEXT         NOT NULL,
     role          TEXT         NOT NULL
-                               CHECK (role IN ('admin', 'accounts', 'assembly')),
+                               CHECK (role IN ('admin', 'central_visibility', 'operations',
+                                               'accounts', 'drawing', 'planning', 'purchase',
+                                               'qc', 'dispatch')),
     status        TEXT         NOT NULL DEFAULT 'pending'
                                CHECK (status IN ('pending', 'approved', 'rejected', 'disabled')),
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -29,9 +31,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_key
     ON users (lower(email));
 
 -- Bring existing tables up to date with the CHECK constraints above.
+-- Drop the old role check first, migrate the legacy 'assembly' role to the new
+-- 'dispatch' role, then apply the expanded role set.
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+UPDATE users SET role = 'dispatch' WHERE role = 'assembly';
 ALTER TABLE users ADD  CONSTRAINT users_role_check
-    CHECK (role IN ('admin', 'accounts', 'assembly'));
+    CHECK (role IN ('admin', 'central_visibility', 'operations', 'accounts',
+                    'drawing', 'planning', 'purchase', 'qc', 'dispatch'));
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_status_check;
 ALTER TABLE users ADD  CONSTRAINT users_status_check
     CHECK (status IN ('pending', 'approved', 'rejected', 'disabled'));

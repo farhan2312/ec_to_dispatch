@@ -1,7 +1,9 @@
 import bcrypt from "bcryptjs";
 import { query } from "@/lib/db";
 
-export type UserRole = "admin" | "accounts" | "assembly";
+import type { Role } from "@/lib/roles";
+
+export type UserRole = Role;
 export type UserStatus = "pending" | "approved" | "rejected" | "disabled";
 
 export type User = {

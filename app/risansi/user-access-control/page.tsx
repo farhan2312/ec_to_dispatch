@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { Check, ShieldCheck, X } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { listUsersByStatus, type User, type UserStatus } from "@/lib/users";
+import { roleLabel } from "@/lib/roles";
 import { approveRequest, rejectRequest } from "./actions";
 
 export const metadata: Metadata = {
@@ -11,12 +12,6 @@ export const metadata: Metadata = {
 
 // Always render fresh — approvals must reflect the latest DB state.
 export const dynamic = "force-dynamic";
-
-const ROLE_LABELS: Record<string, string> = {
-  admin: "Admin",
-  accounts: "Accounts",
-  assembly: "Assembly",
-};
 
 const STATUS_STYLES: Record<UserStatus, string> = {
   pending: "bg-amber-50 text-amber-700 ring-amber-200",
@@ -36,7 +31,7 @@ function formatDate(value: string): string {
 function RoleBadge({ role }: { role: string }) {
   return (
     <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-      {ROLE_LABELS[role] ?? role}
+      {roleLabel(role)}
     </span>
   );
 }

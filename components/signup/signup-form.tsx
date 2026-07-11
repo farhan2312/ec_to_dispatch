@@ -4,18 +4,12 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronDown, Gauge, Loader2 } from "lucide-react";
 import { requestAccess } from "@/app/signup/actions";
+import { REQUESTABLE_ROLES, roleLabel } from "@/lib/roles";
 
-const ROLES = [
-  { value: "accounts", label: "Accounts" },
-  { value: "central vision", label: "Central Vision" },
-  { value:"drawing", label: "Drawing" },
-  {value: "assembly", label: "Assembly" },
-  { value:"QC", label: "QC" },
-  { value:"planning", label: "Planning" },
-  { value:"purhase", label: "Purchase" },
-  { value: "billing", label: "Billing" },
-  {value:"admin", label: "Admin" },
-];
+const ROLES = REQUESTABLE_ROLES.map((value) => ({
+  value,
+  label: roleLabel(value),
+}));
 
 type FieldErrors = {
   fullName?: string;

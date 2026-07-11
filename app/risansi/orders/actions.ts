@@ -10,6 +10,7 @@ import {
 } from "@/lib/orders";
 import { parseOrdersWorkbook } from "@/lib/excel-import";
 import { SECTION_BY_TABLE, type OrderTable } from "@/lib/order-schema";
+import { canEditSection } from "@/lib/roles";
 
 export type CreateOrderResult =
   | { ok: true; slNo: number }
@@ -50,6 +51,13 @@ export async function updateOrderSectionAction(
 
   if (!SECTION_BY_TABLE.has(table as OrderTable)) {
     return { ok: false, error: "Unknown section." };
+  }
+
+  if (!canEditSection(user.role, table as OrderTable)) {
+    return {
+      ok: false,
+      error: "You don't have permission to edit this section.",
+    };
   }
 
   try {

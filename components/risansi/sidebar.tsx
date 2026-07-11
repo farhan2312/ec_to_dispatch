@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import Image from "next/image";
+import logo from "@/assets/logo.png";
 import {
   ChevronsUpDown,
   Gauge,
@@ -66,15 +68,8 @@ export function Sidebar({ user }: { user: SidebarUser }) {
     <aside className="sticky top-0 flex h-screen w-64 shrink-0 flex-col bg-sidebar">
       {/* brand */}
       <div className="flex items-center gap-2.5 px-5 py-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/15">
-          <Gauge className="h-5 w-5 text-white" />
-        </div>
-        <div className="leading-tight">
-          <p className="font-display text-sm font-semibold text-white">
-            Risansi
-          </p>
-          <p className="text-[11px] text-sidebar-muted">EC to Dispatch</p>
-        </div>
+        
+          <Image src={logo} alt="Risansi" width={140} height={100} className="bg-white p-1" />
       </div>
 
       {/* nav */}

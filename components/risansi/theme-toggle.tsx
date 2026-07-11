@@ -42,13 +42,13 @@ export function ThemeToggle() {
       </span>
       {/* little switch */}
       <span
-        className={`relative h-5 w-9 rounded-full transition-colors ${
+        className={`relative h-5 w-10 rounded-full transition-colors ${
           isDark ? "bg-primary" : "bg-white/20"
         }`}
         aria-hidden
       >
         <span
-          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
+          className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${
             isDark ? "translate-x-[18px]" : "translate-x-0.5"
           }`}
         />

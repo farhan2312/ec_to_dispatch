@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+:root {
+  --background: #eef1f5;
+  --foreground: #0f1b2d;
+  --card: #f6f8fb;
+  --card-border: #e5e7eb;
+  --muted: #6b7f96;
+  --muted-foreground: #9aa5b4;
+  --primary: #1a5fd0;
+  --primary-hover: #134aa8;
+  --primary-foreground: #ffffff;
+  --danger: #dc2626;
+  --danger-bg: #fef2f2;
+  --danger-border: #fecaca;
+  --input-border: #d4dce6;
+  --ring: #1a5fd0;
+
+  /* login brand panel */
+  --brand-label: #334255;
+  --brand-navy-1: #0a2a5e;
+  --brand-navy-2: #123a7d;
+  --brand-navy-3: #0d4a8f;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-border: var(--card-border);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-border: var(--danger-border);
+  --color-input-border: var(--input-border);
+  --color-ring: var(--ring);
+  --color-brand-label: var(--brand-label);
+  --color-brand-navy-1: var(--brand-navy-1);
+  --color-brand-navy-2: var(--brand-navy-2);
+  --color-brand-navy-3: var(--brand-navy-3);
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-inter-tight);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}

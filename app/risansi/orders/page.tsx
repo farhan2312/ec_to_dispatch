@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ClipboardList, Plus } from "lucide-react";
 import { listOrders, type OrderListRow } from "@/lib/orders";
+import { ImportOrdersButton } from "@/components/risansi/import-orders-button";
 
 export const metadata: Metadata = {
   title: "Orders | Risansi",
@@ -67,13 +68,16 @@ export default async function OrdersPage() {
           </div>
         </div>
 
-        <Link
-          href="/risansi/orders/new"
-          className="inline-flex h-10 shrink-0 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
-        >
-          <Plus className="h-4 w-4" />
-          New order
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <ImportOrdersButton />
+          <Link
+            href="/risansi/orders/new"
+            className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
+          >
+            <Plus className="h-4 w-4" />
+            New order
+          </Link>
+        </div>
       </div>
 
       {orders.length === 0 ? (

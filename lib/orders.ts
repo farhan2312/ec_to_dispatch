@@ -1,4 +1,5 @@
-import { query } from "@/lib/db";
+import { pool, query } from "@/lib/db";
+import type { ParsedOrder } from "@/lib/excel-import";
 
 /**
  * A row in the master list/table view. Pulls the core order plus a few
@@ -105,6 +106,87 @@ export async function createOrder(
     ]
   );
   return result.rows[0];
+}
+
+// 1:1 detail tables keyed by order_id.
+const DETAIL_TABLES = [
+  "order_billing",
+  "order_accounts",
+  "order_drawing",
+  "order_purchase",
+  "order_qc",
+  "order_planning",
+  "order_assembly_dispatch",
+] as const;
+
+// 1:many child tables (own id, FK order_id).
+const CHILD_TABLES = ["order_pumps", "order_lots"] as const;
+
+function insertSql(table: string, columns: string[]): string {
+  const cols = columns.join(", ");
+  const params = columns.map((_, i) => `$${i + 1}`).join(", ");
+  return `INSERT INTO ${table} (${cols}) VALUES (${params})`;
+}
+
+/**
+ * Bulk-insert parsed orders (from an Excel import) inside one transaction.
+ * Each row inserts the core order, then any populated detail/child tables.
+ * Column names come from the controlled import mapping, not user input.
+ */
+export async function insertParsedOrders(
+  rows: ParsedOrder[]
+): Promise<{ inserted: number }> {
+  if (rows.length === 0) return { inserted: 0 };
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    let inserted = 0;
+
+    for (const row of rows) {
+      const core = row.orders ?? {};
+      const coreCols = Object.keys(core);
+      const orderResult = coreCols.length
+        ? await client.query<{ id: string }>(
+            `${insertSql("orders", coreCols)} RETURNING id`,
+            coreCols.map((c) => core[c])
+          )
+        : await client.query<{ id: string }>(
+            "INSERT INTO orders DEFAULT VALUES RETURNING id"
+          );
+      const orderId = orderResult.rows[0].id;
+
+      for (const table of DETAIL_TABLES) {
+        const data = row[table];
+        if (!data || Object.keys(data).length === 0) continue;
+        const cols = ["order_id", ...Object.keys(data)];
+        await client.query(insertSql(table, cols), [
+          orderId,
+          ...Object.keys(data).map((c) => data[c]),
+        ]);
+      }
+
+      for (const table of CHILD_TABLES) {
+        const data = row[table];
+        if (!data || Object.keys(data).length === 0) continue;
+        const cols = ["order_id", ...Object.keys(data)];
+        await client.query(insertSql(table, cols), [
+          orderId,
+          ...Object.keys(data).map((c) => data[c]),
+        ]);
+      }
+
+      inserted++;
+    }
+
+    await client.query("COMMIT");
+    return { inserted };
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /** All orders for the master table, ordered by Sl. No. */

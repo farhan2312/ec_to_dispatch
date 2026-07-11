@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/session";
-import { createOrder, type NewOrderInput } from "@/lib/orders";
+import { createOrder, insertParsedOrders, type NewOrderInput } from "@/lib/orders";
+import { parseOrdersWorkbook } from "@/lib/excel-import";
 
 export type CreateOrderResult =
   | { ok: true; slNo: number }
@@ -26,5 +27,55 @@ export async function createOrderAction(
   } catch (error) {
     console.error("createOrder failed:", error);
     return { ok: false, error: "Could not create the order. Please try again." };
+  }
+}
+
+export type ImportOrdersResult =
+  | { ok: true; inserted: number; skipped: number; matchedColumns: number }
+  | { ok: false; error: string };
+
+export async function importOrdersAction(
+  formData: FormData
+): Promise<ImportOrdersResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "Please choose an Excel (.xlsx) file." };
+  }
+  if (!/\.xlsx?$/i.test(file.name)) {
+    return { ok: false, error: "Only .xlsx / .xls files are supported." };
+  }
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const parsed = await parseOrdersWorkbook(buffer);
+
+    if (parsed.matchedColumns === 0) {
+      return {
+        ok: false,
+        error:
+          "No recognizable tracker columns were found. Check the file's header row.",
+      };
+    }
+    if (parsed.rows.length === 0) {
+      return { ok: false, error: "No data rows found to import." };
+    }
+
+    const { inserted } = await insertParsedOrders(parsed.rows);
+    revalidatePath("/risansi/orders");
+    return {
+      ok: true,
+      inserted,
+      skipped: parsed.skipped,
+      matchedColumns: parsed.matchedColumns,
+    };
+  } catch (error) {
+    console.error("importOrders failed:", error);
+    return {
+      ok: false,
+      error: "Could not import the file. Please check its format and try again.",
+    };
   }
 }

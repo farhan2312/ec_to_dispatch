@@ -7,7 +7,14 @@ import { requestAccess } from "@/app/signup/actions";
 
 const ROLES = [
   { value: "accounts", label: "Accounts" },
-  { value: "assembly", label: "Assembly" },
+  { value: "central vision", label: "Central Vision" },
+  { value:"drawing", label: "Drawing" },
+  {value: "assembly", label: "Assembly" },
+  { value:"QC", label: "QC" },
+  { value:"planning", label: "Planning" },
+  { value:"purhase", label: "Purchase" },
+  { value: "billing", label: "Billing" },
+  {value:"admin", label: "Admin" },
 ];
 
 type FieldErrors = {
@@ -86,13 +93,13 @@ export function SignupForm() {
   }
 
   const inputClass =
-    "h-12 w-full rounded-[10px] border border-input-border bg-white px-[15px] text-[15px] text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
-  const labelClass = "mb-[7px] block text-[13px] font-semibold text-brand-label";
+    "h-11 w-full rounded-[10px] border border-input-border bg-white px-[15px] text-[14px] text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
+  const labelClass = "mb-1.5 block text-[13px] font-semibold text-brand-label";
 
   return (
-    <div className="w-full max-w-[400px]">
+    <div className="w-full max-w-[380px]">
       {/* mobile logo (brand panel hidden on small screens) */}
-      <div className="mb-8 flex items-center gap-3 lg:hidden">
+      <div className="mb-5 flex items-center gap-3 lg:hidden">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
           <Gauge className="h-5 w-5" />
         </div>
@@ -101,8 +108,8 @@ export function SignupForm() {
         </span>
       </div>
 
-      <div className="mb-8">
-        <h1 className="mb-2 font-display text-[28px] font-bold tracking-[-0.02em] text-foreground">
+      <div className="mb-5">
+        <h1 className="mb-1.5 font-display text-[26px] font-bold tracking-[-0.02em] text-foreground">
           Request access
         </h1>
         <p className="text-sm text-muted">
@@ -124,7 +131,7 @@ export function SignupForm() {
         <label htmlFor="fullName" className={labelClass}>
           Full name
         </label>
-        <div className="mb-5">
+        <div className="mb-3.5">
           <input
             id="fullName"
             name="fullName"
@@ -148,7 +155,7 @@ export function SignupForm() {
         <label htmlFor="email" className={labelClass}>
           Email address
         </label>
-        <div className="mb-5">
+        <div className="mb-3.5">
           <input
             id="email"
             name="email"
@@ -172,7 +179,7 @@ export function SignupForm() {
         <label htmlFor="password" className={labelClass}>
           Password
         </label>
-        <div className="mb-5">
+        <div className="mb-3.5">
           <input
             id="password"
             name="password"
@@ -196,7 +203,7 @@ export function SignupForm() {
         <label htmlFor="confirmPassword" className={labelClass}>
           Confirm password
         </label>
-        <div className="mb-5">
+        <div className="mb-3.5">
           <input
             id="confirmPassword"
             name="confirmPassword"
@@ -222,7 +229,7 @@ export function SignupForm() {
         <label htmlFor="role" className={labelClass}>
           Role
         </label>
-        <div className="mb-[22px]">
+        <div className="mb-4">
           <div className="relative">
             <select
               id="role"
@@ -257,14 +264,14 @@ export function SignupForm() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="flex h-[50px] w-full items-center justify-center gap-2 rounded-[10px] bg-primary font-display text-[15.5px] font-semibold tracking-[0.01em] text-primary-foreground shadow-[0_8px_22px_rgba(26,95,208,0.28)] transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-70"
+          className="flex h-11 w-full items-center justify-center gap-2 rounded-[10px] bg-primary font-display text-[15px] font-semibold tracking-[0.01em] text-primary-foreground shadow-[0_8px_22px_rgba(26,95,208,0.28)] transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
           {isSubmitting ? "Submitting..." : "Request access"}
         </button>
       </form>
 
-      <p className="mt-[30px] text-center text-[13.5px] text-muted">
+      <p className="mt-4 text-center text-[13.5px] text-muted">
         Already have access?{" "}
         <a
           href="/login"

@@ -4,6 +4,8 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Gauge, Loader2, X } from "lucide-react";
 import { login } from "@/app/login/actions";
+import Image from "next/image";
+import logo from "@/assets/logo.png";
 
 type FieldErrors = {
   email?: string;
@@ -58,12 +60,12 @@ export function LoginForm({ notice }: { notice?: string }) {
   }
 
   const inputClass =
-    "h-12 w-full rounded-[10px] border border-input-border bg-white px-[15px] text-[15px] text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
+    "h-11 w-full rounded-[10px] border border-input-border bg-white px-[15px] text-[14px] text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
 
   return (
-    <div className="w-full max-w-[400px]">
+    <div className="w-full max-w-[380px]">
       {/* mobile logo (brand panel hidden on small screens) */}
-      <div className="mb-8 flex items-center gap-3 lg:hidden">
+      <div className="mb-6 flex items-center gap-3 lg:hidden">
         <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
           <Gauge className="h-5 w-5" />
         </div>
@@ -71,9 +73,11 @@ export function LoginForm({ notice }: { notice?: string }) {
           Risansi
         </span>
       </div>
-
-      <div className="mb-8">
-        <h1 className="mb-2 font-display text-[28px] font-bold tracking-[-0.02em] text-foreground">
+       <div className="relative flex items-center gap-3">
+        <Image src={logo} alt="Risansi" width={200} height={100} className="rounded-xl bg-dark/10 p-2" />
+      </div>
+      <div className="mb-6">
+        <h1 className="mb-1.5 font-display text-[26px] font-bold tracking-[-0.02em] text-foreground">
           Welcome back
         </h1>
         <p className="text-sm text-muted">
@@ -115,7 +119,7 @@ export function LoginForm({ notice }: { notice?: string }) {
         >
           Email address
         </label>
-        <div className="mb-5">
+        <div className="mb-4">
           <input
             id="email"
             name="email"
@@ -136,15 +140,13 @@ export function LoginForm({ notice }: { notice?: string }) {
         </div>
 
         {/* password */}
-        <div className="mb-[7px] flex items-baseline justify-between">
-          <label htmlFor="password" className="text-[13px] font-semibold text-brand-label">
-            Password
-          </label>
-          <a href="#" className="text-[13px] font-medium text-primary hover:text-primary-hover">
-            Forgot?
-          </a>
-        </div>
-        <div className="mb-[22px]">
+        <label
+          htmlFor="password"
+          className="mb-[7px] block text-[13px] font-semibold text-brand-label"
+        >
+          Password
+        </label>
+        <div className="mb-5">
           <div className="relative">
             <input
               id="password"
@@ -178,14 +180,14 @@ export function LoginForm({ notice }: { notice?: string }) {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="flex h-[50px] w-full items-center justify-center gap-2 rounded-[10px] bg-primary font-display text-[15.5px] font-semibold tracking-[0.01em] text-primary-foreground shadow-[0_8px_22px_rgba(26,95,208,0.28)] transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-70"
+          className="flex h-12 w-full items-center justify-center gap-2 rounded-[10px] bg-primary font-display text-[15px] font-semibold tracking-[0.01em] text-primary-foreground shadow-[0_8px_22px_rgba(26,95,208,0.28)] transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
           {isSubmitting ? "Signing in..." : "Sign in"}
         </button>
       </form>
 
-      <p className="mt-[30px] text-center text-[13.5px] text-muted">
+      <p className="mt-6 text-center text-[13.5px] text-muted">
         Need access?{" "}
         <a href="/signup" className="font-semibold text-primary hover:text-primary-hover">
           Request Access

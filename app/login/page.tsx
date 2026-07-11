@@ -23,7 +23,7 @@ export default async function LoginPage({
       <BrandPanel />
 
       {/* RIGHT: form panel */}
-      <section className="flex flex-1 basis-[54%] items-center justify-center bg-card px-6 py-12 sm:px-10">
+      <section className="flex flex-1 basis-[46%] items-center justify-center bg-card px-6 py-8 sm:px-10">
         <LoginForm notice={notice} />
       </section>
     </main>

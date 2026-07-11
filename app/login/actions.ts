@@ -43,5 +43,5 @@ export async function login(input: LoginInput): Promise<LoginResult> {
     maxAge: 60 * 60 * 24 * 7, // 7 days
   });
 
-  return { ok: true, redirectTo: "/dashboard" };
+  return { ok: true, redirectTo: "/risansi" };
 }

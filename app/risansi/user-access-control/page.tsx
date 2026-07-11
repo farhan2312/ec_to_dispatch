@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { Check, ShieldCheck, X } from "lucide-react";
+import { getCurrentUser } from "@/lib/session";
 import { listUsersByStatus, type User, type UserStatus } from "@/lib/users";
 import { approveRequest, rejectRequest } from "./actions";
 
 export const metadata: Metadata = {
-  title: "Access requests | Admin",
+  title: "User Access Control | Risansi",
 };
 
 // Always render fresh — approvals must reflect the latest DB state.
@@ -49,7 +51,13 @@ function StatusBadge({ status }: { status: UserStatus }) {
   );
 }
 
-export default async function AdminPage() {
+export default async function UserAccessControlPage() {
+  // Admin-only route.
+  const currentUser = await getCurrentUser();
+  if (!currentUser || currentUser.role !== "admin") {
+    redirect("/risansi/dashboard");
+  }
+
   const [pending, approved, rejected] = await Promise.all([
     listUsersByStatus("pending"),
     listUsersByStatus("approved"),
@@ -65,7 +73,7 @@ export default async function AdminPage() {
     .slice(0, 10);
 
   return (
-    <main className="min-h-screen bg-background px-6 py-10 sm:px-10">
+    <div className="px-8 py-8">
       <div className="mx-auto max-w-5xl">
         {/* header */}
         <div className="mb-8 flex items-center gap-3">
@@ -74,7 +82,7 @@ export default async function AdminPage() {
           </div>
           <div>
             <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-              Access requests
+              User Access Control
             </h1>
             <p className="text-sm text-muted">
               Approve or reject people requesting access to the platform.
@@ -83,7 +91,7 @@ export default async function AdminPage() {
         </div>
 
         {/* pending */}
-        <section className="mb-10 rounded-xl border border-card-border bg-white shadow-sm">
+        <section className="mb-10 rounded-xl border border-card-border bg-surface shadow-sm">
           <header className="flex items-center justify-between border-b border-card-border px-5 py-4">
             <h2 className="font-display text-base font-semibold text-foreground">
               Pending
@@ -131,7 +139,7 @@ export default async function AdminPage() {
                       <input type="hidden" name="id" value={user.id} />
                       <button
                         type="submit"
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3.5 py-2 text-sm font-medium text-rose-600 transition-colors hover:bg-rose-50"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-surface px-3.5 py-2 text-sm font-medium text-rose-600 transition-colors hover:bg-rose-50"
                       >
                         <X className="h-4 w-4" /> Reject
                       </button>
@@ -144,7 +152,7 @@ export default async function AdminPage() {
         </section>
 
         {/* recently processed */}
-        <section className="rounded-xl border border-card-border bg-white shadow-sm">
+        <section className="rounded-xl border border-card-border bg-surface shadow-sm">
           <header className="border-b border-card-border px-5 py-4">
             <h2 className="font-display text-base font-semibold text-foreground">
               Recently processed
@@ -178,6 +186,6 @@ export default async function AdminPage() {
           )}
         </section>
       </div>
-    </main>
+    </div>
   );
 }

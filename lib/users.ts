@@ -101,6 +101,32 @@ export async function getUserById(id: string): Promise<User | null> {
   return result.rows[0] ?? null;
 }
 
+/** Verify a password for a given user id (used by "change password"). */
+export async function verifyPasswordById(
+  id: string,
+  password: string
+): Promise<boolean> {
+  const result = await query<{ password_hash: string }>(
+    `SELECT password_hash FROM users WHERE id = $1 LIMIT 1`,
+    [id]
+  );
+  const hash = result.rows[0]?.password_hash;
+  if (!hash) return false;
+  return bcrypt.compare(password, hash);
+}
+
+/** Update a user's password (hashes before storing). */
+export async function updatePassword(
+  id: string,
+  newPassword: string
+): Promise<void> {
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  await query(`UPDATE users SET password_hash = $2 WHERE id = $1`, [
+    id,
+    passwordHash,
+  ]);
+}
+
 /** List users with the given status, newest first. */
 export async function listUsersByStatus(status: UserStatus): Promise<User[]> {
   const result = await query<User>(

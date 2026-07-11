@@ -92,6 +92,15 @@ export async function verifyCredentials(
   return { ok: true, user };
 }
 
+/** Fetch a single user by id, or null if not found. */
+export async function getUserById(id: string): Promise<User | null> {
+  const result = await query<User>(
+    `SELECT ${PUBLIC_COLUMNS} FROM users WHERE id = $1 LIMIT 1`,
+    [id]
+  );
+  return result.rows[0] ?? null;
+}
+
 /** List users with the given status, newest first. */
 export async function listUsersByStatus(status: UserStatus): Promise<User[]> {
   const result = await query<User>(

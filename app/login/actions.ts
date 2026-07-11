@@ -2,6 +2,7 @@
 
 import { cookies } from "next/headers";
 import { verifyCredentials } from "@/lib/users";
+import { SESSION_COOKIE } from "@/lib/session";
 
 export type LoginInput = { email: string; password: string };
 
@@ -34,7 +35,7 @@ export async function login(input: LoginInput): Promise<LoginResult> {
 
   // Minimal session: store the user id in an httpOnly cookie.
   const cookieStore = await cookies();
-  cookieStore.set("session", result.user.id, {
+  cookieStore.set(SESSION_COOKIE, result.user.id, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -42,9 +43,5 @@ export async function login(input: LoginInput): Promise<LoginResult> {
     maxAge: 60 * 60 * 24 * 7, // 7 days
   });
 
-  // Admins land on the access-requests panel; everyone else on the dashboard.
-  return {
-    ok: true,
-    redirectTo: result.user.role === "admin" ? "/admin" : "/dashboard",
-  };
+  return { ok: true, redirectTo: "/dashboard" };
 }

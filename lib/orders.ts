@@ -1,0 +1,133 @@
+import { query } from "@/lib/db";
+
+/**
+ * A row in the master list/table view. Pulls the core order plus a few
+ * high-signal fields from the department detail tables (left-joined, so an
+ * order with no detail yet still appears).
+ */
+export type OrderListRow = {
+  id: string;
+  sl_no: number;
+  so_no: string | null;
+  ec_no: string | null;
+  party: string | null;
+  item: string | null;
+  model_no: string | null;
+  pi_no: string | null;
+  payment_status: string | null;
+  dispatch_target_date: string | null;
+  dispatch_status: string | null;
+  order_value: string | null;
+};
+
+/** Fields captured when creating an order (the core `orders` identity row). */
+export type NewOrderInput = {
+  so_no?: string;
+  ec_no?: string;
+  ec_generated_date?: string;
+  ec_rcvd_operations_date?: string;
+  ec_sent_production_date?: string;
+  file_no?: string;
+  client_code?: string;
+  client_type?: string;
+  party?: string;
+  agent?: string;
+  nature_of_supply?: string;
+  industry_type?: string;
+  item?: string;
+  po_no?: string;
+  customer_po_date?: string;
+  model_no?: string;
+  pump_qty?: string;
+  orientation?: string;
+  liquid_application?: string;
+  version?: string;
+  project?: string;
+  order_value?: string;
+};
+
+function nullify(value?: string): string | null {
+  const trimmed = (value ?? "").trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+function toInt(value?: string): number | null {
+  const trimmed = (value ?? "").trim();
+  if (trimmed === "") return null;
+  const n = Number.parseInt(trimmed, 10);
+  return Number.isNaN(n) ? null : n;
+}
+
+function toNumeric(value?: string): number | null {
+  const trimmed = (value ?? "").trim();
+  if (trimmed === "") return null;
+  const n = Number(trimmed);
+  return Number.isNaN(n) ? null : n;
+}
+
+/** Insert a new core order. Detail tables are filled later per department. */
+export async function createOrder(
+  input: NewOrderInput
+): Promise<{ id: string; sl_no: number }> {
+  const result = await query<{ id: string; sl_no: number }>(
+    `INSERT INTO orders (
+        so_no, ec_no, ec_generated_date, ec_rcvd_operations_date,
+        ec_sent_production_date, file_no, client_code, client_type, party, agent,
+        nature_of_supply, industry_type, item, po_no, customer_po_date, model_no,
+        pump_qty, orientation, liquid_application, version, project, order_value
+     ) VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+     )
+     RETURNING id, sl_no::int AS sl_no`,
+    [
+      nullify(input.so_no),
+      nullify(input.ec_no),
+      nullify(input.ec_generated_date),
+      nullify(input.ec_rcvd_operations_date),
+      nullify(input.ec_sent_production_date),
+      nullify(input.file_no),
+      nullify(input.client_code),
+      nullify(input.client_type),
+      nullify(input.party),
+      nullify(input.agent),
+      nullify(input.nature_of_supply),
+      nullify(input.industry_type),
+      nullify(input.item),
+      nullify(input.po_no),
+      nullify(input.customer_po_date),
+      nullify(input.model_no),
+      toInt(input.pump_qty),
+      nullify(input.orientation),
+      nullify(input.liquid_application),
+      nullify(input.version),
+      nullify(input.project),
+      toNumeric(input.order_value),
+    ]
+  );
+  return result.rows[0];
+}
+
+/** All orders for the master table, ordered by Sl. No. */
+export async function listOrders(): Promise<OrderListRow[]> {
+  const result = await query<OrderListRow>(
+    `SELECT o.id,
+            o.sl_no::int              AS sl_no,
+            o.so_no,
+            o.ec_no,
+            o.party,
+            o.item,
+            o.model_no,
+            o.order_value::text       AS order_value,
+            b.pi_no,
+            a.payment_status,
+            to_char(p.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
+            ad.dispatch_status
+       FROM orders o
+       LEFT JOIN order_billing b            ON b.order_id  = o.id
+       LEFT JOIN order_accounts a           ON a.order_id  = o.id
+       LEFT JOIN order_planning p           ON p.order_id  = o.id
+       LEFT JOIN order_assembly_dispatch ad ON ad.order_id = o.id
+      ORDER BY o.sl_no ASC`
+  );
+  return result.rows;
+}

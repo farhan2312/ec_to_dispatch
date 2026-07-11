@@ -7,6 +7,7 @@ import Image from "next/image";
 import logo from "@/assets/logo.png";
 import {
   ChevronsUpDown,
+  ClipboardList,
   Gauge,
   KeyRound,
   LayoutDashboard,
@@ -22,6 +23,7 @@ type NavItem = { label: string; href: string; icon: LucideIcon };
 
 const PRIMARY_NAV: NavItem[] = [
   { label: "Dashboard", href: "/risansi/dashboard", icon: LayoutDashboard },
+  { label: "Orders", href: "/risansi/orders", icon: ClipboardList },
 ];
 
 const ADMIN_NAV: NavItem[] = [

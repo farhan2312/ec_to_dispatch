@@ -142,7 +142,7 @@ export function SignupForm() {
             aria-invalid={Boolean(errors.fullName)}
             aria-describedby={errors.fullName ? "fullName-error" : undefined}
             className={inputClass}
-            placeholder="Jane Cooper"
+            placeholder="Full Name"
           />
           {errors.fullName && (
             <p id="fullName-error" className="mt-1.5 text-xs text-danger">
@@ -166,7 +166,7 @@ export function SignupForm() {
             aria-invalid={Boolean(errors.email)}
             aria-describedby={errors.email ? "email-error" : undefined}
             className={inputClass}
-            placeholder="you@company.com"
+            placeholder="name@risansi.com"
           />
           {errors.email && (
             <p id="email-error" className="mt-1.5 text-xs text-danger">
@@ -280,6 +280,7 @@ export function SignupForm() {
           Sign in
         </a>
       </p>
+      <p className="mt-4 text-center text-[11.5px] text-muted">Risansi Industries Ltd · Internal use only</p>
     </div>
   );
 }

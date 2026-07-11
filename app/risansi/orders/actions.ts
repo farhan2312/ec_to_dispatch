@@ -2,8 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/session";
-import { createOrder, insertParsedOrders, type NewOrderInput } from "@/lib/orders";
+import {
+  createOrder,
+  insertParsedOrders,
+  updateOrderSection,
+  type NewOrderInput,
+} from "@/lib/orders";
 import { parseOrdersWorkbook } from "@/lib/excel-import";
+import { SECTION_BY_TABLE, type OrderTable } from "@/lib/order-schema";
 
 export type CreateOrderResult =
   | { ok: true; slNo: number }
@@ -27,6 +33,33 @@ export async function createOrderAction(
   } catch (error) {
     console.error("createOrder failed:", error);
     return { ok: false, error: "Could not create the order. Please try again." };
+  }
+}
+
+export type UpdateSectionResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export async function updateOrderSectionAction(
+  orderId: string,
+  table: string,
+  values: Record<string, string>
+): Promise<UpdateSectionResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+
+  if (!SECTION_BY_TABLE.has(table as OrderTable)) {
+    return { ok: false, error: "Unknown section." };
+  }
+
+  try {
+    await updateOrderSection(orderId, table as OrderTable, values);
+    revalidatePath(`/risansi/orders/${orderId}`);
+    revalidatePath("/risansi/orders");
+    return { ok: true };
+  } catch (error) {
+    console.error("updateOrderSection failed:", error);
+    return { ok: false, error: "Could not save changes. Please try again." };
   }
 }
 

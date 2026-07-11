@@ -1,5 +1,13 @@
 import { pool, query } from "@/lib/db";
 import type { ParsedOrder } from "@/lib/excel-import";
+import {
+  coerceField,
+  SECTION_BY_TABLE,
+  type OrderTable,
+} from "@/lib/order-schema";
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * A row in the master list/table view. Pulls the core order plus a few
@@ -106,6 +114,92 @@ export async function createOrder(
     ]
   );
   return result.rows[0];
+}
+
+type Row = Record<string, unknown>;
+
+export type OrderDetail = {
+  order: Row;
+  order_billing: Row | null;
+  order_accounts: Row | null;
+  order_drawing: Row | null;
+  order_purchase: Row | null;
+  order_qc: Row | null;
+  order_planning: Row | null;
+  order_assembly_dispatch: Row | null;
+  order_pumps: Row[];
+  order_lots: Row[];
+};
+
+/** Full record for one order: core + all department detail + pumps/lots. */
+export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
+  if (!UUID_RE.test(id)) return null;
+  const result = await query<OrderDetail>(
+    `SELECT
+        to_jsonb(o)  AS order,
+        to_jsonb(b)  AS order_billing,
+        to_jsonb(ac) AS order_accounts,
+        to_jsonb(dr) AS order_drawing,
+        to_jsonb(pu) AS order_purchase,
+        to_jsonb(qc) AS order_qc,
+        to_jsonb(pl) AS order_planning,
+        to_jsonb(ad) AS order_assembly_dispatch,
+        COALESCE((SELECT jsonb_agg(to_jsonb(p) ORDER BY p.created_at)
+                  FROM order_pumps p WHERE p.order_id = o.id), '[]'::jsonb) AS order_pumps,
+        COALESCE((SELECT jsonb_agg(to_jsonb(l) ORDER BY l.created_at)
+                  FROM order_lots l WHERE l.order_id = o.id), '[]'::jsonb) AS order_lots
+       FROM orders o
+       LEFT JOIN order_billing b            ON b.order_id  = o.id
+       LEFT JOIN order_accounts ac          ON ac.order_id = o.id
+       LEFT JOIN order_drawing dr           ON dr.order_id = o.id
+       LEFT JOIN order_purchase pu          ON pu.order_id = o.id
+       LEFT JOIN order_qc qc                ON qc.order_id = o.id
+       LEFT JOIN order_planning pl          ON pl.order_id = o.id
+       LEFT JOIN order_assembly_dispatch ad ON ad.order_id = o.id
+      WHERE o.id = $1`,
+    [id]
+  );
+  return result.rows[0] ?? null;
+}
+
+/**
+ * Update one department section of an order. For the core `orders` table this
+ * is an UPDATE; for a 1:1 detail table it upserts on order_id. Column names are
+ * validated against the section schema (never taken raw from the client).
+ */
+export async function updateOrderSection(
+  orderId: string,
+  table: OrderTable,
+  values: Record<string, string>
+): Promise<void> {
+  const section = SECTION_BY_TABLE.get(table);
+  if (!section) throw new Error(`Unknown section table: ${table}`);
+
+  const fieldByColumn = new Map(section.fields.map((f) => [f.column, f]));
+  const columns = Object.keys(values).filter((c) => fieldByColumn.has(c));
+  if (columns.length === 0) return;
+
+  const coerced = columns.map((c) =>
+    coerceField(fieldByColumn.get(c)!.type, values[c])
+  );
+
+  if (table === "orders") {
+    const setClause = columns.map((c, i) => `${c} = $${i + 2}`).join(", ");
+    await query(`UPDATE orders SET ${setClause} WHERE id = $1`, [
+      orderId,
+      ...coerced,
+    ]);
+    return;
+  }
+
+  const insertCols = ["order_id", ...columns];
+  const placeholders = insertCols.map((_, i) => `$${i + 1}`).join(", ");
+  const updateClause = columns.map((c) => `${c} = EXCLUDED.${c}`).join(", ");
+  await query(
+    `INSERT INTO ${table} (${insertCols.join(", ")}) VALUES (${placeholders})
+     ON CONFLICT (order_id) DO UPDATE SET ${updateClause}`,
+    [orderId, ...coerced]
+  );
 }
 
 // 1:1 detail tables keyed by order_id.

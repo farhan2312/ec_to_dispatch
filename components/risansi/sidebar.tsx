@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import Image from "next/image";
 import logo from "@/assets/logo.png";
 import {
+  CalendarClock,
   ChevronsUpDown,
   ClipboardList,
   Gauge,
@@ -50,6 +51,12 @@ const DEPARTMENT_NAV: DeptNavItem[] = [
     href: "/risansi/departments/drawing",
     icon: PenTool,
     table: "order_drawing",
+  },
+  {
+    label: "Planning",
+    href: "/risansi/departments/planning",
+    icon: CalendarClock,
+    table: "order_planning",
   },
 ];
 

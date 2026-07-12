@@ -60,7 +60,7 @@ export function LoginForm({ notice }: { notice?: string }) {
   }
 
   const inputClass =
-    "h-11 w-full rounded-[10px] border border-input-border bg-white px-[15px] text-[14px] text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
+    "h-11 w-full rounded-[10px] border border-input-border bg-dark px-[15px] text-[14px] text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
 
   return (
     <div className="w-full max-w-[380px]">

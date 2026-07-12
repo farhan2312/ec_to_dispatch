@@ -87,7 +87,7 @@ export function SignupForm() {
   }
 
   const inputClass =
-    "h-11 w-full rounded-[10px] border border-input-border bg-white px-[15px] text-[14px] text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
+    "h-11 w-full rounded-[10px] border border-input-border bg-dark px-[15px] text-[14px] text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
   const labelClass = "mb-1.5 block text-[13px] font-semibold text-brand-label";
 
   return (
@@ -236,11 +236,11 @@ export function SignupForm() {
                 values.role ? "" : "text-muted-foreground"
               }`}
             >
-              <option value="" disabled>
+              <option value="" disabled className="bg-background">
                 Select your role
               </option>
               {ROLES.map((role) => (
-                <option key={role.value} value={role.value} className="text-foreground">
+                <option key={role.value} value={role.value} className="text-foreground bg-background">
                   {role.label}
                 </option>
               ))}

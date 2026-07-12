@@ -62,6 +62,11 @@ export function canSeeEscalations(role: string): boolean {
   return role === "admin" || role === "central_visibility";
 }
 
+/** The central full-visibility dashboard is for Central Visibility and Admin. */
+export function canSeeCentralDashboard(role: string): boolean {
+  return role === "admin" || role === "central_visibility";
+}
+
 export function roleLabel(role: string): string {
   return (ROLE_LABELS as Record<string, string>)[role] ?? role;
 }

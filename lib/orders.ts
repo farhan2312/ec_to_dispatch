@@ -283,6 +283,55 @@ export async function insertParsedOrders(
   }
 }
 
+export type OrderOverviewRow = {
+  id: string;
+  sl_no: number;
+  so_no: string | null;
+  ec_no: string | null;
+  party: string | null;
+  order_value: string | null;
+  pi_no: string | null;
+  payment_status: string | null;
+  drg_status: string | null;
+  gb_status: string | null;
+  motor_status: string | null;
+  qc_submitted: boolean;
+  planning_status: string | null;
+  dispatch_target_date: string | null;
+  dispatch_status: string | null;
+};
+
+/** One row per order with a representative status from each department. */
+export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
+  const result = await query<OrderOverviewRow>(
+    `SELECT o.id,
+            o.sl_no::int AS sl_no,
+            o.so_no,
+            o.ec_no,
+            o.party,
+            o.order_value::text AS order_value,
+            b.pi_no,
+            a.payment_status,
+            dr.drg_status,
+            pu.gb_status,
+            pu.motor_status,
+            (qc.qc_doc_actual_date IS NOT NULL) AS qc_submitted,
+            pl.planning_status,
+            to_char(pl.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
+            ad.dispatch_status
+       FROM orders o
+       LEFT JOIN order_billing b            ON b.order_id  = o.id
+       LEFT JOIN order_accounts a           ON a.order_id  = o.id
+       LEFT JOIN order_drawing dr           ON dr.order_id = o.id
+       LEFT JOIN order_purchase pu          ON pu.order_id = o.id
+       LEFT JOIN order_qc qc                ON qc.order_id = o.id
+       LEFT JOIN order_planning pl          ON pl.order_id = o.id
+       LEFT JOIN order_assembly_dispatch ad ON ad.order_id = o.id
+      ORDER BY o.sl_no ASC`
+  );
+  return result.rows;
+}
+
 export type PaymentHoldRow = {
   id: string;
   sl_no: number;

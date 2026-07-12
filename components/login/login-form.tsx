@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Gauge, Loader2, X } from "lucide-react";
+import { Gauge, Loader2, X, Eye, EyeOff } from "lucide-react";
 import { login } from "@/app/login/actions";
 import Image from "next/image";
 import logo from "@/assets/logo.png";
@@ -166,7 +166,7 @@ export function LoginForm({ notice }: { notice?: string }) {
               aria-label={showPassword ? "Hide password" : "Show password"}
               className="absolute right-[14px] top-1/2 -translate-y-1/2 text-[13px] font-semibold text-muted-foreground hover:text-brand-label"
             >
-              {showPassword ? "Hide" : "Show"}
+              {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
             </button>
           </div>
           {errors.password && (

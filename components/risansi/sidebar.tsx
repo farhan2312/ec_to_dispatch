@@ -12,6 +12,7 @@ import {
   KeyRound,
   LayoutDashboard,
   LogOut,
+  PenTool,
   Receipt,
   ShieldCheck,
   Wallet,
@@ -43,6 +44,12 @@ const DEPARTMENT_NAV: DeptNavItem[] = [
     href: "/risansi/departments/accounts",
     icon: Wallet,
     table: "order_accounts",
+  },
+  {
+    label: "Drawing",
+    href: "/risansi/departments/drawing",
+    icon: PenTool,
+    table: "order_drawing",
   },
 ];
 

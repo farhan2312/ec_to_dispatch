@@ -283,6 +283,44 @@ export async function insertParsedOrders(
   }
 }
 
+/**
+ * Orders with their core identity plus one department section's fields, for a
+ * department workspace queue. `table` must be a 1:1 detail table (not `orders`).
+ * Date/number columns are returned as strings ready for form inputs.
+ */
+export async function listOrdersForSection(
+  table: OrderTable
+): Promise<Record<string, unknown>[]> {
+  const section = SECTION_BY_TABLE.get(table);
+  if (!section || table === "orders") return [];
+
+  const detailSelects = section.fields
+    .map((f) => {
+      if (f.type === "date") {
+        return `to_char(d.${f.column}, 'YYYY-MM-DD') AS ${f.column}`;
+      }
+      if (f.type === "int" || f.type === "number") {
+        return `d.${f.column}::text AS ${f.column}`;
+      }
+      return `d.${f.column}`;
+    })
+    .join(", ");
+
+  const result = await query<Record<string, unknown>>(
+    `SELECT o.id,
+            o.sl_no::int AS sl_no,
+            o.so_no,
+            o.ec_no,
+            o.party,
+            o.item,
+            ${detailSelects}
+       FROM orders o
+       LEFT JOIN ${table} d ON d.order_id = o.id
+      ORDER BY o.sl_no ASC`
+  );
+  return result.rows;
+}
+
 /** All orders for the master table, ordered by Sl. No. */
 export async function listOrders(): Promise<OrderListRow[]> {
   const result = await query<OrderListRow>(

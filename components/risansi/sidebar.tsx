@@ -12,18 +12,38 @@ import {
   KeyRound,
   LayoutDashboard,
   LogOut,
+  Receipt,
   ShieldCheck,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 import { logout } from "@/app/risansi/actions";
+import { canEditSection } from "@/lib/roles";
+import type { OrderTable } from "@/lib/order-schema";
 import { ThemeToggle } from "./theme-toggle";
 import { ChangePasswordModal } from "./change-password-modal";
 
 type NavItem = { label: string; href: string; icon: LucideIcon };
+type DeptNavItem = NavItem & { table: OrderTable };
 
 const PRIMARY_NAV: NavItem[] = [
   { label: "Dashboard", href: "/risansi/dashboard", icon: LayoutDashboard },
   { label: "Orders", href: "/risansi/orders", icon: ClipboardList },
+];
+
+const DEPARTMENT_NAV: DeptNavItem[] = [
+  {
+    label: "Billing & Operations",
+    href: "/risansi/departments/billing",
+    icon: Receipt,
+    table: "order_billing",
+  },
+  {
+    label: "Accounts",
+    href: "/risansi/departments/accounts",
+    icon: Wallet,
+    table: "order_accounts",
+  },
 ];
 
 const ADMIN_NAV: NavItem[] = [
@@ -47,6 +67,10 @@ export function Sidebar({ user }: { user: SidebarUser }) {
     .slice(0, 2)
     .join("")
     .toUpperCase();
+
+  const visibleDepartments = DEPARTMENT_NAV.filter((item) =>
+    canEditSection(user.role, item.table)
+  );
 
   function NavLink({ item }: { item: NavItem }) {
     const active = pathname === item.href || pathname.startsWith(item.href + "/");
@@ -86,6 +110,19 @@ export function Sidebar({ user }: { user: SidebarUser }) {
             ))}
           </div>
         </div>
+
+        {visibleDepartments.length > 0 && (
+          <div className="mb-6">
+            <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted">
+              Departments
+            </p>
+            <div className="space-y-1">
+              {visibleDepartments.map((item) => (
+                <NavLink key={item.href} item={item} />
+              ))}
+            </div>
+          </div>
+        )}
 
         {user.role === "admin" && (
           <div className="mb-6">

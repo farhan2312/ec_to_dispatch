@@ -7,6 +7,7 @@ import Image from "next/image";
 import logo from "@/assets/logo.png";
 import {
   AlertTriangle,
+  Bell,
   CalendarClock,
   ChevronsUpDown,
   ClipboardCheck,
@@ -92,7 +93,13 @@ const ADMIN_NAV: NavItem[] = [
 
 type SidebarUser = { name: string; email: string; role: string };
 
-export function Sidebar({ user }: { user: SidebarUser }) {
+export function Sidebar({
+  user,
+  alertCount = 0,
+}: {
+  user: SidebarUser;
+  alertCount?: number;
+}) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -166,6 +173,22 @@ export function Sidebar({ user }: { user: SidebarUser }) {
               Oversight
             </p>
             <div className="space-y-1">
+              <Link
+                href="/risansi/notifications"
+                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                  pathname === "/risansi/notifications"
+                    ? "bg-sidebar-active text-white"
+                    : "text-sidebar-foreground hover:bg-sidebar-hover"
+                }`}
+              >
+                <Bell className="h-4 w-4 shrink-0" />
+                <span className="flex-1">Notifications</span>
+                {alertCount > 0 && (
+                  <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-semibold text-white">
+                    {alertCount > 99 ? "99+" : alertCount}
+                  </span>
+                )}
+              </Link>
               <NavLink
                 item={{
                   label: "Payment Holds",

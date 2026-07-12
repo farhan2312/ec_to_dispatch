@@ -101,6 +101,30 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
   const overdue = rows.filter(isOverdue).length;
   const totalValue = rows.reduce((sum, r) => sum + (Number(r.order_value) || 0), 0);
 
+  // Department progress — share of orders each department has acted on.
+  const departments = [
+    { label: "Billing", done: rows.filter((r) => r.pi_no).length },
+    { label: "Accounts", done: rows.filter((r) => r.payment_status).length },
+    { label: "Drawing", done: rows.filter((r) => r.drg_status).length },
+    {
+      label: "Purchase",
+      done: rows.filter((r) => r.gb_status || r.motor_status).length,
+    },
+    { label: "QC", done: rows.filter((r) => r.qc_submitted).length },
+    { label: "Planning", done: rows.filter((r) => r.planning_status).length },
+    { label: "Dispatch", done: rows.filter((r) => r.dispatch_status).length },
+  ];
+
+  // Payment status — a reserved status palette (each swatch is labeled).
+  const pv = (s: string | null) => (s ?? "").trim().toLowerCase();
+  const paymentBuckets = [
+    { key: "Confirmed", color: "#10b981", count: rows.filter((r) => pv(r.payment_status) === "confirmed").length },
+    { key: "Received", color: "#3b82f6", count: rows.filter((r) => pv(r.payment_status) === "received").length },
+    { key: "Pending", color: "#94a3b8", count: rows.filter((r) => pv(r.payment_status) === "pending").length },
+    { key: "Hold", color: "#f59e0b", count: rows.filter((r) => pv(r.payment_status) === "hold").length },
+    { key: "Not set", color: "#d8dee9", count: rows.filter((r) => pv(r.payment_status) === "").length },
+  ];
+
   return (
     <div className="px-8 py-8">
       <div className="mb-6">
@@ -138,6 +162,81 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
           value={numberFmt.format(totalValue)}
           accent="bg-emerald-100 text-emerald-700"
         />
+      </div>
+
+      {/* charts */}
+      <div className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* department progress — single-hue magnitude bars */}
+        <div className="rounded-xl border border-card-border bg-surface p-5 shadow-sm">
+          <h3 className="mb-4 font-display text-sm font-semibold text-foreground">
+            Department progress
+          </h3>
+          <div className="space-y-3">
+            {departments.map((d) => {
+              const pct = total ? Math.round((d.done / total) * 100) : 0;
+              return (
+                <div key={d.label}>
+                  <div className="mb-1 flex items-center justify-between text-xs">
+                    <span className="text-muted">{d.label}</span>
+                    <span className="tabular-nums text-foreground">
+                      {d.done}/{total} · {pct}%
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-card-border">
+                    <div
+                      className="h-full rounded-full bg-primary"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* payment status — reserved status palette, labeled legend */}
+        <div className="rounded-xl border border-card-border bg-surface p-5 shadow-sm">
+          <h3 className="mb-4 font-display text-sm font-semibold text-foreground">
+            Payment status
+          </h3>
+          {total === 0 ? (
+            <p className="text-sm text-muted">No orders yet.</p>
+          ) : (
+            <>
+              <div className="flex h-3 w-full gap-0.5 overflow-hidden rounded-full">
+                {paymentBuckets
+                  .filter((b) => b.count > 0)
+                  .map((b) => (
+                    <div
+                      key={b.key}
+                      title={`${b.key}: ${b.count}`}
+                      style={{
+                        width: `${(b.count / total) * 100}%`,
+                        background: b.color,
+                      }}
+                    />
+                  ))}
+              </div>
+              <ul className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2">
+                {paymentBuckets.map((b) => (
+                  <li
+                    key={b.key}
+                    className="flex items-center justify-between text-xs"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 rounded-sm"
+                        style={{ background: b.color }}
+                      />
+                      <span className="text-muted">{b.key}</span>
+                    </span>
+                    <span className="tabular-nums text-foreground">{b.count}</span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
       </div>
 
       {/* pipeline */}

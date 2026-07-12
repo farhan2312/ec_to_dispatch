@@ -17,7 +17,9 @@
       "Bash(node -e \"try{require.resolve\\('next/font/google'\\);console.log\\('next/font/google OK'\\)}catch\\(e\\){console.log\\('MISSING',e.message\\)}\")",
       "Bash(npx tsc *)",
       "Bash(node scripts/migrate.mjs)",
-      "Bash(node -e \"try{require.resolve\\('server-only'\\);console.log\\('server-only OK'\\)}catch\\(e\\){console.log\\('MISSING server-only'\\)}\")"
+      "Bash(node -e \"try{require.resolve\\('server-only'\\);console.log\\('server-only OK'\\)}catch\\(e\\){console.log\\('MISSING server-only'\\)}\")",
+      "Skill(dataviz)",
+      "Skill(dataviz:*)"
     ]
   }
 }

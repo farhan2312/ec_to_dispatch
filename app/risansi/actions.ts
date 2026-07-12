@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { getCurrentUser, SESSION_COOKIE } from "@/lib/session";
 import { updatePassword, verifyPasswordById } from "@/lib/users";
 
+
+
 export type ChangePasswordInput = {
   currentPassword: string;
   newPassword: string;
@@ -20,6 +22,11 @@ export async function changePassword(
 ): Promise<ChangePasswordResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
+
+  // if user is Platform admin, disable the change password features
+  if (user.email === process.env.ADMIN_EMAIL) {
+    return { ok: false, error: "Password changes are not allowed for Platform Admins." };
+  }
 
   if (!input.currentPassword)
     return { ok: false, error: "Enter your current password." };

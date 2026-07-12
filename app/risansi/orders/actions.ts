@@ -10,7 +10,7 @@ import {
 } from "@/lib/orders";
 import { parseOrdersWorkbook } from "@/lib/excel-import";
 import { SECTION_BY_TABLE, type OrderTable } from "@/lib/order-schema";
-import { canEditSection } from "@/lib/roles";
+import { canCreateOrders, canEditSection } from "@/lib/roles";
 
 export type CreateOrderResult =
   | { ok: true; slNo: number }
@@ -21,6 +21,9 @@ export async function createOrderAction(
 ): Promise<CreateOrderResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canCreateOrders(user.role)) {
+    return { ok: false, error: "You don't have permission to create orders." };
+  }
 
   // Require at least one identifier so we don't create blank rows.
   if (!(input.so_no ?? "").trim() && !(input.ec_no ?? "").trim()) {
@@ -80,6 +83,9 @@ export async function importOrdersAction(
 ): Promise<ImportOrdersResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canCreateOrders(user.role)) {
+    return { ok: false, error: "You don't have permission to import orders." };
+  }
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {

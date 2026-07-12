@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ClipboardList, Plus } from "lucide-react";
 import { listOrders } from "@/lib/orders";
+import { getCurrentUser } from "@/lib/session";
+import { canCreateOrders } from "@/lib/roles";
 import { OrdersTable } from "@/components/risansi/orders-table";
 import { ImportOrdersButton } from "@/components/risansi/import-orders-button";
 
@@ -12,7 +14,8 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function OrdersPage() {
-  const orders = await listOrders();
+  const [orders, user] = await Promise.all([listOrders(), getCurrentUser()]);
+  const canCreate = user ? canCreateOrders(user.role) : false;
 
   return (
     <div className="px-8 py-8">
@@ -33,16 +36,18 @@ export default async function OrdersPage() {
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
-          <ImportOrdersButton />
-          <Link
-            href="/risansi/orders/new"
-            className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
-          >
-            <Plus className="h-4 w-4" />
-            New order
-          </Link>
-        </div>
+        {canCreate && (
+          <div className="flex shrink-0 items-center gap-2">
+            <ImportOrdersButton />
+            <Link
+              href="/risansi/orders/new"
+              className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
+            >
+              <Plus className="h-4 w-4" />
+              New order
+            </Link>
+          </div>
+        )}
       </div>
 
       {orders.length === 0 ? (

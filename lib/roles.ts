@@ -19,8 +19,8 @@ export type Role = keyof typeof ROLE_LABELS;
 
 export const ALL_ROLES = Object.keys(ROLE_LABELS) as Role[];
 
-// Roles a new user can request at signup. `admin` is seeded only, never
-// requested. `central_visibility` grants cross-department access.
+// Roles selectable when requesting access. `central_visibility` grants
+// cross-department access; `admin` also manages users.
 export const REQUESTABLE_ROLES: Role[] = [
   "operations",
   "accounts",
@@ -30,6 +30,7 @@ export const REQUESTABLE_ROLES: Role[] = [
   "qc",
   "dispatch",
   "central_visibility",
+  "admin",
 ];
 
 // The single department role that owns (can edit) each order section table.
@@ -49,6 +50,11 @@ const TABLE_OWNER: Record<OrderTable, Role> = {
 export function canEditSection(role: string, table: OrderTable): boolean {
   if (role === "admin" || role === "central_visibility") return true;
   return TABLE_OWNER[table] === role;
+}
+
+/** Only Admin and Central Visibility may create orders (form or Excel import). */
+export function canCreateOrders(role: string): boolean {
+  return role === "admin" || role === "central_visibility";
 }
 
 export function roleLabel(role: string): string {

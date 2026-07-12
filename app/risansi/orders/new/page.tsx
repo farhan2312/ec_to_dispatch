@@ -1,13 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
+import { getCurrentUser } from "@/lib/session";
+import { canCreateOrders } from "@/lib/roles";
 import { OrderForm } from "@/components/risansi/order-form";
 
 export const metadata: Metadata = {
   title: "New order | Risansi",
 };
 
-export default function NewOrderPage() {
+export const dynamic = "force-dynamic";
+
+export default async function NewOrderPage() {
+  const user = await getCurrentUser();
+  if (!user || !canCreateOrders(user.role)) redirect("/risansi/orders");
+
   return (
     <div className="px-8 py-8">
       <Link

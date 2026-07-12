@@ -18,6 +18,7 @@ import {
   PenTool,
   Receipt,
   ShieldCheck,
+  Truck,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -71,6 +72,12 @@ const DEPARTMENT_NAV: DeptNavItem[] = [
     href: "/risansi/departments/qc",
     icon: ClipboardCheck,
     table: "order_qc",
+  },
+  {
+    label: "Assembly & Dispatch",
+    href: "/risansi/departments/assembly-dispatch",
+    icon: Truck,
+    table: "order_assembly_dispatch",
   },
 ];
 

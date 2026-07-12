@@ -66,6 +66,12 @@ const DEPARTMENT_NAV: DeptNavItem[] = [
     icon: Package,
     table: "order_purchase",
   },
+  {
+    label: "QC",
+    href: "/risansi/departments/qc",
+    icon: ClipboardCheck,
+    table: "order_qc",
+  },
 ];
 
 const ADMIN_NAV: NavItem[] = [

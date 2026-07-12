@@ -104,19 +104,34 @@ export function DepartmentWorkspace({
                 <td className="px-4 py-3">{toInput(order.party) || "—"}</td>
                 {fields.map((f) => (
                   <td key={f.column} className="px-3 py-2">
-                    <input
-                      type={
-                        f.type === "date"
-                          ? "date"
-                          : f.type === "text"
-                            ? "text"
-                            : "number"
-                      }
-                      step={f.type === "number" ? "any" : undefined}
-                      value={values[id]?.[f.column] ?? ""}
-                      onChange={(e) => update(id, f.column, e.target.value)}
-                      className="h-9 w-full min-w-[120px] rounded-lg border border-input-border bg-surface px-2.5 text-[13px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
-                    />
+                    {f.type === "select" ? (
+                      <select
+                        value={values[id]?.[f.column] ?? ""}
+                        onChange={(e) => update(id, f.column, e.target.value)}
+                        className="h-9 w-full min-w-[140px] rounded-lg border border-input-border bg-surface px-2.5 text-[13px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
+                      >
+                        <option value="">—</option>
+                        {f.options?.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type={
+                          f.type === "date"
+                            ? "date"
+                            : f.type === "text"
+                              ? "text"
+                              : "number"
+                        }
+                        step={f.type === "number" ? "any" : undefined}
+                        value={values[id]?.[f.column] ?? ""}
+                        onChange={(e) => update(id, f.column, e.target.value)}
+                        className="h-9 w-full min-w-[120px] rounded-lg border border-input-border bg-surface px-2.5 text-[13px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
+                      />
+                    )}
                   </td>
                 ))}
                 <td className="px-4 py-2 whitespace-nowrap">

@@ -117,15 +117,32 @@ function EditableSection({
               {field.label}
             </div>
             {editing ? (
-              <input
-                type={field.type === "date" ? "date" : field.type === "text" ? "text" : "number"}
-                step={field.type === "number" ? "any" : undefined}
-                value={values[field.column] ?? ""}
-                onChange={(e) =>
-                  setValues((prev) => ({ ...prev, [field.column]: e.target.value }))
-                }
-                className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
-              />
+              field.type === "select" ? (
+                <select
+                  value={values[field.column] ?? ""}
+                  onChange={(e) =>
+                    setValues((prev) => ({ ...prev, [field.column]: e.target.value }))
+                  }
+                  className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
+                >
+                  <option value="">—</option>
+                  {field.options?.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type={field.type === "date" ? "date" : field.type === "text" ? "text" : "number"}
+                  step={field.type === "number" ? "any" : undefined}
+                  value={values[field.column] ?? ""}
+                  onChange={(e) =>
+                    setValues((prev) => ({ ...prev, [field.column]: e.target.value }))
+                  }
+                  className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
+                />
+              )
             ) : (
               <div className="text-[14px] text-foreground">
                 {formatDisplay(field, data?.[field.column])}

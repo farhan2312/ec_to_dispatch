@@ -57,6 +57,11 @@ export function canCreateOrders(role: string): boolean {
   return role === "admin" || role === "central_visibility";
 }
 
+/** Payment holds escalate to Central Visibility (and Admin). */
+export function canSeeEscalations(role: string): boolean {
+  return role === "admin" || role === "central_visibility";
+}
+
 export function roleLabel(role: string): string {
   return (ROLE_LABELS as Record<string, string>)[role] ?? role;
 }

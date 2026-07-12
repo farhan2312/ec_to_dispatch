@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import Image from "next/image";
 import logo from "@/assets/logo.png";
 import {
+  AlertTriangle,
   CalendarClock,
   ChevronsUpDown,
   ClipboardCheck,
@@ -23,7 +24,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { logout } from "@/app/risansi/actions";
-import { canEditSection } from "@/lib/roles";
+import { canEditSection, canSeeEscalations } from "@/lib/roles";
 import type { OrderTable } from "@/lib/order-schema";
 import { ThemeToggle } from "./theme-toggle";
 import { ChangePasswordModal } from "./change-password-modal";
@@ -155,6 +156,23 @@ export function Sidebar({ user }: { user: SidebarUser }) {
               {visibleDepartments.map((item) => (
                 <NavLink key={item.href} item={item} />
               ))}
+            </div>
+          </div>
+        )}
+
+        {canSeeEscalations(user.role) && (
+          <div className="mb-6">
+            <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted">
+              Oversight
+            </p>
+            <div className="space-y-1">
+              <NavLink
+                item={{
+                  label: "Payment Holds",
+                  href: "/risansi/escalations",
+                  icon: AlertTriangle,
+                }}
+              />
             </div>
           </div>
         )}

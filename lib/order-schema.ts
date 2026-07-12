@@ -12,13 +12,23 @@ export type OrderTable =
   | "order_planning"
   | "order_assembly_dispatch";
 
-export type OrderFieldType = "text" | "date" | "int" | "number";
+export type OrderFieldType = "text" | "date" | "int" | "number" | "select";
 
 export type OrderField = {
   column: string;
   label: string;
   type: OrderFieldType;
+  options?: { value: string; label: string }[];
 };
+
+// Canonical payment gate values. 'Hold' = not confirmed → escalate to Central
+// Visibility; 'Confirmed' = payment confirmed.
+export const PAYMENT_STATUS_OPTIONS = [
+  { value: "Pending", label: "Pending" },
+  { value: "Received", label: "Received" },
+  { value: "Confirmed", label: "Confirmed" },
+  { value: "Hold", label: "Hold (escalate)" },
+];
 
 export type OrderSection = {
   key: string;
@@ -75,7 +85,18 @@ export const ORDER_SECTIONS: OrderSection[] = [
     title: "Accounts",
     table: "order_accounts",
     fields: [
-      { column: "payment_status", label: "Payment Status", type: "text" },
+      {
+        column: "payment_status",
+        label: "Payment Status",
+        type: "select",
+        options: PAYMENT_STATUS_OPTIONS,
+      },
+      {
+        column: "payment_confirmed_date",
+        label: "Payment Confirmed Date",
+        type: "date",
+      },
+      { column: "hold_reason", label: "Hold Reason (escalation)", type: "text" },
     ],
   },
   {
@@ -167,5 +188,5 @@ export function coerceField(
     const n = Number(trimmed.replace(/,/g, ""));
     return Number.isFinite(n) ? n : null;
   }
-  return trimmed; // text, or date as 'YYYY-MM-DD'
+  return trimmed; // text, select, or date as 'YYYY-MM-DD'
 }

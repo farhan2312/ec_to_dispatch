@@ -283,6 +283,36 @@ export async function insertParsedOrders(
   }
 }
 
+export type PaymentHoldRow = {
+  id: string;
+  sl_no: number;
+  so_no: string | null;
+  ec_no: string | null;
+  party: string | null;
+  item: string | null;
+  hold_reason: string | null;
+  order_value: string | null;
+};
+
+/** Orders whose payment is on Hold (escalated to Central Visibility). */
+export async function listPaymentHolds(): Promise<PaymentHoldRow[]> {
+  const result = await query<PaymentHoldRow>(
+    `SELECT o.id,
+            o.sl_no::int AS sl_no,
+            o.so_no,
+            o.ec_no,
+            o.party,
+            o.item,
+            o.order_value::text AS order_value,
+            a.hold_reason
+       FROM orders o
+       JOIN order_accounts a ON a.order_id = o.id
+      WHERE lower(a.payment_status) = 'hold'
+      ORDER BY o.sl_no ASC`
+  );
+  return result.rows;
+}
+
 /**
  * Orders with their core identity plus one department section's fields, for a
  * department workspace queue. `table` must be a 1:1 detail table (not `orders`).

@@ -113,13 +113,21 @@ CREATE TABLE IF NOT EXISTS order_billing (
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Accounts — col AC.
+-- Accounts — col AC + the Payment Confirmed gate.
+-- payment_status carries the gate value (Pending / Received / Confirmed / Hold);
+-- 'Hold' means not confirmed → escalated to Central Visibility.
 CREATE TABLE IF NOT EXISTS order_accounts (
-    order_id        UUID PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
-    payment_status  TEXT,               -- AC Payment Status
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    order_id                UUID PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
+    payment_status          TEXT,        -- AC Payment Status (gate value)
+    payment_confirmed_date  DATE,        -- set when payment is Confirmed
+    hold_reason             TEXT,        -- escalation note when on Hold
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Add the gate columns to any pre-existing order_accounts table.
+ALTER TABLE order_accounts ADD COLUMN IF NOT EXISTS payment_confirmed_date DATE;
+ALTER TABLE order_accounts ADD COLUMN IF NOT EXISTS hold_reason TEXT;
 
 -- Drawing — cols AD–AG ("in case of Pump").
 CREATE TABLE IF NOT EXISTS order_drawing (

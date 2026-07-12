@@ -8,11 +8,13 @@ import logo from "@/assets/logo.png";
 import {
   CalendarClock,
   ChevronsUpDown,
+  ClipboardCheck,
   ClipboardList,
   Gauge,
   KeyRound,
   LayoutDashboard,
   LogOut,
+  Package,
   PenTool,
   Receipt,
   ShieldCheck,
@@ -57,6 +59,12 @@ const DEPARTMENT_NAV: DeptNavItem[] = [
     href: "/risansi/departments/planning",
     icon: CalendarClock,
     table: "order_planning",
+  },
+  {
+    label: "Purchase",
+    href: "/risansi/departments/purchase",
+    icon: Package,
+    table: "order_purchase",
   },
 ];
 

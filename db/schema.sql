@@ -95,6 +95,9 @@ CREATE TABLE IF NOT EXISTS orders (
     version                  TEXT,           -- V  VERSION
     project                  TEXT,           -- BH Project
     master_reason_of_delay   TEXT,           -- BK Master Reason of Delay (order-level)
+    ld                       TEXT,           -- LD applicable (Yes/No), set by Central Visibility
+    dispatch_target_date     DATE,           -- AU DISP. TARGET DT. (set after payment confirmation)
+    dispatch_target_revised_date DATE,       -- AV Revise Disp. Target Dt (when LD)
     order_value              NUMERIC(14,2),  -- BP Order Value
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -176,8 +179,6 @@ ALTER TABLE order_qc ADD COLUMN IF NOT EXISTS remarks TEXT;
 CREATE TABLE IF NOT EXISTS order_planning (
     order_id                      UUID PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
     ld_date                       DATE,  -- AT LD Date
-    dispatch_target_date          DATE,  -- AU DISP. TARGET DT.
-    dispatch_target_revised_date  DATE,  -- AV Revise Disp. Target Dt
     planning_documents_required   TEXT,  -- AW Documents Required from Planning
     pump_readiness_remarks        TEXT,  -- AX Pump Readiness Remarks
     planning_readiness_date       DATE,  -- BB Readiness Dt. Rcvd from Planning
@@ -294,5 +295,30 @@ BEGIN
            AND o.pump_sno IS NULL
            AND p.pump_sno IS NOT NULL;
         DROP TABLE order_pumps;
+    END IF;
+END $$;
+
+-- Dispatch target dates move to the order (filled by Central Visibility after
+-- payment confirmation); Planning sees them read-only. Add an order-level LD
+-- flag that gates the revised date. Idempotent.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS ld TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS dispatch_target_date DATE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS dispatch_target_revised_date DATE;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_planning'
+           AND column_name = 'dispatch_target_date'
+    ) THEN
+        UPDATE orders o
+           SET dispatch_target_date =
+                 COALESCE(o.dispatch_target_date, pl.dispatch_target_date),
+               dispatch_target_revised_date =
+                 COALESCE(o.dispatch_target_revised_date, pl.dispatch_target_revised_date)
+          FROM order_planning pl
+         WHERE pl.order_id = o.id;
+        ALTER TABLE order_planning DROP COLUMN dispatch_target_date;
+        ALTER TABLE order_planning DROP COLUMN dispatch_target_revised_date;
     END IF;
 END $$;

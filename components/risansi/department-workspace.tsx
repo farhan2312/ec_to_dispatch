@@ -12,14 +12,32 @@ function toInput(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
+function formatReadonly(field: OrderField, value: unknown): string {
+  const s = toInput(value);
+  if (s === "") return "—";
+  if (field.type === "date") {
+    const d = new Date(s);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    }
+  }
+  return s;
+}
+
 export function DepartmentWorkspace({
   table,
   fields,
   orders,
+  readonlyFields = [],
 }: {
   table: OrderTable;
   fields: OrderField[];
   orders: Row[];
+  readonlyFields?: OrderField[];
 }) {
   const router = useRouter();
 
@@ -79,6 +97,14 @@ export function DepartmentWorkspace({
             <th className="px-4 py-3">SO No.</th>
             <th className="px-4 py-3">EC No.</th>
             <th className="px-4 py-3">Party</th>
+            {readonlyFields.map((f) => (
+              <th
+                key={f.column}
+                className="px-3 py-3 whitespace-nowrap text-muted-foreground"
+              >
+                {f.label}
+              </th>
+            ))}
             {fields.map((f) => (
               <th key={f.column} className="px-3 py-3 whitespace-nowrap">
                 {f.label}
@@ -102,6 +128,14 @@ export function DepartmentWorkspace({
                   {toInput(order.ec_no) || "—"}
                 </td>
                 <td className="px-4 py-3">{toInput(order.party) || "—"}</td>
+                {readonlyFields.map((f) => (
+                  <td
+                    key={f.column}
+                    className="px-3 py-3 whitespace-nowrap text-muted"
+                  >
+                    {formatReadonly(f, order[f.column])}
+                  </td>
+                ))}
                 {fields.map((f) => {
                   const disabled = f.dependsOn
                     ? (values[id]?.[f.dependsOn.column] ?? "") !==

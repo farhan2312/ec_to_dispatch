@@ -56,6 +56,9 @@ export type NewOrderInput = {
   version?: string;
   project?: string;
   master_reason_of_delay?: string;
+  ld?: string;
+  dispatch_target_date?: string;
+  dispatch_target_revised_date?: string;
   order_value?: string;
 };
 
@@ -88,9 +91,11 @@ export async function createOrder(
         ec_sent_production_date, file_no, client_code, client_type, party, agent,
         nature_of_supply, industry_type, item, po_no, customer_po_date, model_no,
         pump_qty, pump_sno, orientation, liquid_application, version, project,
-        master_reason_of_delay, order_value
+        master_reason_of_delay, ld, dispatch_target_date,
+        dispatch_target_revised_date, order_value
      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,
+        $23,$24,$25,$26,$27
      )
      RETURNING id, sl_no::int AS sl_no`,
     [
@@ -117,6 +122,9 @@ export async function createOrder(
       nullify(input.version),
       nullify(input.project),
       nullify(input.master_reason_of_delay),
+      nullify(input.ld),
+      nullify(input.dispatch_target_date),
+      nullify(input.dispatch_target_revised_date),
       toNumeric(input.order_value),
     ]
   );
@@ -395,7 +403,7 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             pu.motor_status,
             (qc.qc_doc_actual_date IS NOT NULL) AS qc_submitted,
             pl.planning_status,
-            to_char(pl.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
+            to_char(o.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
             ad.dispatch_status
        FROM orders o
        LEFT JOIN order_billing b            ON b.order_id  = o.id
@@ -446,7 +454,8 @@ export async function listPaymentHolds(): Promise<PaymentHoldRow[]> {
  * Date/number columns are returned as strings ready for form inputs.
  */
 export async function listOrdersForSection(
-  table: OrderTable
+  table: OrderTable,
+  contextColumns: { column: string; type: string }[] = []
 ): Promise<Record<string, unknown>[]> {
   const section = SECTION_BY_TABLE.get(table);
   if (!section || table === "orders") return [];
@@ -463,6 +472,15 @@ export async function listOrdersForSection(
     })
     .join(", ");
 
+  // Order-level read-only context columns (e.g. dispatch dates for Planning).
+  const contextSelects = contextColumns
+    .map((f) =>
+      f.type === "date"
+        ? `, to_char(o.${f.column}, 'YYYY-MM-DD') AS ${f.column}`
+        : `, o.${f.column}`
+    )
+    .join("");
+
   const result = await query<Record<string, unknown>>(
     `SELECT o.id,
             o.sl_no::int AS sl_no,
@@ -470,7 +488,7 @@ export async function listOrdersForSection(
             o.ec_no,
             o.party,
             o.item,
-            ${detailSelects}
+            ${detailSelects}${contextSelects}
        FROM orders o
        LEFT JOIN ${table} d ON d.order_id = o.id
       ORDER BY o.sl_no ASC`
@@ -491,12 +509,11 @@ export async function listOrders(): Promise<OrderListRow[]> {
             o.order_value::text       AS order_value,
             b.pi_no,
             a.payment_status,
-            to_char(p.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
+            to_char(o.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
             ad.dispatch_status
        FROM orders o
        LEFT JOIN order_billing b            ON b.order_id  = o.id
        LEFT JOIN order_accounts a           ON a.order_id  = o.id
-       LEFT JOIN order_planning p           ON p.order_id  = o.id
        LEFT JOIN order_assembly_dispatch ad ON ad.order_id = o.id
       ORDER BY o.sl_no ASC`
   );

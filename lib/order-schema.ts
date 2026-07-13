@@ -96,6 +96,14 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "version", label: "Version", type: "text" },
       { column: "project", label: "Project", type: "text" },
       { column: "master_reason_of_delay", label: "Master Reason of Delay", type: "text" },
+      { column: "ld", label: "LD", type: "select", options: YES_NO },
+      { column: "dispatch_target_date", label: "Dispatch Target Date", type: "date" },
+      {
+        column: "dispatch_target_revised_date",
+        label: "Revised Dispatch Target Date",
+        type: "date",
+        dependsOn: { column: "ld", value: "Yes" },
+      },
       { column: "order_value", label: "Order Value", type: "number" },
     ],
   },
@@ -208,8 +216,6 @@ export const ORDER_SECTIONS: OrderSection[] = [
     table: "order_planning",
     fields: [
       { column: "ld_date", label: "LD Date", type: "date" },
-      { column: "dispatch_target_date", label: "Dispatch Target Date", type: "date" },
-      { column: "dispatch_target_revised_date", label: "Revised Dispatch Target Date", type: "date" },
       { column: "planning_documents_required", label: "Documents Required from Planning", type: "text" },
       { column: "pump_readiness_remarks", label: "Pump Readiness Remarks", type: "text" },
       { column: "planning_readiness_date", label: "Readiness Date Rcvd from Planning", type: "date" },
@@ -270,6 +276,18 @@ export const LOT_FIELDS: OrderField[] = [
 export const CHILD_FIELDS: Record<ChildTable, OrderField[]> = {
   order_lots: LOT_FIELDS,
 };
+
+// Order-level fields (owned by Central Visibility) shown read-only in the
+// Planning workspace, so Planning sees the dispatch dates it must schedule to.
+export const PLANNING_CONTEXT_FIELDS: OrderField[] = [
+  { column: "ld", label: "LD", type: "select", options: YES_NO },
+  { column: "dispatch_target_date", label: "Dispatch Target Date", type: "date" },
+  {
+    column: "dispatch_target_revised_date",
+    label: "Revised Dispatch Target Date",
+    type: "date",
+  },
+];
 
 /** Coerce a raw form string to the storable value for a field type. */
 export function coerceField(

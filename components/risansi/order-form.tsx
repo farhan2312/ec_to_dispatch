@@ -17,8 +17,14 @@ type Field = {
   label: string;
   type: FieldType;
   options?: { value: string; label: string }[];
+  dependsOn?: { name: keyof NewOrderInput; value: string };
 };
 type Section = { title: string; fields: Field[] };
+
+const YES_NO_OPTIONS = [
+  { value: "Yes", label: "Yes" },
+  { value: "No", label: "No" },
+];
 
 const SECTIONS: Section[] = [
   {
@@ -68,13 +74,25 @@ const SECTIONS: Section[] = [
     ],
   },
   {
-    title: "Commercial",
+    title: "Commercial & Dispatch",
     fields: [
       { name: "project", label: "Project", type: "text" },
       {
         name: "master_reason_of_delay",
         label: "Master Reason of Delay",
         type: "text",
+      },
+      { name: "ld", label: "LD", type: "select", options: YES_NO_OPTIONS },
+      {
+        name: "dispatch_target_date",
+        label: "Dispatch Target Date",
+        type: "date",
+      },
+      {
+        name: "dispatch_target_revised_date",
+        label: "Revised Dispatch Target Date",
+        type: "date",
+        dependsOn: { name: "ld", value: "Yes" },
       },
       { name: "order_value", label: "Order Value", type: "number" },
     ],
@@ -128,7 +146,11 @@ export function OrderForm() {
               {section.title}
             </h2>
             <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-              {section.fields.map((field) => (
+              {section.fields.map((field) => {
+                const disabled = field.dependsOn
+                  ? (values[field.dependsOn.name] ?? "") !== field.dependsOn.value
+                  : false;
+                return (
                 <div key={field.name}>
                   <label
                     htmlFor={field.name}
@@ -142,7 +164,8 @@ export function OrderForm() {
                       name={field.name}
                       value={values[field.name] ?? ""}
                       onChange={(e) => update(field.name, e.target.value)}
-                      className={inputClass}
+                      disabled={disabled}
+                      className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-50`}
                     >
                       <option value="">—</option>
                       {field.options?.map((o) => (
@@ -159,11 +182,13 @@ export function OrderForm() {
                       step={field.type === "number" ? "any" : undefined}
                       value={values[field.name] ?? ""}
                       onChange={(e) => update(field.name, e.target.value)}
-                      className={inputClass}
+                      disabled={disabled}
+                      className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-50`}
                     />
                   )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         ))}

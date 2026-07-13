@@ -83,8 +83,6 @@ export default async function DispatchedPage() {
                 <th className="px-4 py-3">Party</th>
                 <th className="px-4 py-3">Lot No.</th>
                 <th className="px-4 py-3">Dispatch Date</th>
-                <th className="px-4 py-3">LR No.</th>
-                <th className="px-4 py-3">LR Date</th>
                 <th className="px-4 py-3">Invoice Date</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3"></th>
@@ -102,10 +100,6 @@ export default async function DispatchedPage() {
                   <td className="px-4 py-3 whitespace-nowrap">{row.lot_no ?? "—"}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     {formatDate(row.lot_dispatch_date)}
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap">{row.lr_no ?? "—"}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    {formatDate(row.lr_date)}
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     {formatDate(row.invoice_date)}

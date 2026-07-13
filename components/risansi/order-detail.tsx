@@ -224,6 +224,7 @@ export function OrderDetail({
             section.table === "orders"
               ? detail.order
               : (detail[section.table] as Row | null);
+
           return (
             <EditableSection
               key={section.key}

@@ -341,8 +341,6 @@ export type DispatchRegisterRow = {
   party: string | null;
   lot_no: string | null;
   lot_dispatch_date: string | null;
-  lr_no: string | null;
-  lr_date: string | null;
   invoice_date: string | null;
   dispatch_status: string | null;
 };
@@ -360,8 +358,6 @@ export async function listDispatchRegister(): Promise<DispatchRegisterRow[]> {
             o.party,
             l.lot_no,
             to_char(l.lot_dispatch_date, 'YYYY-MM-DD') AS lot_dispatch_date,
-            l.lr_no,
-            to_char(l.lr_date, 'YYYY-MM-DD') AS lr_date,
             to_char(l.invoice_date, 'YYYY-MM-DD') AS invoice_date,
             ad.dispatch_status
        FROM order_lots l

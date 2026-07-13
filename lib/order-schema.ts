@@ -266,8 +266,6 @@ export type ChildTable = "order_lots";
 export const LOT_FIELDS: OrderField[] = [
   { column: "lot_no", label: "Lot No.", type: "text" },
   { column: "lot_dispatch_date", label: "Lot Wise Dispatch Date", type: "date" },
-  { column: "lr_no", label: "LR No.", type: "text" },
-  { column: "lr_date", label: "LR Date", type: "date" },
   { column: "packing_slip_remark", label: "Packing Slip Remark", type: "text" },
   { column: "invoice_date", label: "Invoice Date", type: "date" },
 ];

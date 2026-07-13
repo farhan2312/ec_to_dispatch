@@ -280,23 +280,21 @@ BEGIN
     END IF;
 END $$;
 
+-- LR no./date are no longer tracked.
+ALTER TABLE order_lots DROP COLUMN IF EXISTS lr_no;
+ALTER TABLE order_lots DROP COLUMN IF EXISTS lr_date;
+
 -- Dispatch lots — cols BI, BM, BN, BO (1:many).
 CREATE TABLE IF NOT EXISTS order_lots (
     id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id             UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
     lot_no               TEXT,          -- BM LOT NO.
     lot_dispatch_date    DATE,          -- BN Lot Wise Disp. Dt.
-    lr_no                TEXT,          -- Lorry Receipt no. (dispatch completed)
-    lr_date              DATE,          -- Lorry Receipt date
     packing_slip_remark  TEXT,          -- BI Lot wise Packing slip remark
     invoice_date         DATE,          -- BO Invoice Date
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS order_lots_order_id_idx ON order_lots (order_id);
-
--- LR columns for pre-existing order_lots tables.
-ALTER TABLE order_lots ADD COLUMN IF NOT EXISTS lr_no TEXT;
-ALTER TABLE order_lots ADD COLUMN IF NOT EXISTS lr_date DATE;
 
 -- updated_at triggers for the core + 1:1 detail tables.
 DROP TRIGGER IF EXISTS orders_set_updated_at ON orders;

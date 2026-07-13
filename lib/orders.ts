@@ -356,7 +356,7 @@ export async function listPaymentHolds(): Promise<PaymentHoldRow[]> {
             a.hold_reason
        FROM orders o
        JOIN order_accounts a ON a.order_id = o.id
-      WHERE lower(a.payment_status) = 'hold'
+      WHERE lower(a.payment_status) = 'outstanding hold'
       ORDER BY o.sl_no ASC`
   );
   return result.rows;

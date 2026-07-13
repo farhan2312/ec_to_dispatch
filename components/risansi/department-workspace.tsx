@@ -102,13 +102,19 @@ export function DepartmentWorkspace({
                   {toInput(order.ec_no) || "—"}
                 </td>
                 <td className="px-4 py-3">{toInput(order.party) || "—"}</td>
-                {fields.map((f) => (
+                {fields.map((f) => {
+                  const disabled = f.dependsOn
+                    ? (values[id]?.[f.dependsOn.column] ?? "") !==
+                      f.dependsOn.value
+                    : false;
+                  return (
                   <td key={f.column} className="px-3 py-2">
                     {f.type === "select" ? (
                       <select
                         value={values[id]?.[f.column] ?? ""}
                         onChange={(e) => update(id, f.column, e.target.value)}
-                        className="h-9 w-full min-w-[140px] rounded-lg border border-input-border bg-surface px-2.5 text-[13px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
+                        disabled={disabled}
+                        className="h-9 w-full min-w-[140px] rounded-lg border border-input-border bg-surface px-2.5 text-[13px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         <option value="">—</option>
                         {f.options?.map((o) => (
@@ -133,7 +139,8 @@ export function DepartmentWorkspace({
                       />
                     )}
                   </td>
-                ))}
+                  );
+                })}
                 <td className="px-4 py-2 whitespace-nowrap">
                   <button
                     type="button"

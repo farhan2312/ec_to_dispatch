@@ -19,16 +19,36 @@ export type OrderField = {
   label: string;
   type: OrderFieldType;
   options?: { value: string; label: string }[];
+  // When set, the field only applies while another field equals `value`
+  // (e.g. GB Status only when Gear Box = "Yes").
+  dependsOn?: { column: string; value: string };
 };
 
-// Canonical payment gate values. 'Hold' = not confirmed → escalate to Central
-// Visibility; 'Confirmed' = payment confirmed.
-export const PAYMENT_STATUS_OPTIONS = [
-  { value: "Pending", label: "Pending" },
-  { value: "Received", label: "Received" },
-  { value: "Confirmed", label: "Confirmed" },
-  { value: "Hold", label: "Hold (escalate)" },
-];
+/** Turn a list of strings into { value, label } option objects. */
+function opts(values: string[]): { value: string; label: string }[] {
+  return values.map((v) => ({ value: v, label: v }));
+}
+
+const YES_NO = opts(["Yes", "No"]);
+const PART_STATUS = opts(["PENDING", "RECEIVED", "AVAILABLE STOCK"]);
+
+export const NATURE_OF_SUPPLY_OPTIONS = opts([
+  "Domestic",
+  "Merchant Export",
+  "Export",
+]);
+export const INDUSTRY_TYPE_OPTIONS = opts(["Sugar", "Non Sugar"]);
+
+// Payment status values. "Outstanding hold" is the escalation trigger.
+export const PAYMENT_HOLD_VALUE = "Outstanding hold";
+export const PAYMENT_STATUS_OPTIONS = opts([
+  "Outstanding hold",
+  "Payment Rcvd",
+  "Advance Rcvd",
+  "Advance Rcvd & Balance payment Awaited",
+  "Payment Awaited",
+  "After Receipt",
+]);
 
 export type OrderSection = {
   key: string;
@@ -53,8 +73,18 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "client_type", label: "Client Type", type: "text" },
       { column: "party", label: "Party", type: "text" },
       { column: "agent", label: "Agent", type: "text" },
-      { column: "nature_of_supply", label: "Nature of Supply", type: "text" },
-      { column: "industry_type", label: "Industry Type", type: "text" },
+      {
+        column: "nature_of_supply",
+        label: "Nature of Supply",
+        type: "select",
+        options: NATURE_OF_SUPPLY_OPTIONS,
+      },
+      {
+        column: "industry_type",
+        label: "Industry Type",
+        type: "select",
+        options: INDUSTRY_TYPE_OPTIONS,
+      },
       { column: "item", label: "Item", type: "text" },
       { column: "po_no", label: "PO No.", type: "text" },
       { column: "customer_po_date", label: "Customer PO Date", type: "date" },
@@ -73,8 +103,18 @@ export const ORDER_SECTIONS: OrderSection[] = [
     table: "order_billing",
     fields: [
       { column: "payment_terms", label: "Payment Terms", type: "text" },
-      { column: "freight_terms", label: "Freight Terms", type: "text" },
-      { column: "packing_requirement", label: "Packing Requirement", type: "text" },
+      {
+        column: "freight_terms",
+        label: "Freight Terms",
+        type: "select",
+        options: opts(["Paid", "To Pay"]),
+      },
+      {
+        column: "packing_requirement",
+        label: "Packing Requirement",
+        type: "select",
+        options: opts(["Wooden Box", "Loose"]),
+      },
       { column: "pi_no", label: "PI No.", type: "text" },
       { column: "pi_date", label: "PI Date", type: "date" },
       { column: "pi_value", label: "PI Value", type: "number" },
@@ -104,7 +144,12 @@ export const ORDER_SECTIONS: OrderSection[] = [
     title: "Drawing",
     table: "order_drawing",
     fields: [
-      { column: "drg_status", label: "DRG Status", type: "text" },
+      {
+        column: "drg_status",
+        label: "DRG Status",
+        type: "select",
+        options: opts(["Drg. Not issued", "Drg Not Approved", "Drg approved"]),
+      },
       { column: "drg_sent_to_client_date", label: "DRG Sent to Client", type: "date" },
       { column: "drg_approval_date", label: "DRG Approval Date", type: "date" },
       { column: "drg_target_date", label: "Target Date for DRG", type: "date" },
@@ -115,11 +160,23 @@ export const ORDER_SECTIONS: OrderSection[] = [
     title: "Purchase",
     table: "order_purchase",
     fields: [
-      { column: "boi", label: "BOI", type: "text" },
-      { column: "gear_box", label: "Gear Box", type: "text" },
-      { column: "gb_status", label: "GB Status", type: "text" },
-      { column: "motor", label: "Motor", type: "text" },
-      { column: "motor_status", label: "Motor Status", type: "text" },
+      { column: "boi", label: "BOI", type: "select", options: YES_NO },
+      { column: "gear_box", label: "Gear Box", type: "select", options: YES_NO },
+      {
+        column: "gb_status",
+        label: "GB Status",
+        type: "select",
+        options: PART_STATUS,
+        dependsOn: { column: "gear_box", value: "Yes" },
+      },
+      { column: "motor", label: "Motor", type: "select", options: YES_NO },
+      {
+        column: "motor_status",
+        label: "Motor Status",
+        type: "select",
+        options: PART_STATUS,
+        dependsOn: { column: "motor", value: "Yes" },
+      },
       { column: "pending_parts", label: "Pending Parts / BOI Others", type: "text" },
       { column: "boi_receipt_date", label: "BOI Receipt Date", type: "date" },
       { column: "purchase_target_date", label: "Target Date for Purchase", type: "date" },
@@ -130,10 +187,15 @@ export const ORDER_SECTIONS: OrderSection[] = [
     title: "QC",
     table: "order_qc",
     fields: [
-      { column: "required_qc_documents", label: "Required QC Documents", type: "text" },
+      {
+        column: "required_qc_documents",
+        label: "Required QC Documents",
+        type: "select",
+        options: opts(["MTC", "IIR", "DIMENSIONAL Report"]),
+      },
       { column: "qc_doc_target_date", label: "Target Date for Doc. Submission", type: "date" },
       { column: "qc_doc_actual_date", label: "Actual Date of Doc. Submission", type: "date" },
-      { column: "ld_applicable", label: "LD (Yes)", type: "text" },
+      { column: "ld_applicable", label: "LD", type: "select", options: YES_NO },
     ],
   },
   {
@@ -156,7 +218,19 @@ export const ORDER_SECTIONS: OrderSection[] = [
     title: "Assembly & Dispatch",
     table: "order_assembly_dispatch",
     fields: [
-      { column: "actual_pump_status", label: "Actual Pump Status", type: "text" },
+      {
+        column: "actual_pump_status",
+        label: "Actual Pump Status",
+        type: "select",
+        options: opts([
+          "Date awaited",
+          "EC under preparation",
+          "Partial assembled",
+          "In plan",
+          "Assembled",
+          "Packed",
+        ]),
+      },
       { column: "assembled_packed_qty", label: "Assembled / Packed Qty", type: "text" },
       { column: "assembly_date", label: "Assembly Date", type: "date" },
       { column: "dispatch_documents_required", label: "Documents Required by Assembly/Dispatch", type: "text" },
@@ -164,7 +238,12 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "actual_packing_date", label: "Actual Material Packing Date", type: "date" },
       { column: "delay_remarks", label: "Remarks / Reason of Delay", type: "text" },
       { column: "master_reason_of_delay", label: "Master Reason of Delay", type: "text" },
-      { column: "dispatch_status", label: "Dispatch Status", type: "text" },
+      {
+        column: "dispatch_status",
+        label: "Dispatch Status",
+        type: "select",
+        options: opts(["LOT dispatch", "Fully dispatch"]),
+      },
     ],
   },
 ];

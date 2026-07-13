@@ -6,9 +6,18 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { createOrderAction } from "@/app/risansi/orders/actions";
 import type { NewOrderInput } from "@/lib/orders";
+import {
+  INDUSTRY_TYPE_OPTIONS,
+  NATURE_OF_SUPPLY_OPTIONS,
+} from "@/lib/order-schema";
 
-type FieldType = "text" | "date" | "number";
-type Field = { name: keyof NewOrderInput; label: string; type: FieldType };
+type FieldType = "text" | "date" | "number" | "select";
+type Field = {
+  name: keyof NewOrderInput;
+  label: string;
+  type: FieldType;
+  options?: { value: string; label: string }[];
+};
 type Section = { title: string; fields: Field[] };
 
 const SECTIONS: Section[] = [
@@ -30,8 +39,18 @@ const SECTIONS: Section[] = [
       { name: "client_type", label: "Client Type", type: "text" },
       { name: "party", label: "Party", type: "text" },
       { name: "agent", label: "Agent", type: "text" },
-      { name: "nature_of_supply", label: "Nature of Supply", type: "text" },
-      { name: "industry_type", label: "Industry Type", type: "text" },
+      {
+        name: "nature_of_supply",
+        label: "Nature of Supply",
+        type: "select",
+        options: NATURE_OF_SUPPLY_OPTIONS,
+      },
+      {
+        name: "industry_type",
+        label: "Industry Type",
+        type: "select",
+        options: INDUSTRY_TYPE_OPTIONS,
+      },
     ],
   },
   {
@@ -111,15 +130,32 @@ export function OrderForm() {
                   >
                     {field.label}
                   </label>
-                  <input
-                    id={field.name}
-                    name={field.name}
-                    type={field.type}
-                    step={field.type === "number" ? "any" : undefined}
-                    value={values[field.name] ?? ""}
-                    onChange={(e) => update(field.name, e.target.value)}
-                    className={inputClass}
-                  />
+                  {field.type === "select" ? (
+                    <select
+                      id={field.name}
+                      name={field.name}
+                      value={values[field.name] ?? ""}
+                      onChange={(e) => update(field.name, e.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="">—</option>
+                      {field.options?.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id={field.name}
+                      name={field.name}
+                      type={field.type}
+                      step={field.type === "number" ? "any" : undefined}
+                      value={values[field.name] ?? ""}
+                      onChange={(e) => update(field.name, e.target.value)}
+                      className={inputClass}
+                    />
+                  )}
                 </div>
               ))}
             </div>

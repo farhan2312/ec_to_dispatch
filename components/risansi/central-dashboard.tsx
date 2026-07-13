@@ -10,7 +10,18 @@ import type { OrderOverviewRow } from "@/lib/orders";
 const numberFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 
 function isHold(value: string | null): boolean {
-  return (value ?? "").trim().toLowerCase() === "hold";
+  return (value ?? "").trim().toLowerCase() === "outstanding hold";
+}
+
+// Group the six payment-status values into a small, readable set for the chart.
+function paymentGroup(
+  value: string | null
+): "Hold" | "Awaited" | "Received" | "Not set" {
+  const v = (value ?? "").trim().toLowerCase();
+  if (v === "") return "Not set";
+  if (v === "outstanding hold") return "Hold";
+  if (v.includes("awaited")) return "Awaited";
+  return "Received"; // Payment Rcvd, Advance Rcvd, After Receipt
 }
 
 function formatDate(value: string | null): string {
@@ -58,10 +69,10 @@ function Chip({ value, tone = "neutral" }: { value: string | null; tone?: Tone }
 }
 
 function paymentTone(value: string | null): Tone {
-  const v = (value ?? "").trim().toLowerCase();
-  if (v === "hold") return "amber";
-  if (v === "confirmed") return "green";
-  if (v === "received") return "blue";
+  const group = paymentGroup(value);
+  if (group === "Hold") return "amber";
+  if (group === "Received") return "green";
+  if (group === "Awaited") return "blue";
   return "neutral";
 }
 
@@ -116,13 +127,11 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
   ];
 
   // Payment status — a reserved status palette (each swatch is labeled).
-  const pv = (s: string | null) => (s ?? "").trim().toLowerCase();
   const paymentBuckets = [
-    { key: "Confirmed", color: "#10b981", count: rows.filter((r) => pv(r.payment_status) === "confirmed").length },
-    { key: "Received", color: "#3b82f6", count: rows.filter((r) => pv(r.payment_status) === "received").length },
-    { key: "Pending", color: "#94a3b8", count: rows.filter((r) => pv(r.payment_status) === "pending").length },
-    { key: "Hold", color: "#f59e0b", count: rows.filter((r) => pv(r.payment_status) === "hold").length },
-    { key: "Not set", color: "#d8dee9", count: rows.filter((r) => pv(r.payment_status) === "").length },
+    { key: "Received", color: "#10b981", count: rows.filter((r) => paymentGroup(r.payment_status) === "Received").length },
+    { key: "Awaited", color: "#3b82f6", count: rows.filter((r) => paymentGroup(r.payment_status) === "Awaited").length },
+    { key: "Hold", color: "#f59e0b", count: rows.filter((r) => paymentGroup(r.payment_status) === "Hold").length },
+    { key: "Not set", color: "#d8dee9", count: rows.filter((r) => paymentGroup(r.payment_status) === "Not set").length },
   ];
 
   return (

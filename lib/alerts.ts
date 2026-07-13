@@ -63,7 +63,7 @@ const ALERTS_SQL = `
          'Accounts'::text, 'hold'::text,
          NULL::text, NULL::int
     FROM orders o JOIN order_accounts a ON a.order_id = o.id
-   WHERE lower(a.payment_status) = 'hold'
+   WHERE lower(a.payment_status) = 'outstanding hold'
 `;
 
 /** All active alerts, escalations first, then most overdue. */

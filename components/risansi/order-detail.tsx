@@ -123,7 +123,13 @@ function EditableSection({
                   onChange={(e) =>
                     setValues((prev) => ({ ...prev, [field.column]: e.target.value }))
                   }
-                  className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
+                  disabled={
+                    field.dependsOn
+                      ? (values[field.dependsOn.column] ?? "") !==
+                        field.dependsOn.value
+                      : false
+                  }
+                  className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <option value="">—</option>
                   {field.options?.map((o) => (

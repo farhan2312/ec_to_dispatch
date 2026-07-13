@@ -25,7 +25,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { logout } from "@/app/risansi/actions";
-import { canEditSection, canSeeEscalations } from "@/lib/roles";
+import { canEditSection, canSeeDispatched, canSeeEscalations } from "@/lib/roles";
 import type { OrderTable } from "@/lib/order-schema";
 import { ThemeToggle } from "./theme-toggle";
 import { ChangePasswordModal } from "./change-password-modal";
@@ -196,6 +196,15 @@ export function Sidebar({
                   icon: AlertTriangle,
                 }}
               />
+              {canSeeDispatched(user.role) && (
+                <NavLink
+                  item={{
+                    label: "Dispatched",
+                    href: "/risansi/dispatched",
+                    icon: Truck,
+                  }}
+                />
+              )}
             </div>
           </div>
         )}

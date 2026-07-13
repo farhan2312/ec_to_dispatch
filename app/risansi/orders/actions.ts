@@ -3,14 +3,22 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/session";
 import {
+  addChildRow,
   createOrder,
+  deleteChildRow,
   insertParsedOrders,
+  updateChildRow,
   updateOrderSection,
   type NewOrderInput,
 } from "@/lib/orders";
 import { parseOrdersWorkbook } from "@/lib/excel-import";
-import { SECTION_BY_TABLE, type OrderTable } from "@/lib/order-schema";
-import { canCreateOrders, canEditSection } from "@/lib/roles";
+import {
+  CHILD_FIELDS,
+  SECTION_BY_TABLE,
+  type ChildTable,
+  type OrderTable,
+} from "@/lib/order-schema";
+import { canCreateOrders, canEditChild, canEditSection } from "@/lib/roles";
 
 export type CreateOrderResult =
   | { ok: true; slNo: number }
@@ -71,6 +79,76 @@ export async function updateOrderSectionAction(
   } catch (error) {
     console.error("updateOrderSection failed:", error);
     return { ok: false, error: "Could not save changes. Please try again." };
+  }
+}
+
+export type ChildActionResult = { ok: true } | { ok: false; error: string };
+
+async function guardChild(table: string): Promise<ChildActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (table !== "order_pumps" && table !== "order_lots") {
+    return { ok: false, error: "Unknown list." };
+  }
+  if (!canEditChild(user.role, table)) {
+    return { ok: false, error: "You don't have permission to edit this list." };
+  }
+  return { ok: true };
+}
+
+export async function addOrderChildAction(
+  orderId: string,
+  table: string
+): Promise<ChildActionResult> {
+  const guard = await guardChild(table);
+  if (!guard.ok) return guard;
+  try {
+    await addChildRow(table as ChildTable, orderId);
+    revalidatePath(`/risansi/orders/${orderId}`);
+    return { ok: true };
+  } catch (error) {
+    console.error("addOrderChild failed:", error);
+    return { ok: false, error: "Could not add the row." };
+  }
+}
+
+export async function updateOrderChildAction(
+  id: string,
+  table: string,
+  values: Record<string, string>,
+  orderId: string
+): Promise<ChildActionResult> {
+  const guard = await guardChild(table);
+  if (!guard.ok) return guard;
+  // Ignore any keys not in the child schema.
+  const allowed = new Set(CHILD_FIELDS[table as ChildTable].map((f) => f.column));
+  const clean = Object.fromEntries(
+    Object.entries(values).filter(([k]) => allowed.has(k))
+  );
+  try {
+    await updateChildRow(table as ChildTable, id, clean);
+    revalidatePath(`/risansi/orders/${orderId}`);
+    return { ok: true };
+  } catch (error) {
+    console.error("updateOrderChild failed:", error);
+    return { ok: false, error: "Could not save the row." };
+  }
+}
+
+export async function deleteOrderChildAction(
+  id: string,
+  table: string,
+  orderId: string
+): Promise<ChildActionResult> {
+  const guard = await guardChild(table);
+  if (!guard.ok) return guard;
+  try {
+    await deleteChildRow(table as ChildTable, id);
+    revalidatePath(`/risansi/orders/${orderId}`);
+    return { ok: true };
+  } catch (error) {
+    console.error("deleteOrderChild failed:", error);
+    return { ok: false, error: "Could not delete the row." };
   }
 }
 

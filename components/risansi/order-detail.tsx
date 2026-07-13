@@ -7,11 +7,14 @@ import { ArrowLeft, Loader2, Pencil } from "lucide-react";
 import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
 import {
   ORDER_SECTIONS,
+  PUMP_FIELDS,
+  LOT_FIELDS,
   type OrderField,
   type OrderSection,
 } from "@/lib/order-schema";
-import { canEditSection } from "@/lib/roles";
+import { canEditChild, canEditSection } from "@/lib/roles";
 import type { OrderDetail as OrderDetailData } from "@/lib/orders";
+import { OrderChildList } from "./order-children";
 
 type Row = Record<string, unknown>;
 
@@ -182,54 +185,6 @@ function EditableSection({
   );
 }
 
-function ReadOnlyList({
-  title,
-  rows,
-  columns,
-}: {
-  title: string;
-  rows: Row[];
-  columns: { key: string; label: string }[];
-}) {
-  return (
-    <section className="rounded-xl border border-card-border bg-surface p-6 shadow-sm">
-      <h2 className="mb-4 font-display text-base font-semibold text-foreground">
-        {title}
-      </h2>
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted">None recorded.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
-                {columns.map((c) => (
-                  <th key={c.key} className="px-3 py-2">
-                    {c.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-card-border">
-              {rows.map((row, i) => (
-                <tr key={i} className="text-foreground">
-                  {columns.map((c) => (
-                    <td key={c.key} className="px-3 py-2">
-                      {row[c.key] == null || row[c.key] === ""
-                        ? "—"
-                        : String(row[c.key])}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
-
 export function OrderDetail({
   detail,
   orderId,
@@ -281,23 +236,21 @@ export function OrderDetail({
           );
         })}
 
-        <ReadOnlyList
+        <OrderChildList
+          orderId={orderId}
+          table="order_pumps"
           title="Pumps"
+          fields={PUMP_FIELDS}
           rows={detail.order_pumps}
-          columns={[
-            { key: "pump_sno", label: "Pump S.No." },
-            { key: "orientation", label: "Orientation" },
-          ]}
+          canEdit={canEditChild(role, "order_pumps")}
         />
-        <ReadOnlyList
+        <OrderChildList
+          orderId={orderId}
+          table="order_lots"
           title="Dispatch Lots"
+          fields={LOT_FIELDS}
           rows={detail.order_lots}
-          columns={[
-            { key: "lot_no", label: "Lot No." },
-            { key: "lot_dispatch_date", label: "Dispatch Date" },
-            { key: "packing_slip_remark", label: "Packing Slip Remark" },
-            { key: "invoice_date", label: "Invoice Date" },
-          ]}
+          canEdit={canEditChild(role, "order_lots")}
         />
       </div>
     </div>

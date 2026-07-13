@@ -252,6 +252,28 @@ export const SECTION_BY_TABLE = new Map<OrderTable, OrderSection>(
   ORDER_SECTIONS.map((s) => [s.table, s])
 );
 
+// 1:many child tables (an order can have many pumps and many dispatch lots).
+export type ChildTable = "order_pumps" | "order_lots";
+
+export const PUMP_FIELDS: OrderField[] = [
+  { column: "pump_sno", label: "Pump S.No.", type: "text" },
+  { column: "orientation", label: "Orientation", type: "text" },
+];
+
+export const LOT_FIELDS: OrderField[] = [
+  { column: "lot_no", label: "Lot No.", type: "text" },
+  { column: "lot_dispatch_date", label: "Dispatch Date", type: "date" },
+  { column: "lr_no", label: "LR No.", type: "text" },
+  { column: "lr_date", label: "LR Date", type: "date" },
+  { column: "packing_slip_remark", label: "Packing Slip Remark", type: "text" },
+  { column: "invoice_date", label: "Invoice Date", type: "date" },
+];
+
+export const CHILD_FIELDS: Record<ChildTable, OrderField[]> = {
+  order_pumps: PUMP_FIELDS,
+  order_lots: LOT_FIELDS,
+};
+
 /** Coerce a raw form string to the storable value for a field type. */
 export function coerceField(
   type: OrderFieldType,

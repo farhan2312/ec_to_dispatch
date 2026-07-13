@@ -1,8 +1,10 @@
 import { pool, query } from "@/lib/db";
 import type { ParsedOrder } from "@/lib/excel-import";
 import {
+  CHILD_FIELDS,
   coerceField,
   SECTION_BY_TABLE,
+  type ChildTable,
   type OrderTable,
 } from "@/lib/order-schema";
 
@@ -205,6 +207,40 @@ export async function updateOrderSection(
   );
 }
 
+/** Add a blank child row (pump or lot) to an order; returns nothing. */
+export async function addChildRow(
+  table: ChildTable,
+  orderId: string
+): Promise<void> {
+  await query(`INSERT INTO ${table} (order_id) VALUES ($1)`, [orderId]);
+}
+
+/** Update a child row's fields (column-validated against the child schema). */
+export async function updateChildRow(
+  table: ChildTable,
+  id: string,
+  values: Record<string, string>
+): Promise<void> {
+  if (!UUID_RE.test(id)) return;
+  const byColumn = new Map(CHILD_FIELDS[table].map((f) => [f.column, f]));
+  const columns = Object.keys(values).filter((c) => byColumn.has(c));
+  if (columns.length === 0) return;
+  const coerced = columns.map((c) =>
+    coerceField(byColumn.get(c)!.type, values[c])
+  );
+  const setClause = columns.map((c, i) => `${c} = $${i + 2}`).join(", ");
+  await query(`UPDATE ${table} SET ${setClause} WHERE id = $1`, [id, ...coerced]);
+}
+
+/** Delete a child row by id. */
+export async function deleteChildRow(
+  table: ChildTable,
+  id: string
+): Promise<void> {
+  if (!UUID_RE.test(id)) return;
+  await query(`DELETE FROM ${table} WHERE id = $1`, [id]);
+}
+
 // 1:1 detail tables keyed by order_id.
 const DETAIL_TABLES = [
   "order_billing",
@@ -284,6 +320,46 @@ export async function insertParsedOrders(
   } finally {
     client.release();
   }
+}
+
+export type DispatchRegisterRow = {
+  id: string;
+  sl_no: number;
+  so_no: string | null;
+  ec_no: string | null;
+  party: string | null;
+  lot_no: string | null;
+  lot_dispatch_date: string | null;
+  lr_no: string | null;
+  lr_date: string | null;
+  invoice_date: string | null;
+  dispatch_status: string | null;
+};
+
+/**
+ * Dispatch register — every dispatched lot (has a dispatch date) with its LR
+ * and invoice details, for the "Dispatch Completed" oversight view.
+ */
+export async function listDispatchRegister(): Promise<DispatchRegisterRow[]> {
+  const result = await query<DispatchRegisterRow>(
+    `SELECT o.id,
+            o.sl_no::int AS sl_no,
+            o.so_no,
+            o.ec_no,
+            o.party,
+            l.lot_no,
+            to_char(l.lot_dispatch_date, 'YYYY-MM-DD') AS lot_dispatch_date,
+            l.lr_no,
+            to_char(l.lr_date, 'YYYY-MM-DD') AS lr_date,
+            to_char(l.invoice_date, 'YYYY-MM-DD') AS invoice_date,
+            ad.dispatch_status
+       FROM order_lots l
+       JOIN orders o ON o.id = l.order_id
+       LEFT JOIN order_assembly_dispatch ad ON ad.order_id = o.id
+      WHERE l.lot_dispatch_date IS NOT NULL
+      ORDER BY l.lot_dispatch_date DESC, o.sl_no ASC`
+  );
+  return result.rows;
 }
 
 export type OrderOverviewRow = {

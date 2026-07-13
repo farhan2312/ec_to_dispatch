@@ -5,8 +5,15 @@ import { useRouter } from "next/navigation";
 import { Check, Loader2 } from "lucide-react";
 import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
 import type { OrderField, OrderTable } from "@/lib/order-schema";
+import { Pagination, SearchInput, useTableSearch } from "./table-tools";
 
 type Row = Record<string, unknown>;
+
+function rowSearchText(o: Row): string {
+  return [o.sl_no, o.so_no, o.ec_no, o.party, o.item]
+    .map((v) => (v == null ? "" : String(v)))
+    .join(" ");
+}
 
 function toInput(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
@@ -79,6 +86,9 @@ export function DepartmentWorkspace({
     router.refresh();
   }
 
+  const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
+    useTableSearch(orders, rowSearchText);
+
   if (orders.length === 0) {
     return (
       <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
@@ -90,9 +100,21 @@ export function DepartmentWorkspace({
     );
   }
 
+  const colCount = 4 + readonlyFields.length + fields.length + (canEdit ? 1 : 0);
+
   return (
-    <div className="overflow-x-auto rounded-xl border border-card-border bg-surface shadow-sm">
-      <table className="w-full min-w-[900px] text-sm">
+    <div>
+      <div className="mb-3">
+        <SearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder="Search SO, EC, party, item…"
+        />
+      </div>
+
+      <div className="rounded-xl border border-card-border bg-surface shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-sm">
         <thead>
           <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
             <th className="px-4 py-3">Sl.</th>
@@ -116,7 +138,17 @@ export function DepartmentWorkspace({
           </tr>
         </thead>
         <tbody className="divide-y divide-card-border">
-          {orders.map((order) => {
+          {pageRows.length === 0 && (
+            <tr>
+              <td
+                colSpan={colCount}
+                className="px-4 py-10 text-center text-sm text-muted"
+              >
+                No orders match your search.
+              </td>
+            </tr>
+          )}
+          {pageRows.map((order) => {
             const id = String(order.id);
             return (
               <tr key={id} className="align-top text-foreground">
@@ -211,7 +243,17 @@ export function DepartmentWorkspace({
             );
           })}
         </tbody>
-      </table>
+          </table>
+        </div>
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          setPage={setPage}
+          from={from}
+          to={to}
+          total={total}
+        />
+      </div>
     </div>
   );
 }

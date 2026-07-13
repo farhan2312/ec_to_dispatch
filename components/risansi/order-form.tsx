@@ -70,6 +70,11 @@ const SECTIONS: Section[] = [
     title: "Commercial",
     fields: [
       { name: "project", label: "Project", type: "text" },
+      {
+        name: "master_reason_of_delay",
+        label: "Master Reason of Delay",
+        type: "text",
+      },
       { name: "order_value", label: "Order Value", type: "number" },
     ],
   },

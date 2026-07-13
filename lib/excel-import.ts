@@ -83,7 +83,7 @@ const MAPPINGS: Mapping[] = [
   { header: "Project", table: "orders", column: "project", type: "text" },
   { header: "Lot wise Packing slip remark", table: "order_lots", column: "packing_slip_remark", type: "text" },
   { header: "Remarks/Status/Reason of Delay", table: "order_assembly_dispatch", column: "delay_remarks", type: "text" },
-  { header: "Master Reason of Delay", table: "order_assembly_dispatch", column: "master_reason_of_delay", type: "text" },
+  { header: "Master Reason of Delay", table: "orders", column: "master_reason_of_delay", type: "text" },
   { header: "DISPATCH STATUS", table: "order_assembly_dispatch", column: "dispatch_status", type: "text" },
   { header: "LOT NO.", table: "order_lots", column: "lot_no", type: "text" },
   { header: "Lot Wise  Disp. Dt.", table: "order_lots", column: "lot_dispatch_date", type: "date" },

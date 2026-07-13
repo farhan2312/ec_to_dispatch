@@ -52,6 +52,7 @@ export type NewOrderInput = {
   liquid_application?: string;
   version?: string;
   project?: string;
+  master_reason_of_delay?: string;
   order_value?: string;
 };
 
@@ -83,9 +84,10 @@ export async function createOrder(
         so_no, ec_no, ec_generated_date, ec_rcvd_operations_date,
         ec_sent_production_date, file_no, client_code, client_type, party, agent,
         nature_of_supply, industry_type, item, po_no, customer_po_date, model_no,
-        pump_qty, orientation, liquid_application, version, project, order_value
+        pump_qty, orientation, liquid_application, version, project,
+        master_reason_of_delay, order_value
      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
      )
      RETURNING id, sl_no::int AS sl_no`,
     [
@@ -110,6 +112,7 @@ export async function createOrder(
       nullify(input.liquid_application),
       nullify(input.version),
       nullify(input.project),
+      nullify(input.master_reason_of_delay),
       toNumeric(input.order_value),
     ]
   );

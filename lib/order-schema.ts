@@ -94,6 +94,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "liquid_application", label: "Liquid / Application", type: "text" },
       { column: "version", label: "Version", type: "text" },
       { column: "project", label: "Project", type: "text" },
+      { column: "master_reason_of_delay", label: "Master Reason of Delay", type: "text" },
       { column: "order_value", label: "Order Value", type: "number" },
     ],
   },
@@ -237,7 +238,6 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "dispatch_team_target_date", label: "Target Date for Dispatch Team", type: "date" },
       { column: "actual_packing_date", label: "Actual Material Packing Date", type: "date" },
       { column: "delay_remarks", label: "Remarks / Reason of Delay", type: "text" },
-      { column: "master_reason_of_delay", label: "Master Reason of Delay", type: "text" },
       {
         column: "dispatch_status",
         label: "Dispatch Status",

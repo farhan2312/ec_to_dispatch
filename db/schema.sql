@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS orders (
     liquid_application       TEXT,           -- U  LIQUID/ APPLICATION
     version                  TEXT,           -- V  VERSION
     project                  TEXT,           -- BH Project
+    master_reason_of_delay   TEXT,           -- BK Master Reason of Delay (order-level)
     order_value              NUMERIC(14,2),  -- BP Order Value
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -191,7 +192,6 @@ CREATE TABLE IF NOT EXISTS order_assembly_dispatch (
     dispatch_team_target_date    DATE,  -- BE Target Date for Dispatch Team
     actual_packing_date          DATE,  -- BF ACTUAL Material Packing Date
     delay_remarks                TEXT,  -- BJ Remarks/Status/Reason of Delay
-    master_reason_of_delay       TEXT,  -- BK Master Reason of Delay
     dispatch_status              TEXT,  -- BL DISPATCH STATUS
     created_at                   TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at                   TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -251,3 +251,24 @@ CREATE TRIGGER order_planning_set_updated_at BEFORE UPDATE ON order_planning
 DROP TRIGGER IF EXISTS order_assembly_dispatch_set_updated_at ON order_assembly_dispatch;
 CREATE TRIGGER order_assembly_dispatch_set_updated_at BEFORE UPDATE ON order_assembly_dispatch
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- Move master_reason_of_delay from order_assembly_dispatch to orders (now an
+-- order-level field captured at creation). Idempotent: copies any existing
+-- values across, then drops the old column if it still exists.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS master_reason_of_delay TEXT;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_assembly_dispatch'
+           AND column_name = 'master_reason_of_delay'
+    ) THEN
+        UPDATE orders o
+           SET master_reason_of_delay = ad.master_reason_of_delay
+          FROM order_assembly_dispatch ad
+         WHERE ad.order_id = o.id
+           AND ad.master_reason_of_delay IS NOT NULL
+           AND o.master_reason_of_delay IS NULL;
+        ALTER TABLE order_assembly_dispatch DROP COLUMN master_reason_of_delay;
+    END IF;
+END $$;

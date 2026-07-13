@@ -50,6 +50,7 @@ export type NewOrderInput = {
   customer_po_date?: string;
   model_no?: string;
   pump_qty?: string;
+  pump_sno?: string;
   orientation?: string;
   liquid_application?: string;
   version?: string;
@@ -86,10 +87,10 @@ export async function createOrder(
         so_no, ec_no, ec_generated_date, ec_rcvd_operations_date,
         ec_sent_production_date, file_no, client_code, client_type, party, agent,
         nature_of_supply, industry_type, item, po_no, customer_po_date, model_no,
-        pump_qty, orientation, liquid_application, version, project,
+        pump_qty, pump_sno, orientation, liquid_application, version, project,
         master_reason_of_delay, order_value
      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
      )
      RETURNING id, sl_no::int AS sl_no`,
     [
@@ -110,6 +111,7 @@ export async function createOrder(
       nullify(input.customer_po_date),
       nullify(input.model_no),
       toInt(input.pump_qty),
+      nullify(input.pump_sno),
       nullify(input.orientation),
       nullify(input.liquid_application),
       nullify(input.version),
@@ -132,7 +134,6 @@ export type OrderDetail = {
   order_qc: Row | null;
   order_planning: Row | null;
   order_assembly_dispatch: Row | null;
-  order_pumps: Row[];
   order_lots: Row[];
 };
 
@@ -149,8 +150,6 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
         to_jsonb(qc) AS order_qc,
         to_jsonb(pl) AS order_planning,
         to_jsonb(ad) AS order_assembly_dispatch,
-        COALESCE((SELECT jsonb_agg(to_jsonb(p) ORDER BY p.created_at)
-                  FROM order_pumps p WHERE p.order_id = o.id), '[]'::jsonb) AS order_pumps,
         COALESCE((SELECT jsonb_agg(to_jsonb(l) ORDER BY l.created_at)
                   FROM order_lots l WHERE l.order_id = o.id), '[]'::jsonb) AS order_lots
        FROM orders o
@@ -253,7 +252,7 @@ const DETAIL_TABLES = [
 ] as const;
 
 // 1:many child tables (own id, FK order_id).
-const CHILD_TABLES = ["order_pumps", "order_lots"] as const;
+const CHILD_TABLES = ["order_lots"] as const;
 
 function insertSql(table: string, columns: string[]): string {
   const cols = columns.join(", ");

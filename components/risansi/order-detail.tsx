@@ -7,7 +7,6 @@ import { ArrowLeft, Loader2, Pencil } from "lucide-react";
 import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
 import {
   ORDER_SECTIONS,
-  PUMP_FIELDS,
   LOT_FIELDS,
   type OrderField,
   type OrderSection,
@@ -236,14 +235,6 @@ export function OrderDetail({
           );
         })}
 
-        <OrderChildList
-          orderId={orderId}
-          table="order_pumps"
-          title="Pumps"
-          fields={PUMP_FIELDS}
-          rows={detail.order_pumps}
-          canEdit={canEditChild(role, "order_pumps")}
-        />
         <OrderChildList
           orderId={orderId}
           table="order_lots"

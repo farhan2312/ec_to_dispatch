@@ -10,7 +10,6 @@ type TargetTable =
   | "order_qc"
   | "order_planning"
   | "order_assembly_dispatch"
-  | "order_pumps"
   | "order_lots";
 
 type ValueType = "text" | "date" | "int" | "numeric";
@@ -38,7 +37,7 @@ const MAPPINGS: Mapping[] = [
   { header: "Customer PO Date", table: "orders", column: "customer_po_date", type: "date" },
   { header: "Model No.", table: "orders", column: "model_no", type: "text" },
   { header: "IF PUMP (QTY)", table: "orders", column: "pump_qty", type: "int" },
-  { header: "PUMP S.NO.", table: "order_pumps", column: "pump_sno", type: "text" },
+  { header: "PUMP S.NO.", table: "orders", column: "pump_sno", type: "text" },
   { header: "ORIENTATION", table: "orders", column: "orientation", type: "text" },
   { header: "LIQUID/ APPLICATION", table: "orders", column: "liquid_application", type: "text" },
   { header: "VERSION", table: "orders", column: "version", type: "text" },

@@ -72,15 +72,8 @@ export function canSeeDispatched(role: string): boolean {
   return role === "admin" || role === "central_visibility";
 }
 
-/**
- * Who may edit an order's child rows. Pump serials belong to the core order
- * (Central Visibility); dispatch lots belong to Assembly & Dispatch.
- */
-export function canEditChild(
-  role: string,
-  table: "order_pumps" | "order_lots"
-): boolean {
-  if (table === "order_pumps") return canEditSection(role, "orders");
+/** Who may edit an order's dispatch lots — Assembly & Dispatch (+ oversight). */
+export function canEditChild(role: string, _table: "order_lots"): boolean {
   return canEditSection(role, "order_assembly_dispatch");
 }
 

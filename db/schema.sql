@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS orders (
     customer_po_date         DATE,           -- P  Customer PO Date
     model_no                 TEXT,           -- Q  Model No.
     pump_qty                 INTEGER,        -- R  IF PUMP (QTY)
+    pump_sno                 TEXT,           -- S  PUMP S.NO.
     orientation              TEXT,           -- T  ORIENTATION
     liquid_application       TEXT,           -- U  LIQUID/ APPLICATION
     version                  TEXT,           -- V  VERSION
@@ -152,9 +153,11 @@ CREATE TABLE IF NOT EXISTS order_purchase (
     pending_parts         TEXT,          -- AM PENDING PARTS / BOI Others
     boi_receipt_date      DATE,          -- AN BOI DATE RECEIPT DATE
     purchase_target_date  DATE,          -- AO Target Dt. For Purchase
+    remarks               TEXT,
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE order_purchase ADD COLUMN IF NOT EXISTS remarks TEXT;
 
 -- QC — cols AP–AS.
 CREATE TABLE IF NOT EXISTS order_qc (
@@ -163,9 +166,11 @@ CREATE TABLE IF NOT EXISTS order_qc (
     qc_doc_target_date     DATE,         -- AQ Target Dt. For Doc. Submission
     qc_doc_actual_date     DATE,         -- AR Actual Dt. Of Doc. Submission
     ld_applicable          TEXT,         -- AS LD (Yes)
+    remarks                TEXT,
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE order_qc ADD COLUMN IF NOT EXISTS remarks TEXT;
 
 -- Planning — cols AT–AX, BB, BC, BG.
 CREATE TABLE IF NOT EXISTS order_planning (
@@ -196,16 +201,6 @@ CREATE TABLE IF NOT EXISTS order_assembly_dispatch (
     created_at                   TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at                   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
--- Pumps for a pump order — col S (1:many when pump_qty > 1).
-CREATE TABLE IF NOT EXISTS order_pumps (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    order_id     UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-    pump_sno     TEXT,           -- S  PUMP S.NO.
-    orientation  TEXT,           -- optional per-unit override of orders.orientation
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS order_pumps_order_id_idx ON order_pumps (order_id);
 
 -- Dispatch lots — cols BI, BM, BN, BO (1:many).
 CREATE TABLE IF NOT EXISTS order_lots (
@@ -276,5 +271,28 @@ BEGIN
            AND ad.master_reason_of_delay IS NOT NULL
            AND o.master_reason_of_delay IS NULL;
         ALTER TABLE order_assembly_dispatch DROP COLUMN master_reason_of_delay;
+    END IF;
+END $$;
+
+-- Move pump serial onto the order itself (one PUMP S.NO. per order) and drop
+-- the former order_pumps child table. Idempotent.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS pump_sno TEXT;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.tables
+         WHERE table_name = 'order_pumps'
+    ) THEN
+        UPDATE orders o
+           SET pump_sno = p.pump_sno
+          FROM (
+            SELECT DISTINCT ON (order_id) order_id, pump_sno
+              FROM order_pumps
+             ORDER BY order_id, created_at
+          ) p
+         WHERE p.order_id = o.id
+           AND o.pump_sno IS NULL
+           AND p.pump_sno IS NOT NULL;
+        DROP TABLE order_pumps;
     END IF;
 END $$;

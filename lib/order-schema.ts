@@ -90,6 +90,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "customer_po_date", label: "Customer PO Date", type: "date" },
       { column: "model_no", label: "Model No.", type: "text" },
       { column: "pump_qty", label: "If Pump (Qty)", type: "int" },
+      { column: "pump_sno", label: "Pump S.No.", type: "text" },
       { column: "orientation", label: "Orientation", type: "text" },
       { column: "liquid_application", label: "Liquid / Application", type: "text" },
       { column: "version", label: "Version", type: "text" },
@@ -181,6 +182,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "pending_parts", label: "Pending Parts / BOI Others", type: "text" },
       { column: "boi_receipt_date", label: "BOI Receipt Date", type: "date" },
       { column: "purchase_target_date", label: "Target Date for Purchase", type: "date" },
+      { column: "remarks", label: "Remarks", type: "text" },
     ],
   },
   {
@@ -197,6 +199,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "qc_doc_target_date", label: "Target Date for Doc. Submission", type: "date" },
       { column: "qc_doc_actual_date", label: "Actual Date of Doc. Submission", type: "date" },
       { column: "ld_applicable", label: "LD", type: "select", options: YES_NO },
+      { column: "remarks", label: "Remarks", type: "text" },
     ],
   },
   {
@@ -252,13 +255,8 @@ export const SECTION_BY_TABLE = new Map<OrderTable, OrderSection>(
   ORDER_SECTIONS.map((s) => [s.table, s])
 );
 
-// 1:many child tables (an order can have many pumps and many dispatch lots).
-export type ChildTable = "order_pumps" | "order_lots";
-
-export const PUMP_FIELDS: OrderField[] = [
-  { column: "pump_sno", label: "Pump S.No.", type: "text" },
-  { column: "orientation", label: "Orientation", type: "text" },
-];
+// Dispatch lots are the one remaining 1:many child (an order can have many).
+export type ChildTable = "order_lots";
 
 export const LOT_FIELDS: OrderField[] = [
   { column: "lot_no", label: "Lot No.", type: "text" },
@@ -270,7 +268,6 @@ export const LOT_FIELDS: OrderField[] = [
 ];
 
 export const CHILD_FIELDS: Record<ChildTable, OrderField[]> = {
-  order_pumps: PUMP_FIELDS,
   order_lots: LOT_FIELDS,
 };
 

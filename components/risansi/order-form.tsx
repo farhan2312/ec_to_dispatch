@@ -61,6 +61,7 @@ const SECTIONS: Section[] = [
       { name: "customer_po_date", label: "Customer PO Date", type: "date" },
       { name: "model_no", label: "Model No.", type: "text" },
       { name: "pump_qty", label: "If Pump (Qty)", type: "number" },
+      { name: "pump_sno", label: "Pump S.No.", type: "text" },
       { name: "orientation", label: "Orientation", type: "text" },
       { name: "liquid_application", label: "Liquid / Application", type: "text" },
       { name: "version", label: "Version", type: "text" },

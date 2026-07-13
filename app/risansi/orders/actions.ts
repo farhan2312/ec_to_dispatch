@@ -87,7 +87,7 @@ export type ChildActionResult = { ok: true } | { ok: false; error: string };
 async function guardChild(table: string): Promise<ChildActionResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
-  if (table !== "order_pumps" && table !== "order_lots") {
+  if (table !== "order_lots") {
     return { ok: false, error: "Unknown list." };
   }
   if (!canEditChild(user.role, table)) {

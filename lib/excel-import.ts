@@ -41,7 +41,7 @@ const MAPPINGS: Mapping[] = [
   { header: "ORIENTATION", table: "orders", column: "orientation", type: "text" },
   { header: "LIQUID/ APPLICATION", table: "orders", column: "liquid_application", type: "text" },
   { header: "VERSION", table: "orders", column: "version", type: "text" },
-  { header: "Payment Terms", table: "order_billing", column: "payment_terms", type: "text" },
+  { header: "Payment Terms", table: "orders", column: "payment_terms", type: "text" },
   { header: "Freight Terms", table: "order_billing", column: "freight_terms", type: "text" },
   { header: "Packing Requirement", table: "order_billing", column: "packing_requirement", type: "text" },
   { header: "PI No.", table: "order_billing", column: "pi_no", type: "text" },

@@ -95,6 +95,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "liquid_application", label: "Liquid / Application", type: "text" },
       { column: "version", label: "Version", type: "text" },
       { column: "project", label: "Project", type: "text" },
+      { column: "payment_terms", label: "Payment Terms", type: "text" },
       { column: "master_reason_of_delay", label: "Master Reason of Delay", type: "text" },
       { column: "ld", label: "LD", type: "select", options: YES_NO },
       { column: "dispatch_target_date", label: "Dispatch Target Date", type: "date" },
@@ -112,7 +113,6 @@ export const ORDER_SECTIONS: OrderSection[] = [
     title: "Billing & Operations",
     table: "order_billing",
     fields: [
-      { column: "payment_terms", label: "Payment Terms", type: "text" },
       {
         column: "freight_terms",
         label: "Freight Terms",
@@ -266,7 +266,7 @@ export type ChildTable = "order_lots";
 
 export const LOT_FIELDS: OrderField[] = [
   { column: "lot_no", label: "Lot No.", type: "text" },
-  { column: "lot_dispatch_date", label: "Dispatch Date", type: "date" },
+  { column: "lot_dispatch_date", label: "Lot Wise Dispatch Date", type: "date" },
   { column: "lr_no", label: "LR No.", type: "text" },
   { column: "lr_date", label: "LR Date", type: "date" },
   { column: "packing_slip_remark", label: "Packing Slip Remark", type: "text" },
@@ -276,6 +276,12 @@ export const LOT_FIELDS: OrderField[] = [
 export const CHILD_FIELDS: Record<ChildTable, OrderField[]> = {
   order_lots: LOT_FIELDS,
 };
+
+// Payment Terms (owned by Central Visibility) shown read-only in the Billing &
+// Operations and Accounts workspaces.
+export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
+  { column: "payment_terms", label: "Payment Terms", type: "text" },
+];
 
 // Order-level fields (owned by Central Visibility) shown read-only in the
 // Planning workspace, so Planning sees the dispatch dates it must schedule to.

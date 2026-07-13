@@ -94,6 +94,7 @@ CREATE TABLE IF NOT EXISTS orders (
     liquid_application       TEXT,           -- U  LIQUID/ APPLICATION
     version                  TEXT,           -- V  VERSION
     project                  TEXT,           -- BH Project
+    payment_terms            TEXT,           -- W  Payment Terms (Central Visibility-owned)
     master_reason_of_delay   TEXT,           -- BK Master Reason of Delay (order-level)
     ld                       TEXT,           -- LD applicable (Yes/No), set by Central Visibility
     dispatch_target_date     DATE,           -- AU DISP. TARGET DT. (set after payment confirmation)
@@ -108,7 +109,6 @@ CREATE INDEX IF NOT EXISTS orders_ec_no_idx ON orders (ec_no);
 -- Billing & Operations / PI — cols W–AB.
 CREATE TABLE IF NOT EXISTS order_billing (
     order_id             UUID PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
-    payment_terms        TEXT,           -- W  Payment Terms
     freight_terms        TEXT,           -- X  Freight Terms
     packing_requirement  TEXT,           -- Y  Packing Requirement
     pi_no                TEXT,           -- Z  PI No.
@@ -202,6 +202,25 @@ CREATE TABLE IF NOT EXISTS order_assembly_dispatch (
     created_at                   TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at                   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE order_assembly_dispatch DROP COLUMN IF EXISTS full_dispatch_date;
+
+-- Payment Terms move to the order (filled by Central Visibility); Billing &
+-- Operations and Accounts see it read-only. Idempotent.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_terms TEXT;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_billing'
+           AND column_name = 'payment_terms'
+    ) THEN
+        UPDATE orders o
+           SET payment_terms = COALESCE(o.payment_terms, b.payment_terms)
+          FROM order_billing b
+         WHERE b.order_id = o.id;
+        ALTER TABLE order_billing DROP COLUMN payment_terms;
+    END IF;
+END $$;
 
 -- Dispatch lots — cols BI, BM, BN, BO (1:many).
 CREATE TABLE IF NOT EXISTS order_lots (

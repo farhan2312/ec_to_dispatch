@@ -77,6 +77,7 @@ const SECTIONS: Section[] = [
     title: "Commercial & Dispatch",
     fields: [
       { name: "project", label: "Project", type: "text" },
+      { name: "payment_terms", label: "Payment Terms", type: "text" },
       {
         name: "master_reason_of_delay",
         label: "Master Reason of Delay",

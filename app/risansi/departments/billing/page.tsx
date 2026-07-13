@@ -4,7 +4,10 @@ import { Receipt } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditSection } from "@/lib/roles";
 import { listOrdersForSection } from "@/lib/orders";
-import { SECTION_BY_TABLE } from "@/lib/order-schema";
+import {
+  PAYMENT_TERMS_CONTEXT_FIELDS,
+  SECTION_BY_TABLE,
+} from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
 
 export const metadata: Metadata = {
@@ -21,7 +24,10 @@ export default async function BillingWorkspacePage() {
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
   const section = SECTION_BY_TABLE.get(TABLE)!;
-  const orders = await listOrdersForSection(TABLE);
+  const orders = await listOrdersForSection(
+    TABLE,
+    PAYMENT_TERMS_CONTEXT_FIELDS.map((f) => ({ column: f.column, type: f.type }))
+  );
 
   return (
     <div className="px-8 py-8">
@@ -34,12 +40,18 @@ export default async function BillingWorkspacePage() {
             Billing &amp; Operations
           </h1>
           <p className="text-sm text-muted">
-            Update PI, payment terms and packing for each order.
+            Update PI, freight and packing. Payment Terms is set by Central
+            Visibility.
           </p>
         </div>
       </div>
 
-      <DepartmentWorkspace table={TABLE} fields={section.fields} orders={orders} />
+      <DepartmentWorkspace
+        table={TABLE}
+        fields={section.fields}
+        orders={orders}
+        readonlyFields={PAYMENT_TERMS_CONTEXT_FIELDS}
+      />
     </div>
   );
 }

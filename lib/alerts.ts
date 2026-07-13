@@ -18,20 +18,22 @@ const ALERTS_SQL = `
   -- Drawing not sent by its target date
   SELECT o.id, o.sl_no::int AS sl_no, o.so_no, o.ec_no, o.party,
          'Drawing'::text AS department, 'overdue'::text AS type,
-         to_char(dr.drg_target_date, 'YYYY-MM-DD') AS due_date,
-         (CURRENT_DATE - dr.drg_target_date)::int AS days_overdue
+         to_char(o.drg_target_date, 'YYYY-MM-DD') AS due_date,
+         (CURRENT_DATE - o.drg_target_date)::int AS days_overdue
     FROM orders o JOIN order_drawing dr ON dr.order_id = o.id
-   WHERE dr.drg_target_date < CURRENT_DATE
+   WHERE o.drg_target_date < CURRENT_DATE
      AND dr.drg_sent_to_client_date IS NULL
 
   UNION ALL
   -- Purchase (BOI) not received by its target date
   SELECT o.id, o.sl_no::int, o.so_no, o.ec_no, o.party,
          'Purchase'::text, 'overdue'::text,
-         to_char(pu.purchase_target_date, 'YYYY-MM-DD'),
-         (CURRENT_DATE - pu.purchase_target_date)::int
-    FROM orders o JOIN order_purchase pu ON pu.order_id = o.id
-   WHERE pu.purchase_target_date < CURRENT_DATE
+         to_char(pl.purchase_target_date, 'YYYY-MM-DD'),
+         (CURRENT_DATE - pl.purchase_target_date)::int
+    FROM orders o
+    JOIN order_planning pl ON pl.order_id = o.id
+    LEFT JOIN order_purchase pu ON pu.order_id = o.id
+   WHERE pl.purchase_target_date < CURRENT_DATE
      AND pu.boi_receipt_date IS NULL
 
   UNION ALL

@@ -105,6 +105,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
         type: "date",
         dependsOn: { column: "ld", value: "Yes" },
       },
+      { column: "drg_target_date", label: "Target Date for DRG", type: "date" },
       { column: "order_value", label: "Order Value", type: "number" },
     ],
   },
@@ -162,7 +163,6 @@ export const ORDER_SECTIONS: OrderSection[] = [
       },
       { column: "drg_sent_to_client_date", label: "DRG Sent to Client", type: "date" },
       { column: "drg_approval_date", label: "DRG Approval Date", type: "date" },
-      { column: "drg_target_date", label: "Target Date for DRG", type: "date" },
     ],
   },
   {
@@ -189,7 +189,6 @@ export const ORDER_SECTIONS: OrderSection[] = [
       },
       { column: "pending_parts", label: "Pending Parts / BOI Others", type: "text" },
       { column: "boi_receipt_date", label: "BOI Receipt Date", type: "date" },
-      { column: "purchase_target_date", label: "Target Date for Purchase", type: "date" },
       { column: "remarks", label: "Remarks", type: "text" },
     ],
   },
@@ -206,7 +205,6 @@ export const ORDER_SECTIONS: OrderSection[] = [
       },
       { column: "qc_doc_target_date", label: "Target Date for Doc. Submission", type: "date" },
       { column: "qc_doc_actual_date", label: "Actual Date of Doc. Submission", type: "date" },
-      { column: "ld_applicable", label: "LD", type: "select", options: YES_NO },
       { column: "remarks", label: "Remarks", type: "text" },
     ],
   },
@@ -216,6 +214,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
     table: "order_planning",
     fields: [
       { column: "ld_date", label: "LD Date", type: "date" },
+      { column: "purchase_target_date", label: "Target Date for Purchase", type: "date" },
       { column: "planning_documents_required", label: "Documents Required from Planning", type: "text" },
       { column: "pump_readiness_remarks", label: "Pump Readiness Remarks", type: "text" },
       { column: "planning_readiness_date", label: "Readiness Date Rcvd from Planning", type: "date" },
@@ -281,6 +280,16 @@ export const CHILD_FIELDS: Record<ChildTable, OrderField[]> = {
 // Operations and Accounts workspaces.
 export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
   { column: "payment_terms", label: "Payment Terms", type: "text" },
+];
+
+// Target Date for DRG (owned by Central Visibility) shown read-only in Drawing.
+export const DRAWING_CONTEXT_FIELDS: OrderField[] = [
+  { column: "drg_target_date", label: "Target Date for DRG", type: "date" },
+];
+
+// Target Date for Purchase (owned by Planning) shown read-only in Purchase.
+export const PURCHASE_CONTEXT_FIELDS: OrderField[] = [
+  { column: "purchase_target_date", label: "Target Date for Purchase", type: "date" },
 ];
 
 // Order-level fields (owned by Central Visibility) shown read-only in the

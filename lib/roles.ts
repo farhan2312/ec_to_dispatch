@@ -34,14 +34,15 @@ export const REQUESTABLE_ROLES: Role[] = [
 ];
 
 // The single department role that owns (can edit) each order section table.
-// The core `orders` identity is owned by Central Visibility.
+// The core `orders` identity and the QC section are owned by Central Visibility
+// (Mitali fills QC; the QC role only views it).
 const TABLE_OWNER: Record<OrderTable, Role> = {
   orders: "central_visibility",
   order_billing: "operations",
   order_accounts: "accounts",
   order_drawing: "drawing",
   order_purchase: "purchase",
-  order_qc: "qc",
+  order_qc: "central_visibility",
   order_planning: "planning",
   order_assembly_dispatch: "dispatch",
 };
@@ -50,6 +51,16 @@ const TABLE_OWNER: Record<OrderTable, Role> = {
 export function canEditSection(role: string, table: OrderTable): boolean {
   if (role === "admin" || role === "central_visibility") return true;
   return TABLE_OWNER[table] === role;
+}
+
+/**
+ * Who can open a department workspace (view). Same as edit access, except the
+ * `qc` role can view the QC workspace even though Mitali owns editing.
+ */
+export function canAccessDepartment(role: string, table: OrderTable): boolean {
+  if (canEditSection(role, table)) return true;
+  if (table === "order_qc" && role === "qc") return true;
+  return false;
 }
 
 /** Only Admin and Central Visibility may create orders (form or Excel import). */

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ClipboardCheck } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canEditSection } from "@/lib/roles";
+import { canAccessDepartment, canEditSection } from "@/lib/roles";
 import { listOrdersForSection } from "@/lib/orders";
 import { SECTION_BY_TABLE } from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
@@ -18,8 +18,10 @@ const TABLE = "order_qc" as const;
 export default async function QcWorkspacePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
+  if (!canAccessDepartment(user.role, TABLE)) redirect("/risansi/dashboard");
 
+  // QC attributes are filled by Central Visibility; the QC role only views them.
+  const canEdit = canEditSection(user.role, TABLE);
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const orders = await listOrdersForSection(TABLE);
 
@@ -34,12 +36,19 @@ export default async function QcWorkspacePage() {
             QC
           </h1>
           <p className="text-sm text-muted">
-            Track QC documents, submission dates and LD applicability.
+            {canEdit
+              ? "QC documents and submission dates for each order."
+              : "QC documents and submission dates (set by Central Visibility)."}
           </p>
         </div>
       </div>
 
-      <DepartmentWorkspace table={TABLE} fields={section.fields} orders={orders} />
+      <DepartmentWorkspace
+        table={TABLE}
+        fields={section.fields}
+        orders={orders}
+        canEdit={canEdit}
+      />
     </div>
   );
 }

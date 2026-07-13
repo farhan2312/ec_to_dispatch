@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS orders (
     ld                       TEXT,           -- LD applicable (Yes/No), set by Central Visibility
     dispatch_target_date     DATE,           -- AU DISP. TARGET DT. (set after payment confirmation)
     dispatch_target_revised_date DATE,       -- AV Revise Disp. Target Dt (when LD)
+    drg_target_date          DATE,           -- AG Target Dt. For Drg (Central Visibility-owned)
     order_value              NUMERIC(14,2),  -- BP Order Value
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -140,7 +141,6 @@ CREATE TABLE IF NOT EXISTS order_drawing (
     drg_status               TEXT,       -- AD DRG. Status
     drg_sent_to_client_date  DATE,       -- AE DRG SENT TO CLIENT Dt.
     drg_approval_date        DATE,       -- AF DRG. Approval Date
-    drg_target_date          DATE,       -- AG Target Dt. For Drg
     created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -155,7 +155,6 @@ CREATE TABLE IF NOT EXISTS order_purchase (
     motor_status          TEXT,          -- AL MOTOR STATUS
     pending_parts         TEXT,          -- AM PENDING PARTS / BOI Others
     boi_receipt_date      DATE,          -- AN BOI DATE RECEIPT DATE
-    purchase_target_date  DATE,          -- AO Target Dt. For Purchase
     remarks               TEXT,
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -168,7 +167,6 @@ CREATE TABLE IF NOT EXISTS order_qc (
     required_qc_documents  TEXT,         -- AP Required QC Documents
     qc_doc_target_date     DATE,         -- AQ Target Dt. For Doc. Submission
     qc_doc_actual_date     DATE,         -- AR Actual Dt. Of Doc. Submission
-    ld_applicable          TEXT,         -- AS LD (Yes)
     remarks                TEXT,
     created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -179,6 +177,7 @@ ALTER TABLE order_qc ADD COLUMN IF NOT EXISTS remarks TEXT;
 CREATE TABLE IF NOT EXISTS order_planning (
     order_id                      UUID PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
     ld_date                       DATE,  -- AT LD Date
+    purchase_target_date          DATE,  -- AO Target Dt. For Purchase (filled by Planning)
     planning_documents_required   TEXT,  -- AW Documents Required from Planning
     pump_readiness_remarks        TEXT,  -- AX Pump Readiness Remarks
     planning_readiness_date       DATE,  -- BB Readiness Dt. Rcvd from Planning
@@ -219,6 +218,65 @@ BEGIN
           FROM order_billing b
          WHERE b.order_id = o.id;
         ALTER TABLE order_billing DROP COLUMN payment_terms;
+    END IF;
+END $$;
+
+-- Target Date for DRG moves to the order (filled by Central Visibility);
+-- Drawing sees it read-only. Idempotent.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS drg_target_date DATE;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_drawing' AND column_name = 'drg_target_date'
+    ) THEN
+        UPDATE orders o
+           SET drg_target_date = COALESCE(o.drg_target_date, dr.drg_target_date)
+          FROM order_drawing dr
+         WHERE dr.order_id = o.id;
+        ALTER TABLE order_drawing DROP COLUMN drg_target_date;
+    END IF;
+END $$;
+
+-- Target Date for Purchase moves to Planning (filled by Planning); Purchase
+-- sees it read-only. Idempotent.
+ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS purchase_target_date DATE;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_purchase' AND column_name = 'purchase_target_date'
+    ) THEN
+        -- ensure a planning row exists for orders that carry a purchase target
+        INSERT INTO order_planning (order_id)
+            SELECT pu.order_id FROM order_purchase pu
+             WHERE pu.purchase_target_date IS NOT NULL
+               AND NOT EXISTS (
+                 SELECT 1 FROM order_planning pl WHERE pl.order_id = pu.order_id
+               );
+        UPDATE order_planning pl
+           SET purchase_target_date = pu.purchase_target_date
+          FROM order_purchase pu
+         WHERE pu.order_id = pl.order_id
+           AND pu.purchase_target_date IS NOT NULL
+           AND pl.purchase_target_date IS NULL;
+        ALTER TABLE order_purchase DROP COLUMN purchase_target_date;
+    END IF;
+END $$;
+
+-- LD is an order-level flag (orders.ld), not a QC attribute. Migrate any QC
+-- ld_applicable values onto orders.ld, then drop the QC column. Idempotent.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_qc' AND column_name = 'ld_applicable'
+    ) THEN
+        UPDATE orders o
+           SET ld = COALESCE(o.ld, qc.ld_applicable)
+          FROM order_qc qc
+         WHERE qc.order_id = o.id AND qc.ld_applicable IS NOT NULL;
+        ALTER TABLE order_qc DROP COLUMN ld_applicable;
     END IF;
 END $$;
 

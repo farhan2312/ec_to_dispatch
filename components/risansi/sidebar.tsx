@@ -25,7 +25,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { logout } from "@/app/risansi/actions";
-import { canEditSection, canSeeDispatched, canSeeEscalations } from "@/lib/roles";
+import {
+  canAccessDepartment,
+  canSeeDispatched,
+  canSeeEscalations,
+} from "@/lib/roles";
 import type { OrderTable } from "@/lib/order-schema";
 import { ThemeToggle } from "./theme-toggle";
 import { ChangePasswordModal } from "./change-password-modal";
@@ -112,7 +116,7 @@ export function Sidebar({
     .toUpperCase();
 
   const visibleDepartments = DEPARTMENT_NAV.filter((item) =>
-    canEditSection(user.role, item.table)
+    canAccessDepartment(user.role, item.table)
   );
 
   function NavLink({ item }: { item: NavItem }) {

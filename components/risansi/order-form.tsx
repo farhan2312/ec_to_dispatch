@@ -95,6 +95,11 @@ const SECTIONS: Section[] = [
         type: "date",
         dependsOn: { name: "ld", value: "Yes" },
       },
+      {
+        name: "drg_target_date",
+        label: "Target Date for DRG",
+        type: "date",
+      },
       { name: "order_value", label: "Order Value", type: "number" },
     ],
   },

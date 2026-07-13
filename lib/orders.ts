@@ -60,6 +60,7 @@ export type NewOrderInput = {
   ld?: string;
   dispatch_target_date?: string;
   dispatch_target_revised_date?: string;
+  drg_target_date?: string;
   order_value?: string;
 };
 
@@ -93,10 +94,10 @@ export async function createOrder(
         nature_of_supply, industry_type, item, po_no, customer_po_date, model_no,
         pump_qty, pump_sno, orientation, liquid_application, version, project,
         payment_terms, master_reason_of_delay, ld, dispatch_target_date,
-        dispatch_target_revised_date, order_value
+        dispatch_target_revised_date, drg_target_date, order_value
      ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,
-        $23,$24,$25,$26,$27,$28
+        $23,$24,$25,$26,$27,$28,$29
      )
      RETURNING id, sl_no::int AS sl_no`,
     [
@@ -127,6 +128,7 @@ export async function createOrder(
       nullify(input.ld),
       nullify(input.dispatch_target_date),
       nullify(input.dispatch_target_revised_date),
+      nullify(input.drg_target_date),
       toNumeric(input.order_value),
     ]
   );
@@ -457,7 +459,7 @@ export async function listPaymentHolds(): Promise<PaymentHoldRow[]> {
  */
 export async function listOrdersForSection(
   table: OrderTable,
-  contextColumns: { column: string; type: string }[] = []
+  contextColumns: { column: string; type: string; from?: OrderTable }[] = []
 ): Promise<Record<string, unknown>[]> {
   const section = SECTION_BY_TABLE.get(table);
   if (!section || table === "orders") return [];
@@ -474,14 +476,28 @@ export async function listOrdersForSection(
     })
     .join(", ");
 
-  // Order-level read-only context columns (e.g. dispatch dates for Planning).
+  // Read-only context columns, each from `orders` (o), the section table (d),
+  // or another detail table which we LEFT JOIN with its own alias.
+  const extraJoins = new Map<string, string>();
   const contextSelects = contextColumns
-    .map((f) =>
-      f.type === "date"
-        ? `, to_char(o.${f.column}, 'YYYY-MM-DD') AS ${f.column}`
-        : `, o.${f.column}`
-    )
+    .map((f) => {
+      const from = f.from ?? "orders";
+      let alias: string;
+      if (from === "orders") alias = "o";
+      else if (from === table) alias = "d";
+      else {
+        alias = from;
+        extraJoins.set(from, alias);
+      }
+      return f.type === "date"
+        ? `, to_char(${alias}.${f.column}, 'YYYY-MM-DD') AS ${f.column}`
+        : `, ${alias}.${f.column}`;
+    })
     .join("");
+
+  const extraJoinSql = [...extraJoins.entries()]
+    .map(([t, a]) => `LEFT JOIN ${t} ${a} ON ${a}.order_id = o.id`)
+    .join("\n       ");
 
   const result = await query<Record<string, unknown>>(
     `SELECT o.id,
@@ -493,6 +509,7 @@ export async function listOrdersForSection(
             ${detailSelects}${contextSelects}
        FROM orders o
        LEFT JOIN ${table} d ON d.order_id = o.id
+       ${extraJoinSql}
       ORDER BY o.sl_no ASC`
   );
   return result.rows;

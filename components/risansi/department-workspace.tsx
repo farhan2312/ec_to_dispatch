@@ -33,11 +33,13 @@ export function DepartmentWorkspace({
   fields,
   orders,
   readonlyFields = [],
+  canEdit = true,
 }: {
   table: OrderTable;
   fields: OrderField[];
   orders: Row[];
   readonlyFields?: OrderField[];
+  canEdit?: boolean;
 }) {
   const router = useRouter();
 
@@ -110,7 +112,7 @@ export function DepartmentWorkspace({
                 {f.label}
               </th>
             ))}
-            <th className="px-4 py-3"></th>
+            {canEdit && <th className="px-4 py-3"></th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-card-border">
@@ -143,7 +145,11 @@ export function DepartmentWorkspace({
                     : false;
                   return (
                   <td key={f.column} className="px-3 py-2">
-                    {f.type === "select" ? (
+                    {!canEdit ? (
+                      <span className="text-muted">
+                        {formatReadonly(f, order[f.column])}
+                      </span>
+                    ) : f.type === "select" ? (
                       <select
                         value={values[id]?.[f.column] ?? ""}
                         onChange={(e) => update(id, f.column, e.target.value)}
@@ -175,26 +181,32 @@ export function DepartmentWorkspace({
                   </td>
                   );
                 })}
-                <td className="px-4 py-2 whitespace-nowrap">
-                  <button
-                    type="button"
-                    onClick={() => save(id)}
-                    disabled={!dirty[id] || savingId === id}
-                    className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {savingId === id ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : savedId === id ? (
-                      <Check className="h-3.5 w-3.5" />
-                    ) : null}
-                    {savingId === id ? "Saving" : savedId === id ? "Saved" : "Save"}
-                  </button>
-                  {errorId === id && (
-                    <p className="mt-1 text-[11px] text-danger">
-                      Couldn&apos;t save
-                    </p>
-                  )}
-                </td>
+                {canEdit && (
+                  <td className="px-4 py-2 whitespace-nowrap">
+                    <button
+                      type="button"
+                      onClick={() => save(id)}
+                      disabled={!dirty[id] || savingId === id}
+                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {savingId === id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : savedId === id ? (
+                        <Check className="h-3.5 w-3.5" />
+                      ) : null}
+                      {savingId === id
+                        ? "Saving"
+                        : savedId === id
+                          ? "Saved"
+                          : "Save"}
+                    </button>
+                    {errorId === id && (
+                      <p className="mt-1 text-[11px] text-danger">
+                        Couldn&apos;t save
+                      </p>
+                    )}
+                  </td>
+                )}
               </tr>
             );
           })}

@@ -45,14 +45,14 @@ export default async function ImportOrdersPage() {
 
         <HeaderReference
           title="System-generated import"
-          description="The core order columns filled at intake (SO/EC, client, item, pump). Use this to add new orders; departments fill their sections in the app afterwards."
+          description="The core order columns filled at intake (SO/EC, client, item, pump). Use this to add new orders; departments fill their sections in the app afterwards. Date format is dd/mm/yyyy."
           headers={SYSTEM_GENERATED_HEADERS}
           templateType="system"
         />
 
         <HeaderReference
           title="Full (bulk) import"
-          description="Every tracked column across all departments — for migrating a complete tracker. Include only the columns you have; unknown headers are ignored and blank cells are left empty."
+          description="Every tracked column across all departments — for migrating a complete tracker. Include only the columns you have; unknown headers are ignored and blank cells are left empty. Date format is dd/mm/yyyy."
           headers={BULK_HEADERS}
           templateType="bulk"
         />

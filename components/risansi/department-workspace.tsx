@@ -1,25 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2 } from "lucide-react";
+import { Loader2, Pencil, X } from "lucide-react";
 import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
-import type { OrderField, OrderTable } from "@/lib/order-schema";
+import {
+  SECTION_BY_TABLE,
+  type OrderField,
+  type OrderTable,
+} from "@/lib/order-schema";
 import { Pagination, SearchInput, useTableSearch } from "./table-tools";
 
 type Row = Record<string, unknown>;
-
-function rowSearchText(o: Row): string {
-  return [o.sl_no, o.so_no, o.ec_no, o.party, o.item]
-    .map((v) => (v == null ? "" : String(v)))
-    .join(" ");
-}
 
 function toInput(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
-function formatReadonly(field: OrderField, value: unknown): string {
+function formatValue(field: OrderField, value: unknown): string {
   const s = toInput(value);
   if (s === "") return "—";
   if (field.type === "date") {
@@ -35,6 +33,12 @@ function formatReadonly(field: OrderField, value: unknown): string {
   return s;
 }
 
+function rowSearchText(o: Row): string {
+  return [o.sl_no, o.so_no, o.ec_no, o.party, o.item]
+    .map((v) => (v == null ? "" : String(v)))
+    .join(" ");
+}
+
 export function DepartmentWorkspace({
   table,
   fields,
@@ -48,43 +52,7 @@ export function DepartmentWorkspace({
   readonlyFields?: OrderField[];
   canEdit?: boolean;
 }) {
-  const router = useRouter();
-
-  // Per-row editable values, keyed by order id.
-  const [values, setValues] = useState<Record<string, Record<string, string>>>(
-    () =>
-      Object.fromEntries(
-        orders.map((o) => [
-          String(o.id),
-          Object.fromEntries(fields.map((f) => [f.column, toInput(o[f.column])])),
-        ])
-      )
-  );
-  const [dirty, setDirty] = useState<Record<string, boolean>>({});
-  const [savingId, setSavingId] = useState<string | null>(null);
-  const [savedId, setSavedId] = useState<string | null>(null);
-  const [errorId, setErrorId] = useState<string | null>(null);
-
-  function update(id: string, column: string, value: string) {
-    setValues((prev) => ({ ...prev, [id]: { ...prev[id], [column]: value } }));
-    setDirty((prev) => ({ ...prev, [id]: true }));
-    setSavedId(null);
-    setErrorId(null);
-  }
-
-  async function save(id: string) {
-    setSavingId(id);
-    setErrorId(null);
-    const result = await updateOrderSectionAction(id, table, values[id]);
-    setSavingId(null);
-    if (!result.ok) {
-      setErrorId(id);
-      return;
-    }
-    setDirty((prev) => ({ ...prev, [id]: false }));
-    setSavedId(id);
-    router.refresh();
-  }
+  const [editRow, setEditRow] = useState<Row | null>(null);
 
   const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
     useTableSearch(orders, rowSearchText);
@@ -101,6 +69,7 @@ export function DepartmentWorkspace({
   }
 
   const colCount = 4 + readonlyFields.length + fields.length + (canEdit ? 1 : 0);
+  const title = SECTION_BY_TABLE.get(table)?.title ?? "Details";
 
   return (
     <div>
@@ -115,134 +84,79 @@ export function DepartmentWorkspace({
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-sm">
-        <thead>
-          <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
-            <th className="px-4 py-3">Sl.</th>
-            <th className="px-4 py-3">SO No.</th>
-            <th className="px-4 py-3">EC No.</th>
-            <th className="px-4 py-3">Party</th>
-            {readonlyFields.map((f) => (
-              <th
-                key={f.column}
-                className="px-3 py-3 whitespace-nowrap text-muted-foreground"
-              >
-                {f.label}
-              </th>
-            ))}
-            {fields.map((f) => (
-              <th key={f.column} className="px-3 py-3 whitespace-nowrap">
-                {f.label}
-              </th>
-            ))}
-            {canEdit && <th className="px-4 py-3"></th>}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-card-border">
-          {pageRows.length === 0 && (
-            <tr>
-              <td
-                colSpan={colCount}
-                className="px-4 py-10 text-center text-sm text-muted"
-              >
-                No orders match your search.
-              </td>
-            </tr>
-          )}
-          {pageRows.map((order) => {
-            const id = String(order.id);
-            return (
-              <tr key={id} className="align-top text-foreground">
-                <td className="px-4 py-3 font-medium tabular-nums">
-                  {String(order.sl_no ?? "—")}
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap">
-                  {toInput(order.so_no) || "—"}
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap">
-                  {toInput(order.ec_no) || "—"}
-                </td>
-                <td className="px-4 py-3">{toInput(order.party) || "—"}</td>
+            <thead>
+              <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
+                <th className="px-4 py-3">Sl.</th>
+                <th className="px-4 py-3">SO No.</th>
+                <th className="px-4 py-3">EC No.</th>
+                <th className="px-4 py-3">Party</th>
                 {readonlyFields.map((f) => (
-                  <td
+                  <th
                     key={f.column}
-                    className="px-3 py-3 whitespace-nowrap text-muted"
+                    className="px-3 py-3 whitespace-nowrap text-muted-foreground"
                   >
-                    {formatReadonly(f, order[f.column])}
-                  </td>
+                    {f.label}
+                  </th>
                 ))}
-                {fields.map((f) => {
-                  const disabled = f.dependsOn
-                    ? (values[id]?.[f.dependsOn.column] ?? "") !==
-                      f.dependsOn.value
-                    : false;
-                  return (
-                  <td key={f.column} className="px-3 py-2">
-                    {!canEdit ? (
-                      <span className="text-muted">
-                        {formatReadonly(f, order[f.column])}
-                      </span>
-                    ) : f.type === "select" ? (
-                      <select
-                        value={values[id]?.[f.column] ?? ""}
-                        onChange={(e) => update(id, f.column, e.target.value)}
-                        disabled={disabled}
-                        className="h-9 w-full min-w-[140px] rounded-lg border border-input-border bg-surface px-2.5 text-[13px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        <option value="">—</option>
-                        {f.options?.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        type={
-                          f.type === "date"
-                            ? "date"
-                            : f.type === "text"
-                              ? "text"
-                              : "number"
-                        }
-                        step={f.type === "number" ? "any" : undefined}
-                        value={values[id]?.[f.column] ?? ""}
-                        onChange={(e) => update(id, f.column, e.target.value)}
-                        className="h-9 w-full min-w-[120px] rounded-lg border border-input-border bg-surface px-2.5 text-[13px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
-                      />
-                    )}
-                  </td>
-                  );
-                })}
-                {canEdit && (
-                  <td className="px-4 py-2 whitespace-nowrap">
-                    <button
-                      type="button"
-                      onClick={() => save(id)}
-                      disabled={!dirty[id] || savingId === id}
-                      className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {savingId === id ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : savedId === id ? (
-                        <Check className="h-3.5 w-3.5" />
-                      ) : null}
-                      {savingId === id
-                        ? "Saving"
-                        : savedId === id
-                          ? "Saved"
-                          : "Save"}
-                    </button>
-                    {errorId === id && (
-                      <p className="mt-1 text-[11px] text-danger">
-                        Couldn&apos;t save
-                      </p>
-                    )}
-                  </td>
-                )}
+                {fields.map((f) => (
+                  <th key={f.column} className="px-3 py-3 whitespace-nowrap">
+                    {f.label}
+                  </th>
+                ))}
+                {canEdit && <th className="px-4 py-3 text-right">Edit</th>}
               </tr>
-            );
-          })}
-        </tbody>
+            </thead>
+            <tbody className="divide-y divide-card-border">
+              {pageRows.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={colCount}
+                    className="px-4 py-10 text-center text-sm text-muted"
+                  >
+                    No orders match your search.
+                  </td>
+                </tr>
+              )}
+              {pageRows.map((order) => (
+                <tr key={String(order.id)} className="text-foreground">
+                  <td className="px-4 py-3 font-medium tabular-nums">
+                    {String(order.sl_no ?? "—")}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {toInput(order.so_no) || "—"}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {toInput(order.ec_no) || "—"}
+                  </td>
+                  <td className="px-4 py-3">{toInput(order.party) || "—"}</td>
+                  {readonlyFields.map((f) => (
+                    <td
+                      key={f.column}
+                      className="px-3 py-3 whitespace-nowrap text-muted"
+                    >
+                      {formatValue(f, order[f.column])}
+                    </td>
+                  ))}
+                  {fields.map((f) => (
+                    <td key={f.column} className="px-3 py-3 whitespace-nowrap">
+                      {formatValue(f, order[f.column])}
+                    </td>
+                  ))}
+                  {canEdit && (
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setEditRow(order)}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
           </table>
         </div>
         <Pagination
@@ -253,6 +167,176 @@ export function DepartmentWorkspace({
           to={to}
           total={total}
         />
+      </div>
+
+      {editRow && canEdit && (
+        <EditSectionModal
+          orderId={String(editRow.id)}
+          table={table}
+          title={title}
+          fields={fields}
+          readonlyFields={readonlyFields}
+          data={editRow}
+          onClose={() => setEditRow(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function EditSectionModal({
+  orderId,
+  table,
+  title,
+  fields,
+  readonlyFields,
+  data,
+  onClose,
+}: {
+  orderId: string;
+  table: OrderTable;
+  title: string;
+  fields: OrderField[];
+  readonlyFields: OrderField[];
+  data: Row;
+  onClose: () => void;
+}) {
+  const router = useRouter();
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(fields.map((f) => [f.column, toInput(data[f.column])]))
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save(e: FormEvent) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+    const res = await updateOrderSectionAction(orderId, table, values);
+    setSaving(false);
+    if (!res.ok) {
+      setError(res.error);
+      return;
+    }
+    router.refresh();
+    onClose();
+  }
+
+  const identity = [data.so_no, data.ec_no].filter(Boolean).join(" · ");
+  const inputClass =
+    "h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden />
+      <div className="relative max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-card-border bg-card p-6 shadow-xl">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute right-4 top-4 text-muted-foreground hover:text-foreground"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
+        <h2 className="font-display text-lg font-semibold text-foreground">
+          {title}
+        </h2>
+        <p className="mb-5 text-sm text-muted">
+          Order #{String(data.sl_no ?? "—")}
+          {identity ? ` · ${identity}` : ""}
+          {data.party ? ` · ${String(data.party)}` : ""}
+        </p>
+
+        {readonlyFields.length > 0 && (
+          <div className="mb-5 grid grid-cols-1 gap-x-6 gap-y-3 rounded-xl bg-background/60 p-4 sm:grid-cols-2">
+            {readonlyFields.map((f) => (
+              <div key={f.column}>
+                <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {f.label}
+                </div>
+                <div className="text-sm text-muted">
+                  {formatValue(f, data[f.column])}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <form onSubmit={save}>
+          {error && (
+            <div className="mb-4 rounded-[10px] border border-danger-border bg-danger-bg px-4 py-2.5 text-sm text-danger">
+              {error}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+            {fields.map((field) => {
+              const disabled = field.dependsOn
+                ? (values[field.dependsOn.column] ?? "") !== field.dependsOn.value
+                : false;
+              return (
+                <div key={field.column}>
+                  <label className="mb-1.5 block text-[13px] font-medium text-brand-label">
+                    {field.label}
+                  </label>
+                  {field.type === "select" ? (
+                    <select
+                      value={values[field.column] ?? ""}
+                      onChange={(e) =>
+                        setValues((v) => ({ ...v, [field.column]: e.target.value }))
+                      }
+                      disabled={disabled}
+                      className={`${inputClass} cursor-pointer`}
+                    >
+                      <option value="">—</option>
+                      {field.options?.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type={
+                        field.type === "date"
+                          ? "date"
+                          : field.type === "text"
+                            ? "text"
+                            : "number"
+                      }
+                      step={field.type === "number" ? "any" : undefined}
+                      value={values[field.column] ?? ""}
+                      onChange={(e) =>
+                        setValues((v) => ({ ...v, [field.column]: e.target.value }))
+                      }
+                      disabled={disabled}
+                      className={inputClass}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-6 flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-11 flex-1 rounded-[10px] border border-input-border bg-surface text-sm font-medium text-foreground transition-colors hover:bg-background"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-70"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {saving ? "Saving…" : "Save changes"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
@@ -6,6 +9,9 @@ import {
   PauseCircle,
 } from "lucide-react";
 import type { OrderOverviewRow } from "@/lib/orders";
+import { Pagination } from "./table-tools";
+
+const PIPELINE_PAGE_SIZE = 12;
 
 const numberFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 
@@ -125,6 +131,17 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
     { label: "Planning", done: rows.filter((r) => r.planning_status).length },
     { label: "Dispatch", done: rows.filter((r) => r.dispatch_status).length },
   ];
+
+  // Pipeline pagination.
+  const [page, setPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(rows.length / PIPELINE_PAGE_SIZE));
+  const current = Math.min(page, totalPages);
+  const pipelineRows = rows.slice(
+    (current - 1) * PIPELINE_PAGE_SIZE,
+    current * PIPELINE_PAGE_SIZE
+  );
+  const from = rows.length === 0 ? 0 : (current - 1) * PIPELINE_PAGE_SIZE + 1;
+  const to = Math.min(current * PIPELINE_PAGE_SIZE, rows.length);
 
   // Payment status — a reserved status palette (each swatch is labeled).
   const paymentBuckets = [
@@ -261,7 +278,8 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-card-border bg-surface shadow-sm">
+        <div className="rounded-xl border border-card-border bg-surface shadow-sm">
+          <div className="overflow-x-auto">
           <table className="w-full min-w-[1200px] text-sm">
             <thead>
               <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
@@ -279,7 +297,7 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-card-border">
-              {rows.map((row) => {
+              {pipelineRows.map((row) => {
                 const overdueRow = isOverdue(row);
                 const purchase =
                   [row.gb_status, row.motor_status]
@@ -343,6 +361,15 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
               })}
             </tbody>
           </table>
+          </div>
+          <Pagination
+            page={current}
+            totalPages={totalPages}
+            setPage={setPage}
+            from={from}
+            to={to}
+            total={rows.length}
+          />
         </div>
       )}
     </div>

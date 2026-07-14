@@ -3,6 +3,7 @@
 import { cookies } from "next/headers";
 import { verifyCredentials } from "@/lib/users";
 import { SESSION_COOKIE } from "@/lib/session";
+import { logAudit } from "@/lib/audit";
 
 export type LoginInput = { email: string; password: string };
 
@@ -27,6 +28,15 @@ export async function login(input: LoginInput): Promise<LoginResult> {
   const result = await verifyCredentials(email, password);
 
   if (!result.ok) {
+    await logAudit({
+      actor: { email },
+      action: "login_failed",
+      category: "auth",
+      details:
+        result.reason === "invalid"
+          ? "Invalid email or password"
+          : `Account ${result.reason}`,
+    });
     if (result.reason === "invalid") {
       return { ok: false, error: "Invalid email or password." };
     }
@@ -41,6 +51,17 @@ export async function login(input: LoginInput): Promise<LoginResult> {
     secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 60 * 60 * 24 * 7, // 7 days
+  });
+
+  await logAudit({
+    actor: {
+      id: result.user.id,
+      email: result.user.email,
+      role: result.user.role,
+    },
+    action: "login",
+    category: "auth",
+    details: "Signed in",
   });
 
   return { ok: true, redirectTo: "/risansi" };

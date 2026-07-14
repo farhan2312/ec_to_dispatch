@@ -19,6 +19,7 @@ import {
   type OrderTable,
 } from "@/lib/order-schema";
 import { canCreateOrders, canEditChild, canEditSection } from "@/lib/roles";
+import { logAudit } from "@/lib/audit";
 
 export type CreateOrderResult =
   | { ok: true; slNo: number }
@@ -40,6 +41,13 @@ export async function createOrderAction(
 
   try {
     const { sl_no } = await createOrder(input);
+    await logAudit({
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: "order.create",
+      category: "activity",
+      target: (input.so_no ?? input.ec_no ?? `#${sl_no}`).trim(),
+      details: `Created order #${sl_no}`,
+    });
     revalidatePath("/risansi/orders");
     return { ok: true, slNo: sl_no };
   } catch (error) {
@@ -73,6 +81,13 @@ export async function updateOrderSectionAction(
 
   try {
     await updateOrderSection(orderId, table as OrderTable, values);
+    await logAudit({
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: "order.update",
+      category: "activity",
+      target: SECTION_BY_TABLE.get(table as OrderTable)?.title ?? table,
+      details: `Updated ${SECTION_BY_TABLE.get(table as OrderTable)?.title ?? table}`,
+    });
     revalidatePath(`/risansi/orders/${orderId}`);
     revalidatePath("/risansi/orders");
     return { ok: true };
@@ -189,6 +204,12 @@ export async function importOrdersAction(
     }
 
     const { inserted } = await insertParsedOrders(parsed.rows);
+    await logAudit({
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: "order.import",
+      category: "activity",
+      details: `Imported ${inserted} order${inserted === 1 ? "" : "s"} from Excel`,
+    });
     revalidatePath("/risansi/orders");
     return {
       ok: true,

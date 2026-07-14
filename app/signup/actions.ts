@@ -1,7 +1,8 @@
 "use server";
 
 import { createPendingUser, EmailInUseError } from "@/lib/users";
-import { REQUESTABLE_ROLES, type Role } from "@/lib/roles";
+import { REQUESTABLE_ROLES, roleLabel, type Role } from "@/lib/roles";
+import { logAudit } from "@/lib/audit";
 
 export type RequestAccessInput = {
   fullName: string;
@@ -41,6 +42,13 @@ export async function requestAccess(
       email,
       password,
       role: role as Role,
+    });
+    await logAudit({
+      actor: { email, role: role as Role },
+      action: "access.request",
+      category: "ownership",
+      target: email,
+      details: `Requested access as ${roleLabel(role)}`,
     });
     return { ok: true };
   } catch (error) {

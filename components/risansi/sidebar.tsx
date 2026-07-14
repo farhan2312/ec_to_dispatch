@@ -19,6 +19,7 @@ import {
   Package,
   PenTool,
   Receipt,
+  ScrollText,
   ShieldCheck,
   Truck,
   Wallet,
@@ -92,6 +93,11 @@ const ADMIN_NAV: NavItem[] = [
     label: "User Access Control",
     href: "/risansi/user-access-control",
     icon: ShieldCheck,
+  },
+  {
+    label: "Audit Log",
+    href: "/risansi/audit-log",
+    icon: ScrollText,
   },
 ];
 

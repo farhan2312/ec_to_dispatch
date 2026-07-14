@@ -57,6 +57,26 @@ CREATE TRIGGER users_set_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION set_updated_at();
 
+-- ---------------------------------------------------------------------------
+-- audit_log — activity trail: who signed in, when, and what they did.
+-- Actor identity is denormalized so entries survive user deletion and so
+-- failed logins (no user row) can still be recorded.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS audit_log (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID REFERENCES users(id) ON DELETE SET NULL,
+    user_email  TEXT,
+    user_role   TEXT,
+    action      TEXT NOT NULL,   -- e.g. login, order.create, access.approve
+    category    TEXT NOT NULL,   -- auth | activity | ownership
+    target      TEXT,            -- what was affected (SO/EC, user email, …)
+    details     TEXT,            -- human-readable summary
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS audit_log_created_at_idx ON audit_log (created_at DESC);
+CREATE INDEX IF NOT EXISTS audit_log_category_idx ON audit_log (category);
+CREATE INDEX IF NOT EXISTS audit_log_user_idx ON audit_log (user_id);
+
 -- ===========================================================================
 -- Order-to-Dispatch master tracker (normalized)
 --

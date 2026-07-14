@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getCurrentUser, SESSION_COOKIE } from "@/lib/session";
 import { updatePassword, verifyPasswordById } from "@/lib/users";
+import { logAudit } from "@/lib/audit";
 
 
 
@@ -44,10 +45,25 @@ export async function changePassword(
   if (!valid) return { ok: false, error: "Current password is incorrect." };
 
   await updatePassword(user.id, input.newPassword);
+  await logAudit({
+    actor: { id: user.id, email: user.email, role: user.role },
+    action: "password.change",
+    category: "auth",
+    details: "Changed password",
+  });
   return { ok: true };
 }
 
 export async function logout(): Promise<void> {
+  const user = await getCurrentUser();
+  if (user) {
+    await logAudit({
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: "logout",
+      category: "auth",
+      details: "Signed out",
+    });
+  }
   const cookieStore = await cookies();
   cookieStore.delete(SESSION_COOKIE);
   redirect("/login");

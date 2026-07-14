@@ -375,6 +375,8 @@ export type OrderOverviewRow = {
   so_no: string | null;
   ec_no: string | null;
   party: string | null;
+  industry_type: string | null;
+  nature_of_supply: string | null;
   order_value: string | null;
   pi_no: string | null;
   payment_status: string | null;
@@ -395,6 +397,8 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             o.so_no,
             o.ec_no,
             o.party,
+            o.industry_type,
+            o.nature_of_supply,
             o.order_value::text AS order_value,
             b.pi_no,
             a.payment_status,

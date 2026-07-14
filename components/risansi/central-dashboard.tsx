@@ -9,9 +9,20 @@ import {
   PauseCircle,
 } from "lucide-react";
 import type { OrderOverviewRow } from "@/lib/orders";
+import { PAYMENT_STATUS_OPTIONS } from "@/lib/order-schema";
 import { Pagination } from "./table-tools";
 
 const PIPELINE_PAGE_SIZE = 12;
+
+// Distinct color per payment status value (labels always accompany them).
+const PAYMENT_COLORS: Record<string, string> = {
+  "Outstanding hold": "#f59e0b",
+  "Payment Rcvd": "#10b981",
+  "Advance Rcvd": "#3b82f6",
+  "Advance Rcvd & Balance payment Awaited": "#6366f1",
+  "Payment Awaited": "#94a3b8",
+  "After Receipt": "#14b8a6",
+};
 
 const numberFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 
@@ -112,6 +123,63 @@ function StatCard({
   );
 }
 
+type BarItem = { label: string; count: number; color: string };
+
+function ChartCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border border-card-border bg-surface p-5 shadow-sm">
+      <h3 className="mb-4 font-display text-sm font-semibold text-foreground">
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
+/** Horizontal bars scaled to the largest count; each row is labeled. */
+function BarList({ items, total }: { items: BarItem[]; total: number }) {
+  const max = Math.max(1, ...items.map((i) => i.count));
+  if (total === 0) return <p className="text-sm text-muted">No orders yet.</p>;
+  return (
+    <div className="space-y-3">
+      {items.map((item) => {
+        const pct = total ? Math.round((item.count / total) * 100) : 0;
+        return (
+          <div key={item.label}>
+            <div className="mb-1 flex items-center justify-between gap-3 text-xs">
+              <span className="flex items-center gap-2 text-muted">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                  style={{ background: item.color }}
+                />
+                <span className="truncate">{item.label}</span>
+              </span>
+              <span className="shrink-0 tabular-nums text-foreground">
+                {item.count} · {pct}%
+              </span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-card-border">
+              <div
+                className="h-full rounded-full"
+                style={{
+                  width: `${(item.count / max) * 100}%`,
+                  background: item.color,
+                }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
   const total = rows.length;
   const holds = rows.filter((r) => isHold(r.payment_status)).length;
@@ -143,12 +211,61 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
   const from = rows.length === 0 ? 0 : (current - 1) * PIPELINE_PAGE_SIZE + 1;
   const to = Math.min(current * PIPELINE_PAGE_SIZE, rows.length);
 
-  // Payment status — a reserved status palette (each swatch is labeled).
-  const paymentBuckets = [
-    { key: "Received", color: "#10b981", count: rows.filter((r) => paymentGroup(r.payment_status) === "Received").length },
-    { key: "Awaited", color: "#3b82f6", count: rows.filter((r) => paymentGroup(r.payment_status) === "Awaited").length },
-    { key: "Hold", color: "#f59e0b", count: rows.filter((r) => paymentGroup(r.payment_status) === "Hold").length },
-    { key: "Not set", color: "#d8dee9", count: rows.filter((r) => paymentGroup(r.payment_status) === "Not set").length },
+  // Payment status — full breakdown by each dropdown value + Not set.
+  const norm = (s: string | null) => (s ?? "").trim().toLowerCase();
+  const paymentBreakdown: BarItem[] = [
+    ...PAYMENT_STATUS_OPTIONS.map((o) => ({
+      label: o.label,
+      color: PAYMENT_COLORS[o.value] ?? "#94a3b8",
+      count: rows.filter((r) => norm(r.payment_status) === norm(o.value)).length,
+    })),
+    {
+      label: "Not set",
+      color: "#d8dee9",
+      count: rows.filter((r) => norm(r.payment_status) === "").length,
+    },
+  ];
+
+  // Dispatch status breakdown.
+  const dispatchBreakdown: BarItem[] = [
+    {
+      label: "Fully dispatch",
+      color: "#10b981",
+      count: rows.filter((r) => norm(r.dispatch_status) === "fully dispatch").length,
+    },
+    {
+      label: "LOT dispatch",
+      color: "#3b82f6",
+      count: rows.filter((r) => norm(r.dispatch_status) === "lot dispatch").length,
+    },
+    {
+      label: "Not dispatched",
+      color: "#94a3b8",
+      count: rows.filter((r) => norm(r.dispatch_status) === "").length,
+    },
+  ];
+
+  // Orders by industry type.
+  const industryBreakdown: BarItem[] = [
+    {
+      label: "Sugar",
+      color: "#f59e0b",
+      count: rows.filter((r) => norm(r.industry_type) === "sugar").length,
+    },
+    {
+      label: "Non Sugar",
+      color: "#6366f1",
+      count: rows.filter((r) => norm(r.industry_type) === "non sugar").length,
+    },
+    {
+      label: "Not set",
+      color: "#d8dee9",
+      count: rows.filter(
+        (r) =>
+          norm(r.industry_type) !== "sugar" &&
+          norm(r.industry_type) !== "non sugar"
+      ).length,
+    },
   ];
 
   return (
@@ -192,11 +309,7 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
 
       {/* charts */}
       <div className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* department progress — single-hue magnitude bars */}
-        <div className="rounded-xl border border-card-border bg-surface p-5 shadow-sm">
-          <h3 className="mb-4 font-display text-sm font-semibold text-foreground">
-            Department progress
-          </h3>
+        <ChartCard title="Department progress">
           <div className="space-y-3">
             {departments.map((d) => {
               const pct = total ? Math.round((d.done / total) * 100) : 0;
@@ -218,51 +331,19 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
               );
             })}
           </div>
-        </div>
+        </ChartCard>
 
-        {/* payment status — reserved status palette, labeled legend */}
-        <div className="rounded-xl border border-card-border bg-surface p-5 shadow-sm">
-          <h3 className="mb-4 font-display text-sm font-semibold text-foreground">
-            Payment status
-          </h3>
-          {total === 0 ? (
-            <p className="text-sm text-muted">No orders yet.</p>
-          ) : (
-            <>
-              <div className="flex h-3 w-full gap-0.5 overflow-hidden rounded-full">
-                {paymentBuckets
-                  .filter((b) => b.count > 0)
-                  .map((b) => (
-                    <div
-                      key={b.key}
-                      title={`${b.key}: ${b.count}`}
-                      style={{
-                        width: `${(b.count / total) * 100}%`,
-                        background: b.color,
-                      }}
-                    />
-                  ))}
-              </div>
-              <ul className="mt-4 grid grid-cols-2 gap-x-6 gap-y-2">
-                {paymentBuckets.map((b) => (
-                  <li
-                    key={b.key}
-                    className="flex items-center justify-between text-xs"
-                  >
-                    <span className="flex items-center gap-2">
-                      <span
-                        className="h-2.5 w-2.5 rounded-sm"
-                        style={{ background: b.color }}
-                      />
-                      <span className="text-muted">{b.key}</span>
-                    </span>
-                    <span className="tabular-nums text-foreground">{b.count}</span>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </div>
+        <ChartCard title="Payment status">
+          <BarList items={paymentBreakdown} total={total} />
+        </ChartCard>
+
+        <ChartCard title="Dispatch status">
+          <BarList items={dispatchBreakdown} total={total} />
+        </ChartCard>
+
+        <ChartCard title="Orders by industry">
+          <BarList items={industryBreakdown} total={total} />
+        </ChartCard>
       </div>
 
       {/* pipeline */}

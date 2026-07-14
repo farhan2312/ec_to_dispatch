@@ -19,7 +19,8 @@
       "Bash(node scripts/migrate.mjs)",
       "Bash(node -e \"try{require.resolve\\('server-only'\\);console.log\\('server-only OK'\\)}catch\\(e\\){console.log\\('MISSING server-only'\\)}\")",
       "Skill(dataviz)",
-      "Skill(dataviz:*)"
+      "Skill(dataviz:*)",
+      "Bash(node _vh.mjs)"
     ]
   }
 }

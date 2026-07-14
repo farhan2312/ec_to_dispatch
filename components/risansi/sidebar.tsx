@@ -12,6 +12,7 @@ import {
   ChevronsUpDown,
   ClipboardCheck,
   ClipboardList,
+  FileSpreadsheet,
   Gauge,
   KeyRound,
   LayoutDashboard,
@@ -28,6 +29,7 @@ import {
 import { logout } from "@/app/risansi/actions";
 import {
   canAccessDepartment,
+  canCreateOrders,
   canSeeDispatched,
   canSeeEscalations,
 } from "@/lib/roles";
@@ -161,6 +163,15 @@ export function Sidebar({
             {PRIMARY_NAV.map((item) => (
               <NavLink key={item.href} item={item} />
             ))}
+            {canCreateOrders(user.role) && (
+              <NavLink
+                item={{
+                  label: "Import Orders",
+                  href: "/risansi/orders/import",
+                  icon: FileSpreadsheet,
+                }}
+              />
+            )}
           </div>
         </div>
 

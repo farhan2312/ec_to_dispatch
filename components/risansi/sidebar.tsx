@@ -103,6 +103,18 @@ const ADMIN_NAV: NavItem[] = [
   },
 ];
 
+// All nav destinations — used to resolve the single active item by longest
+// matching prefix (so /risansi/orders/import doesn't also light up Orders).
+const NAV_HREFS: string[] = [
+  ...PRIMARY_NAV.map((i) => i.href),
+  "/risansi/orders/import",
+  ...DEPARTMENT_NAV.map((i) => i.href),
+  "/risansi/notifications",
+  "/risansi/escalations",
+  "/risansi/dispatched",
+  ...ADMIN_NAV.map((i) => i.href),
+];
+
 type SidebarUser = { name: string; email: string; role: string };
 
 export function Sidebar({
@@ -127,8 +139,14 @@ export function Sidebar({
     canAccessDepartment(user.role, item.table)
   );
 
+  // The active item is the nav href that is the longest matching prefix of the
+  // current path, so only the most specific one highlights.
+  const activeHref = NAV_HREFS.filter(
+    (h) => pathname === h || pathname.startsWith(h + "/")
+  ).reduce((best, h) => (h.length > best.length ? h : best), "");
+
   function NavLink({ item }: { item: NavItem }) {
-    const active = pathname === item.href || pathname.startsWith(item.href + "/");
+    const active = item.href === activeHref;
     const Icon = item.icon;
     return (
       <Link
@@ -197,7 +215,7 @@ export function Sidebar({
               <Link
                 href="/risansi/notifications"
                 className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  pathname === "/risansi/notifications"
+                  activeHref === "/risansi/notifications"
                     ? "bg-sidebar-active text-white"
                     : "text-sidebar-foreground hover:bg-sidebar-hover"
                 }`}

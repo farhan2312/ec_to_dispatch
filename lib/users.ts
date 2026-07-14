@@ -35,17 +35,20 @@ const PUBLIC_COLUMNS =
   "id, full_name, email, role, status, created_at, updated_at";
 
 /**
- * Create a new user in 'pending' status (the "Request Access" flow).
- * Throws EmailInUseError if the email is already taken.
+ * Create a user with the given status. Throws EmailInUseError if the email is
+ * already taken.
  */
-export async function createPendingUser(input: NewUser): Promise<User> {
+export async function createUser(
+  input: NewUser,
+  status: UserStatus = "pending"
+): Promise<User> {
   const passwordHash = await bcrypt.hash(input.password, 12);
   try {
     const result = await query<User>(
       `INSERT INTO users (full_name, email, password_hash, role, status)
-       VALUES ($1, $2, $3, $4, 'pending')
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING ${PUBLIC_COLUMNS}`,
-      [input.fullName.trim(), input.email.trim(), passwordHash, input.role]
+      [input.fullName.trim(), input.email.trim(), passwordHash, input.role, status]
     );
     return result.rows[0];
   } catch (error) {
@@ -60,6 +63,29 @@ export async function createPendingUser(input: NewUser): Promise<User> {
     }
     throw error;
   }
+}
+
+/** Create a user in 'pending' status (the "Request Access" flow). */
+export function createPendingUser(input: NewUser): Promise<User> {
+  return createUser(input, "pending");
+}
+
+/** All users, newest first. */
+export async function listAllUsers(): Promise<User[]> {
+  const result = await query<User>(
+    `SELECT ${PUBLIC_COLUMNS} FROM users ORDER BY created_at DESC`
+  );
+  return result.rows;
+}
+
+/** Change a user's role. */
+export async function updateUserRole(id: string, role: UserRole): Promise<void> {
+  await query(`UPDATE users SET role = $2 WHERE id = $1`, [id, role]);
+}
+
+/** Delete a user. */
+export async function deleteUser(id: string): Promise<void> {
+  await query(`DELETE FROM users WHERE id = $1`, [id]);
 }
 
 export type AuthResult =
@@ -149,16 +175,12 @@ export async function countPending(): Promise<number> {
 }
 
 /**
- * Set a user's status. Only ever transitions non-admin access requests, so
- * admin rows can never be locked out through the panel.
+ * Set a user's status. The platform admin account is protected at the action
+ * layer (it must never be locked out).
  */
 export async function setUserStatus(
   id: string,
   status: UserStatus
 ): Promise<void> {
-  await query(
-    `UPDATE users SET status = $2
-     WHERE id = $1 AND role <> 'admin'`,
-    [id, status]
-  );
+  await query(`UPDATE users SET status = $2 WHERE id = $1`, [id, status]);
 }

@@ -166,10 +166,16 @@ export function Sidebar({
   return (
     <aside className="sticky top-0 flex h-screen w-64 shrink-0 flex-col bg-sidebar">
       {/* brand */}
-      <div className="flex items-center gap-2.5 px-5 py-5">
-        
-          <Image src={logo} alt="Risansi" width={140} height={100} className="bg-white p-1" />
-      </div>
+    <div className="flex items-center gap-2.5 px-5 py-5">
+  <div className="overflow-hidden rounded-xl bg-white p-1 w-45 flex items-center justify-center">
+    <Image
+      src={logo}
+      alt="Risansi"
+      width={140}
+      height={100}
+    />
+  </div>
+</div>
 
       {/* nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-2">

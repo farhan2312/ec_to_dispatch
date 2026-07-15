@@ -21,11 +21,6 @@ type Field = {
 };
 type Section = { title: string; fields: Field[] };
 
-const YES_NO_OPTIONS = [
-  { value: "Yes", label: "Yes" },
-  { value: "No", label: "No" },
-];
-
 const SECTIONS: Section[] = [
   {
     title: "Order identity",
@@ -83,7 +78,6 @@ const SECTIONS: Section[] = [
         label: "Master Reason of Delay",
         type: "text",
       },
-      { name: "ld", label: "LD", type: "select", options: YES_NO_OPTIONS },
       {
         name: "dispatch_target_date",
         label: "Dispatch Target Date",
@@ -93,7 +87,6 @@ const SECTIONS: Section[] = [
         name: "dispatch_target_revised_date",
         label: "Revised Dispatch Target Date",
         type: "date",
-        dependsOn: { name: "ld", value: "Yes" },
       },
       {
         name: "drg_target_date",

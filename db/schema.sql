@@ -116,7 +116,6 @@ CREATE TABLE IF NOT EXISTS orders (
     project                  TEXT,           -- BH Project
     payment_terms            TEXT,           -- W  Payment Terms (Central Visibility-owned)
     master_reason_of_delay   TEXT,           -- BK Master Reason of Delay (order-level)
-    ld                       TEXT,           -- LD applicable (Yes/No), set by Central Visibility
     dispatch_target_date     DATE,           -- AU DISP. TARGET DT. (set after payment confirmation)
     dispatch_target_revised_date DATE,       -- AV Revise Disp. Target Dt (when LD)
     drg_target_date          DATE,           -- AG Target Dt. For Drg (Central Visibility-owned)
@@ -196,23 +195,24 @@ ALTER TABLE order_qc ADD COLUMN IF NOT EXISTS remarks TEXT;
 -- Planning — cols AT–AX, BB, BC, BG.
 CREATE TABLE IF NOT EXISTS order_planning (
     order_id                      UUID PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
-    ld_date                       DATE,  -- AT LD Date
+    ld                            TEXT,  -- LD (Yes/No), filled by Central Visibility
+    ld_date                       DATE,  -- AT LD Date (filled by Central Visibility)
     purchase_target_date          DATE,  -- AO Target Dt. For Purchase (filled by Planning)
-    planning_documents_required   TEXT,  -- AW Documents Required from Planning
+    planning_documents_required   TEXT,  -- AW Documents Required from Planning (Central Visibility)
     pump_readiness_remarks        TEXT,  -- AX Pump Readiness Remarks
     planning_readiness_date       DATE,  -- BB Readiness Dt. Rcvd from Planning
     final_packing_dispatch_date   DATE,  -- BC Final Dt. for Packing & Dispatch
     planning_status               TEXT,  -- BG PLANNING STATUS
+    actual_pump_status            TEXT,  -- AY Actual PUMP STATUS (filled by Planning)
+    assembled_packed_qty          TEXT,  -- AZ ASSEMBLED/ PACKED QTY (filled by Planning)
+    assembly_date                 DATE,  -- BA Assembly date (filled by Planning)
     created_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at                    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Assembly & Dispatch — cols AY–BA, BD–BF, BJ, BK, BL.
+-- Assembly & Dispatch — cols BD–BF, BJ, BL.
 CREATE TABLE IF NOT EXISTS order_assembly_dispatch (
     order_id                     UUID PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
-    actual_pump_status           TEXT,  -- AY Actual PUMP STATUS
-    assembled_packed_qty         TEXT,  -- AZ ASSEMBLED/ PACKED QTY
-    assembly_date                DATE,  -- BA Assembly date
     dispatch_documents_required  TEXT,  -- BD Documents Required by Assembly/Dispatch
     dispatch_team_target_date    DATE,  -- BE Target Date for Dispatch Team
     actual_packing_date          DATE,  -- BF ACTUAL Material Packing Date
@@ -415,5 +415,56 @@ BEGIN
          WHERE pl.order_id = o.id;
         ALTER TABLE order_planning DROP COLUMN dispatch_target_date;
         ALTER TABLE order_planning DROP COLUMN dispatch_target_revised_date;
+    END IF;
+END $$;
+
+-- LD moves from orders into order_planning (filled by Central Visibility,
+-- visible to Planning). Idempotent.
+ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS ld TEXT;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'orders' AND column_name = 'ld'
+    ) THEN
+        INSERT INTO order_planning (order_id)
+            SELECT o.id FROM orders o
+             WHERE o.ld IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM order_planning pl WHERE pl.order_id = o.id);
+        UPDATE order_planning pl
+           SET ld = o.ld
+          FROM orders o
+         WHERE o.id = pl.order_id AND o.ld IS NOT NULL AND pl.ld IS NULL;
+        ALTER TABLE orders DROP COLUMN ld;
+    END IF;
+END $$;
+
+-- Actual pump status / assembled qty / assembly date move from Assembly &
+-- Dispatch into Planning (filled by Planning). Idempotent.
+ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS actual_pump_status TEXT;
+ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS assembled_packed_qty TEXT;
+ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS assembly_date DATE;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_assembly_dispatch'
+           AND column_name = 'actual_pump_status'
+    ) THEN
+        INSERT INTO order_planning (order_id)
+            SELECT ad.order_id FROM order_assembly_dispatch ad
+             WHERE (ad.actual_pump_status IS NOT NULL
+                    OR ad.assembled_packed_qty IS NOT NULL
+                    OR ad.assembly_date IS NOT NULL)
+               AND NOT EXISTS (SELECT 1 FROM order_planning pl WHERE pl.order_id = ad.order_id);
+        UPDATE order_planning pl
+           SET actual_pump_status = COALESCE(pl.actual_pump_status, ad.actual_pump_status),
+               assembled_packed_qty = COALESCE(pl.assembled_packed_qty, ad.assembled_packed_qty),
+               assembly_date = COALESCE(pl.assembly_date, ad.assembly_date)
+          FROM order_assembly_dispatch ad
+         WHERE ad.order_id = pl.order_id;
+        ALTER TABLE order_assembly_dispatch DROP COLUMN actual_pump_status;
+        ALTER TABLE order_assembly_dispatch DROP COLUMN assembled_packed_qty;
+        ALTER TABLE order_assembly_dispatch DROP COLUMN assembly_date;
     END IF;
 END $$;

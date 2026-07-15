@@ -11,9 +11,10 @@ import {
   type OrderField,
   type OrderSection,
 } from "@/lib/order-schema";
-import { canEditChild, canEditSection } from "@/lib/roles";
+import { canEditChild, canEditSection, isCentral } from "@/lib/roles";
 import type { OrderDetail as OrderDetailData } from "@/lib/orders";
 import { OrderChildList } from "./order-children";
+import { OrderPipeline, pipelineSummary } from "./order-pipeline";
 
 type Row = Record<string, unknown>;
 
@@ -46,11 +47,13 @@ function EditableSection({
   section,
   data,
   canEdit,
+  canEditCentral,
 }: {
   orderId: string;
   section: OrderSection;
   data: Row | null;
   canEdit: boolean;
+  canEditCentral: boolean;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -113,12 +116,20 @@ function EditableSection({
       )}
 
       <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-        {section.fields.map((field) => (
+        {section.fields.map((field) => {
+          // centralOnly fields stay read-only for non-central editors.
+          const fieldEditable = editing && (!field.centralOnly || canEditCentral);
+          return (
           <div key={field.column}>
-            <div className="mb-1 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="mb-1 flex items-center gap-1.5 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
               {field.label}
+              {field.centralOnly && !canEditCentral && (
+                <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500">
+                  read-only
+                </span>
+              )}
             </div>
-            {editing ? (
+            {fieldEditable ? (
               field.type === "select" ? (
                 <select
                   value={values[field.column] ?? ""}
@@ -157,7 +168,8 @@ function EditableSection({
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {editing && (
@@ -194,7 +206,6 @@ export function OrderDetail({
   role: string;
 }) {
   const order = detail.order;
-  const identity = [order.so_no, order.ec_no].filter(Boolean).join(" · ");
 
   return (
     <div className="px-8 py-8">
@@ -206,15 +217,36 @@ export function OrderDetail({
         Back to orders
       </Link>
 
-      <div className="mb-6">
-        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-          Order #{String(order.sl_no ?? "—")}
-        </h1>
-        <p className="text-sm text-muted">
-          {identity || "No SO/EC number"}
-          {order.party ? ` — ${String(order.party)}` : ""}
-        </p>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
+            Order · {String(order.so_no ?? order.ec_no ?? `#${order.sl_no ?? "—"}`)}
+          </span>
+          <h1 className="font-display text-xl font-bold tracking-tight text-foreground">
+            {order.item ? String(order.item) : "Order"}
+            {order.model_no ? ` — ${String(order.model_no)}` : ""}
+          </h1>
+        </div>
+        {(() => {
+          const s = pipelineSummary(detail);
+          const tone =
+            s.status === "Blocked"
+              ? "bg-rose-50 text-rose-700 ring-rose-200"
+              : s.status === "Complete"
+                ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                : "bg-amber-50 text-amber-700 ring-amber-200";
+          return (
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium ring-1 ring-inset ${tone}`}
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-current" />
+              {s.status} · {s.complete} of {s.total} complete
+            </span>
+          );
+        })()}
       </div>
+
+      <OrderPipeline detail={detail} />
 
       <div className="max-w-4xl space-y-6">
         {ORDER_SECTIONS.map((section) => {
@@ -232,6 +264,7 @@ export function OrderDetail({
               section={section}
               data={data ?? null}
               canEdit={canEditSection(role, section.table)}
+              canEditCentral={isCentral(role)}
             />
           );
         })}

@@ -22,6 +22,9 @@ export type OrderField = {
   // When set, the field only applies while another field equals `value`
   // (e.g. GB Status only when Gear Box = "Yes").
   dependsOn?: { column: string; value: string };
+  // When true, only Central Visibility / Admin may edit this field; the owning
+  // department sees it read-only (e.g. LD in the Planning section).
+  centralOnly?: boolean;
 };
 
 /** Turn a list of strings into { value, label } option objects. */
@@ -97,13 +100,11 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "project", label: "Project", type: "text" },
       { column: "payment_terms", label: "Payment Terms", type: "text" },
       { column: "master_reason_of_delay", label: "Master Reason of Delay", type: "text" },
-      { column: "ld", label: "LD", type: "select", options: YES_NO },
       { column: "dispatch_target_date", label: "Dispatch Target Date", type: "date" },
       {
         column: "dispatch_target_revised_date",
         label: "Revised Dispatch Target Date",
         type: "date",
-        dependsOn: { column: "ld", value: "Yes" },
       },
       { column: "drg_target_date", label: "Target Date for DRG", type: "date" },
       { column: "order_value", label: "Order Value", type: "number" },
@@ -213,20 +214,21 @@ export const ORDER_SECTIONS: OrderSection[] = [
     title: "Planning",
     table: "order_planning",
     fields: [
-      { column: "ld_date", label: "LD Date", type: "date" },
+      // Filled by Central Visibility, read-only to Planning.
+      { column: "ld", label: "LD", type: "select", options: YES_NO, centralOnly: true },
+      { column: "ld_date", label: "LD Date", type: "date", centralOnly: true },
+      {
+        column: "planning_documents_required",
+        label: "Documents Required from Planning",
+        type: "text",
+        centralOnly: true,
+      },
+      // Filled by Planning.
       { column: "purchase_target_date", label: "Target Date for Purchase", type: "date" },
-      { column: "planning_documents_required", label: "Documents Required from Planning", type: "text" },
       { column: "pump_readiness_remarks", label: "Pump Readiness Remarks", type: "text" },
       { column: "planning_readiness_date", label: "Readiness Date Rcvd from Planning", type: "date" },
       { column: "final_packing_dispatch_date", label: "Final Date for Packing & Dispatch", type: "date" },
       { column: "planning_status", label: "Planning Status", type: "text" },
-    ],
-  },
-  {
-    key: "assembly_dispatch",
-    title: "Assembly & Dispatch",
-    table: "order_assembly_dispatch",
-    fields: [
       {
         column: "actual_pump_status",
         label: "Actual Pump Status",
@@ -242,6 +244,13 @@ export const ORDER_SECTIONS: OrderSection[] = [
       },
       { column: "assembled_packed_qty", label: "Assembled / Packed Qty", type: "text" },
       { column: "assembly_date", label: "Assembly Date", type: "date" },
+    ],
+  },
+  {
+    key: "assembly_dispatch",
+    title: "Assembly & Dispatch",
+    table: "order_assembly_dispatch",
+    fields: [
       { column: "dispatch_documents_required", label: "Documents Required by Assembly/Dispatch", type: "text" },
       { column: "dispatch_team_target_date", label: "Target Date for Dispatch Team", type: "date" },
       { column: "actual_packing_date", label: "Actual Material Packing Date", type: "date" },
@@ -290,10 +299,9 @@ export const PURCHASE_CONTEXT_FIELDS: OrderField[] = [
   { column: "purchase_target_date", label: "Target Date for Purchase", type: "date" },
 ];
 
-// Order-level fields (owned by Central Visibility) shown read-only in the
-// Planning workspace, so Planning sees the dispatch dates it must schedule to.
+// Order-level dispatch dates (owned by Central Visibility) shown read-only in
+// the Planning workspace, so Planning sees the dates it must schedule to.
 export const PLANNING_CONTEXT_FIELDS: OrderField[] = [
-  { column: "ld", label: "LD", type: "select", options: YES_NO },
   { column: "dispatch_target_date", label: "Dispatch Target Date", type: "date" },
   {
     column: "dispatch_target_revised_date",

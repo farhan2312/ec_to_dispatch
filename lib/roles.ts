@@ -47,9 +47,14 @@ const TABLE_OWNER: Record<OrderTable, Role> = {
   order_assembly_dispatch: "dispatch",
 };
 
+/** Admin and Central Visibility (Mitali). Own `centralOnly` fields. */
+export function isCentral(role: string): boolean {
+  return role === "admin" || role === "central_visibility";
+}
+
 /** Admin and Central Visibility can edit any section; others only their own. */
 export function canEditSection(role: string, table: OrderTable): boolean {
-  if (role === "admin" || role === "central_visibility") return true;
+  if (isCentral(role)) return true;
   return TABLE_OWNER[table] === role;
 }
 

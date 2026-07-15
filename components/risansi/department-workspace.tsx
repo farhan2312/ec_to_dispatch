@@ -45,12 +45,15 @@ export function DepartmentWorkspace({
   orders,
   readonlyFields = [],
   canEdit = true,
+  canEditCentral = true,
 }: {
   table: OrderTable;
   fields: OrderField[];
   orders: Row[];
   readonlyFields?: OrderField[];
   canEdit?: boolean;
+  // Whether the current user may edit `centralOnly` fields (Central Visibility).
+  canEditCentral?: boolean;
 }) {
   const [editRow, setEditRow] = useState<Row | null>(null);
 
@@ -176,6 +179,7 @@ export function DepartmentWorkspace({
           title={title}
           fields={fields}
           readonlyFields={readonlyFields}
+          canEditCentral={canEditCentral}
           data={editRow}
           onClose={() => setEditRow(null)}
         />
@@ -190,6 +194,7 @@ function EditSectionModal({
   title,
   fields,
   readonlyFields,
+  canEditCentral,
   data,
   onClose,
 }: {
@@ -198,6 +203,7 @@ function EditSectionModal({
   title: string;
   fields: OrderField[];
   readonlyFields: OrderField[];
+  canEditCentral: boolean;
   data: Row;
   onClose: () => void;
 }) {
@@ -272,6 +278,22 @@ function EditSectionModal({
 
           <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
             {fields.map((field) => {
+              // centralOnly fields are read-only unless the user is Central.
+              if (field.centralOnly && !canEditCentral) {
+                return (
+                  <div key={field.column}>
+                    <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium text-brand-label">
+                      {field.label}
+                      <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500">
+                        read-only
+                      </span>
+                    </label>
+                    <div className="flex h-10 items-center px-1 text-[14px] text-muted">
+                      {formatValue(field, data[field.column])}
+                    </div>
+                  </div>
+                );
+              }
               const disabled = field.dependsOn
                 ? (values[field.dependsOn.column] ?? "") !== field.dependsOn.value
                 : false;

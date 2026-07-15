@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { CalendarClock } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canEditSection } from "@/lib/roles";
+import { canEditSection, isCentral } from "@/lib/roles";
 import { listOrdersForSection } from "@/lib/orders";
 import { PLANNING_CONTEXT_FIELDS, SECTION_BY_TABLE } from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
@@ -48,6 +48,7 @@ export default async function PlanningWorkspacePage() {
         fields={section.fields}
         orders={orders}
         readonlyFields={PLANNING_CONTEXT_FIELDS}
+        canEditCentral={isCentral(user.role)}
       />
     </div>
   );

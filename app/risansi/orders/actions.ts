@@ -18,7 +18,12 @@ import {
   type ChildTable,
   type OrderTable,
 } from "@/lib/order-schema";
-import { canCreateOrders, canEditChild, canEditSection } from "@/lib/roles";
+import {
+  canCreateOrders,
+  canEditChild,
+  canEditSection,
+  isCentral,
+} from "@/lib/roles";
 import { logAudit } from "@/lib/audit";
 
 export type CreateOrderResult =
@@ -79,8 +84,20 @@ export async function updateOrderSectionAction(
     };
   }
 
+  // Non-central users can't edit fields marked centralOnly (filled by Mitali).
+  let allowedValues = values;
+  if (!isCentral(user.role)) {
+    const section = SECTION_BY_TABLE.get(table as OrderTable);
+    const centralOnly = new Set(
+      section?.fields.filter((f) => f.centralOnly).map((f) => f.column) ?? []
+    );
+    allowedValues = Object.fromEntries(
+      Object.entries(values).filter(([k]) => !centralOnly.has(k))
+    );
+  }
+
   try {
-    await updateOrderSection(orderId, table as OrderTable, values);
+    await updateOrderSection(orderId, table as OrderTable, allowedValues);
     await logAudit({
       actor: { id: user.id, email: user.email, role: user.role },
       action: "order.update",

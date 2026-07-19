@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, Gauge, Loader2 } from "lucide-react";
 import { requestAccess } from "@/app/signup/actions";
 import { REQUESTABLE_ROLES, roleLabel } from "@/lib/roles";
-
+import Image from "next/image";
+import logo from "@/assets/logo.png";
 const ROLES = REQUESTABLE_ROLES.map((value) => ({
   value,
   label: roleLabel(value),
@@ -93,13 +94,8 @@ export function SignupForm() {
   return (
     <div className="w-full max-w-[380px]">
       {/* mobile logo (brand panel hidden on small screens) */}
-      <div className="mb-5 flex items-center gap-3 lg:hidden">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-          <Gauge className="h-5 w-5" />
-        </div>
-        <span className="font-display text-lg font-semibold tracking-tight text-foreground">
-          Risansi
-        </span>
+       <div className="relative flex items-center gap-3">
+        <Image src={logo} alt="Risansi" width={200} height={100} className="rounded-xl bg-dark/10 p-2" />
       </div>
 
       <div className="mb-5">

@@ -18,9 +18,9 @@ export default async function OrdersPage() {
   const canCreate = user ? canCreateOrders(user.role) : false;
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-4 py-6 sm:px-8 sm:py-8">
       {/* header */}
-      <div className="mb-6 flex items-center justify-between gap-3">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
             <ClipboardList className="h-6 w-6" />

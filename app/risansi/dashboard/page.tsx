@@ -22,7 +22,7 @@ export default async function DashboardPage() {
 
   // Department roles get a light landing view.
   return (
-    <div className="px-8 py-8">
+    <div className="px-4 py-6 sm:px-8 sm:py-8">
       <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
         Welcome, {user.full_name}
       </h1>

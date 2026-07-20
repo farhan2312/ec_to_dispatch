@@ -167,11 +167,12 @@ function Node({ status, index }: { status: Status; index: number }) {
 export function OrderPipeline({ detail }: { detail: OrderDetailData }) {
   const stages = computeStages(detail);
   return (
-    <div className="mb-8 rounded-xl border border-card-border bg-surface p-6 shadow-sm">
+    <div className="mb-8 rounded-xl border border-card-border bg-surface p-4 shadow-sm sm:p-6">
       <p className="mb-5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         Department pipeline
       </p>
-      <div className="flex items-start">
+      <div className="overflow-x-auto">
+      <div className="flex min-w-[640px] items-start sm:min-w-0">
         {stages.map((stage, i) => (
           <div
             key={stage.label}
@@ -197,6 +198,7 @@ export function OrderPipeline({ detail }: { detail: OrderDetailData }) {
             </div>
           </div>
         ))}
+      </div>
       </div>
     </div>
   );

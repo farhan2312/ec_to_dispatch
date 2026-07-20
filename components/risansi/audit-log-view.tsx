@@ -157,7 +157,7 @@ export function AuditLogView({
     : `${total} event${total === 1 ? "" : "s"}`;
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-4 py-6 sm:px-8 sm:py-8">
       <div className="mb-6">
         <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
           Audit Log

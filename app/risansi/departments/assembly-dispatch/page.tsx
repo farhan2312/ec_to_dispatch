@@ -24,7 +24,7 @@ export default async function AssemblyDispatchWorkspacePage() {
   const orders = await listOrdersForSection(TABLE);
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-4 py-6 sm:px-8 sm:py-8">
       <div className="mb-6 flex items-center gap-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
           <Truck className="h-6 w-6" />

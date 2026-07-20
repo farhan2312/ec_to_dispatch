@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   Truck,
   Wallet,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { logout } from "@/app/risansi/actions";
@@ -120,9 +121,13 @@ type SidebarUser = { name: string; email: string; role: string };
 export function Sidebar({
   user,
   alertCount = 0,
+  drawerOpen = false,
+  onClose,
 }: {
   user: SidebarUser;
   alertCount?: number;
+  drawerOpen?: boolean;
+  onClose?: () => void;
 }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -164,18 +169,25 @@ export function Sidebar({
   }
 
   return (
-    <aside className="sticky top-0 flex h-screen w-64 shrink-0 flex-col bg-sidebar">
+    <aside
+      className={`fixed inset-y-0 left-0 z-40 flex h-screen w-64 shrink-0 flex-col bg-sidebar transition-transform duration-200 lg:sticky lg:top-0 ${
+        drawerOpen ? "translate-x-0" : "-translate-x-full"
+      } lg:translate-x-0`}
+    >
       {/* brand */}
-    <div className="flex items-center gap-2.5 px-5 py-5">
-  <div className="overflow-hidden rounded-xl bg-white p-1 w-45 flex items-center justify-center">
-    <Image
-      src={logo}
-      alt="Risansi"
-      width={140}
-      height={100}
-    />
-  </div>
-</div>
+      <div className="flex items-center justify-between gap-2.5 px-5 py-5">
+        <div className="flex w-45 items-center justify-center overflow-hidden rounded-xl bg-white p-1">
+          <Image src={logo} alt="Risansi" width={140} height={100} />
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close menu"
+          className="rounded-lg p-1.5 text-white/70 transition-colors hover:bg-sidebar-hover lg:hidden"
+        >
+          <X className="h-5 w-5" />
+        </button>
+      </div>
 
       {/* nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-2">

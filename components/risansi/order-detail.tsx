@@ -208,7 +208,7 @@ export function OrderDetail({
   const order = detail.order;
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-4 py-6 sm:px-8 sm:py-8">
       <Link
         href="/risansi/orders"
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground"

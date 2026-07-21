@@ -34,15 +34,17 @@ export const REQUESTABLE_ROLES: Role[] = [
 ];
 
 // The single department role that owns (can edit) each order section table.
-// The core `orders` identity and the QC section are owned by Central Visibility
-// (Mitali fills QC; the QC role only views it).
+// The core `orders` identity is owned by Central Visibility. QC is owned by
+// the `qc` role, but its Required QC Documents / Target Date fields are
+// marked `centralOnly` in order-schema.ts (Mitali fills those; QC only fills
+// Actual Date of Doc. Submission and Remarks).
 const TABLE_OWNER: Record<OrderTable, Role> = {
   orders: "central_visibility",
   order_billing: "operations",
   order_accounts: "accounts",
   order_drawing: "drawing",
   order_purchase: "purchase",
-  order_qc: "central_visibility",
+  order_qc: "qc",
   order_planning: "planning",
   order_assembly_dispatch: "dispatch",
 };
@@ -58,14 +60,9 @@ export function canEditSection(role: string, table: OrderTable): boolean {
   return TABLE_OWNER[table] === role;
 }
 
-/**
- * Who can open a department workspace (view). Same as edit access, except the
- * `qc` role can view the QC workspace even though Mitali owns editing.
- */
+/** Who can open a department workspace (view). Same as edit access. */
 export function canAccessDepartment(role: string, table: OrderTable): boolean {
-  if (canEditSection(role, table)) return true;
-  if (table === "order_qc" && role === "qc") return true;
-  return false;
+  return canEditSection(role, table);
 }
 
 /** Only Admin and Central Visibility may create orders (form or Excel import). */
@@ -99,6 +96,15 @@ export function canEditChild(role: string, _table: "order_lots"): boolean {
  */
 export function canEditQcDocuments(role: string): boolean {
   return role === "qc" || isCentral(role);
+}
+
+/**
+ * QC requirement documents — the reverse direction: Central Visibility
+ * uploads reference/requirement files for QC to work from. Only Central may
+ * upload/delete; QC (+ Central) may view/download via canAccessDepartment.
+ */
+export function canEditQcRequirementDocs(role: string): boolean {
+  return isCentral(role);
 }
 
 export function roleLabel(role: string): string {

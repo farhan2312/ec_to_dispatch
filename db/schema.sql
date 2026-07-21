@@ -207,6 +207,22 @@ CREATE TABLE IF NOT EXISTS order_qc_documents (
 CREATE INDEX IF NOT EXISTS order_qc_documents_order_id_idx
     ON order_qc_documents(order_id);
 
+-- QC requirement documents (1:many). The reverse direction from
+-- order_qc_documents: reference/requirement files Central Visibility uploads
+-- for QC to work from (specs, standards, drawings), not QC's own output.
+-- Central Visibility uploads/deletes; QC (+ Central) can view/download.
+CREATE TABLE IF NOT EXISTS order_qc_requirement_documents (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id      UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    file_name     TEXT NOT NULL,
+    mime_type     TEXT,
+    file_size     INT,
+    file_data     BYTEA NOT NULL,
+    uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS order_qc_requirement_documents_order_id_idx
+    ON order_qc_requirement_documents(order_id);
+
 -- Planning — cols AT–AX, BB, BC, BG.
 CREATE TABLE IF NOT EXISTS order_planning (
     order_id                      UUID PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,

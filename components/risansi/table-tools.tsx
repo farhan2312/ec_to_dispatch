@@ -59,6 +59,10 @@ export type FilterDef<T> = {
   key: string;
   label: string;
   getValue: (row: T) => string | null;
+  // Fixed dropdown options (e.g. a status enum). When set, these are used
+  // as-is instead of the values actually present in the data — so a status
+  // like "Pending" still shows up even before any row has it.
+  staticOptions?: string[];
 };
 
 /**
@@ -98,10 +102,15 @@ export function useTableFilters<T>(
     setPage(1);
   }
 
-  // Distinct, sorted option values per dropdown filter, from the full row set.
+  // Distinct, sorted option values per dropdown filter, from the full row
+  // set — unless the filter defines its own fixed option list.
   const options = useMemo(() => {
     const map: Record<string, string[]> = {};
     for (const def of filters) {
+      if (def.staticOptions) {
+        map[def.key] = def.staticOptions;
+        continue;
+      }
       const set = new Set<string>();
       for (const row of rows) {
         const v = def.getValue(row);

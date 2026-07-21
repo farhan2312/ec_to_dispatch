@@ -8,6 +8,7 @@ import { createOrderAction } from "@/app/risansi/orders/actions";
 import type { NewOrderInput } from "@/lib/orders";
 import {
   INDUSTRY_TYPE_OPTIONS,
+  ITEM_OPTIONS,
   NATURE_OF_SUPPLY_OPTIONS,
 } from "@/lib/order-schema";
 
@@ -39,7 +40,7 @@ const SECTIONS: Section[] = [
       { name: "client_code", label: "Client Code", type: "text" },
       { name: "client_type", label: "Client Type", type: "text" },
       { name: "party", label: "Party", type: "text" },
-      { name: "agent", label: "Agent", type: "text" },
+      { name: "agent", label: "Representative", type: "text" },
       {
         name: "nature_of_supply",
         label: "Nature of Supply",
@@ -57,7 +58,7 @@ const SECTIONS: Section[] = [
   {
     title: "Item",
     fields: [
-      { name: "item", label: "Item", type: "text" },
+      { name: "item", label: "Item", type: "select", options: ITEM_OPTIONS },
       { name: "po_no", label: "PO No.", type: "text" },
       { name: "customer_po_date", label: "Customer PO Date", type: "date" },
       { name: "model_no", label: "Model No.", type: "text" },

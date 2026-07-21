@@ -11,10 +11,14 @@ import {
 } from "@/lib/order-schema";
 import { Pagination, SearchInput, useTableSearch } from "./table-tools";
 import { QcDocumentsModal } from "./qc-documents-modal";
+import type { QcDocTable } from "@/lib/orders";
 
-// Only the QC workspace passes this today; kept generic in case another
-// department needs file attachments later.
+// Only the QC workspace passes this today; kept generic (a list, so more than
+// one document set can be attached) in case another department needs file
+// attachments later.
 type DocumentsConfig = {
+  table: QcDocTable;
+  label: string;
   canEdit: boolean;
   counts: Record<string, number>;
 };
@@ -54,7 +58,7 @@ export function DepartmentWorkspace({
   readonlyFields = [],
   canEdit = true,
   canEditCentral = true,
-  documents,
+  documents = [],
 }: {
   table: OrderTable;
   fields: OrderField[];
@@ -64,10 +68,12 @@ export function DepartmentWorkspace({
   // Whether the current user may edit `centralOnly` fields (Central Visibility).
   canEditCentral?: boolean;
   // QC document attachments — omitted everywhere except the QC workspace.
-  documents?: DocumentsConfig;
+  documents?: DocumentsConfig[];
 }) {
   const [editRow, setEditRow] = useState<Row | null>(null);
-  const [docsRow, setDocsRow] = useState<Row | null>(null);
+  const [docsPanel, setDocsPanel] = useState<{ row: Row; config: DocumentsConfig } | null>(
+    null
+  );
 
   const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
     useTableSearch(orders, rowSearchText);
@@ -83,12 +89,17 @@ export function DepartmentWorkspace({
     );
   }
 
+  // Party is customer-identifying info; only Billing & Operations and
+  // Accounts need it for their day-to-day work.
+  const showParty = table === "order_billing" || table === "order_accounts";
+
   const colCount =
-    4 +
+    3 +
+    (showParty ? 1 : 0) +
     readonlyFields.length +
     fields.length +
     (canEdit ? 1 : 0) +
-    (documents ? 1 : 0);
+    documents.length;
   const title = SECTION_BY_TABLE.get(table)?.title ?? "Details";
 
   return (
@@ -109,7 +120,7 @@ export function DepartmentWorkspace({
                 <th className="px-4 py-3">Sl.</th>
                 <th className="px-4 py-3">SO No.</th>
                 <th className="px-4 py-3">EC No.</th>
-                <th className="px-4 py-3">Party</th>
+                {showParty && <th className="px-4 py-3">Party</th>}
                 {readonlyFields.map((f) => (
                   <th
                     key={f.column}
@@ -123,7 +134,11 @@ export function DepartmentWorkspace({
                     {f.label}
                   </th>
                 ))}
-                {documents && <th className="px-3 py-3 whitespace-nowrap">Attach Docs</th>}
+                {documents.map((doc) => (
+                  <th key={doc.table} className="px-3 py-3 whitespace-nowrap">
+                    {doc.label}
+                  </th>
+                ))}
                 {canEdit && <th className="px-4 py-3 text-right">Edit</th>}
               </tr>
             </thead>
@@ -149,7 +164,9 @@ export function DepartmentWorkspace({
                   <td className="px-4 py-3 whitespace-nowrap">
                     {toInput(order.ec_no) || "—"}
                   </td>
-                  <td className="px-4 py-3">{toInput(order.party) || "—"}</td>
+                  {showParty && (
+                    <td className="px-4 py-3">{toInput(order.party) || "—"}</td>
+                  )}
                   {readonlyFields.map((f) => (
                     <td
                       key={f.column}
@@ -163,19 +180,19 @@ export function DepartmentWorkspace({
                       {formatValue(f, order[f.column])}
                     </td>
                   ))}
-                  {documents && (
-                    <td className="px-3 py-3 whitespace-nowrap">
+                  {documents.map((doc) => (
+                    <td key={doc.table} className="px-3 py-3 whitespace-nowrap">
                       <button
                         type="button"
-                        onClick={() => setDocsRow(order)}
+                        onClick={() => setDocsPanel({ row: order, config: doc })}
                         className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
                       >
                         <Paperclip className="h-3.5 w-3.5" />
-                        {documents.counts[String(order.id)] ?? 0} file
-                        {(documents.counts[String(order.id)] ?? 0) === 1 ? "" : "s"}
+                        {doc.counts[String(order.id)] ?? 0} file
+                        {(doc.counts[String(order.id)] ?? 0) === 1 ? "" : "s"}
                       </button>
                     </td>
-                  )}
+                  ))}
                   {canEdit && (
                     <td className="px-4 py-3 text-right">
                       <button
@@ -216,15 +233,21 @@ export function DepartmentWorkspace({
         />
       )}
 
-      {docsRow && documents && (
+      {docsPanel && (
         <QcDocumentsModal
-          orderId={String(docsRow.id)}
-          label={[docsRow.so_no, docsRow.ec_no, docsRow.party]
+          table={docsPanel.config.table}
+          title={docsPanel.config.label}
+          orderId={String(docsPanel.row.id)}
+          label={[
+            docsPanel.row.so_no,
+            docsPanel.row.ec_no,
+            showParty ? docsPanel.row.party : null,
+          ]
             .filter(Boolean)
             .map(String)
             .join(" · ")}
-          canEdit={documents.canEdit}
-          onClose={() => setDocsRow(null)}
+          canEdit={docsPanel.config.canEdit}
+          onClose={() => setDocsPanel(null)}
         />
       )}
     </div>
@@ -271,6 +294,7 @@ function EditSectionModal({
     onClose();
   }
 
+  const showParty = table === "order_billing" || table === "order_accounts";
   const identity = [data.so_no, data.ec_no].filter(Boolean).join(" · ");
   const inputClass =
     "h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50";
@@ -294,7 +318,7 @@ function EditSectionModal({
         <p className="mb-5 text-sm text-muted">
           Order #{String(data.sl_no ?? "—")}
           {identity ? ` · ${identity}` : ""}
-          {data.party ? ` · ${String(data.party)}` : ""}
+          {showParty && data.party ? ` · ${String(data.party)}` : ""}
         </p>
 
         {readonlyFields.length > 0 && (

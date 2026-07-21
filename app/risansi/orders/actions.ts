@@ -15,6 +15,7 @@ import {
   updateChildRow,
   updateOrderSection,
   type NewOrderInput,
+  type QcDocTable,
   type QcDocumentMeta,
 } from "@/lib/orders";
 import { parseOrdersWorkbook } from "@/lib/excel-import";
@@ -25,9 +26,11 @@ import {
   type OrderTable,
 } from "@/lib/order-schema";
 import {
+  canAccessDepartment,
   canCreateOrders,
   canEditChild,
   canEditQcDocuments,
+  canEditQcRequirementDocs,
   canEditSection,
   isCentral,
 } from "@/lib/roles";
@@ -228,22 +231,52 @@ export type QcDocumentResult = { ok: true } | { ok: false; error: string };
 
 const MAX_QC_FILE_BYTES = 8 * 1024 * 1024; // stay under the 10MB action body cap
 
+const QC_DOC_TABLES: readonly QcDocTable[] = [
+  "order_qc_documents",
+  "order_qc_requirement_documents",
+];
+
+// The `table` argument crosses a Server Action boundary (a public POST
+// endpoint), so re-validate it here even though the caller's TS type says
+// it's already a QcDocTable.
+function isQcDocTable(table: string): table is QcDocTable {
+  return (QC_DOC_TABLES as readonly string[]).includes(table);
+}
+
+function canEditQcDocTable(table: QcDocTable, role: string): boolean {
+  return table === "order_qc_documents"
+    ? canEditQcDocuments(role)
+    : canEditQcRequirementDocs(role);
+}
+
+const QC_DOC_TABLE_LABEL: Record<QcDocTable, string> = {
+  order_qc_documents: "QC",
+  order_qc_requirement_documents: "QC Requirement Docs",
+};
+
 export async function listQcDocumentsAction(
+  table: QcDocTable,
   orderId: string
 ): Promise<QcDocumentMeta[]> {
   const user = await getCurrentUser();
-  if (!user || !canEditQcDocuments(user.role)) return [];
-  return listQcDocuments(orderId);
+  if (!user || !isQcDocTable(table)) return [];
+  // Both document sets are viewable by anyone with QC section access.
+  if (!canAccessDepartment(user.role, "order_qc")) return [];
+  return listQcDocuments(table, orderId);
 }
 
 export async function uploadQcDocumentsAction(
+  table: QcDocTable,
   orderId: string,
   formData: FormData
 ): Promise<QcDocumentResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
-  if (!canEditQcDocuments(user.role)) {
-    return { ok: false, error: "You don't have permission to attach QC documents." };
+  if (!isQcDocTable(table)) {
+    return { ok: false, error: "Unknown document set." };
+  }
+  if (!canEditQcDocTable(table, user.role)) {
+    return { ok: false, error: "You don't have permission to attach documents here." };
   }
 
   const files = formData
@@ -260,19 +293,20 @@ export async function uploadQcDocumentsAction(
   try {
     for (const file of files) {
       const data = Buffer.from(await file.arrayBuffer());
-      await insertQcDocument(orderId, {
+      await insertQcDocument(table, orderId, {
         name: file.name,
         mimeType: file.type || null,
         size: file.size,
         data,
       });
     }
+    const label = QC_DOC_TABLE_LABEL[table];
     await logAudit({
       actor: { id: user.id, email: user.email, role: user.role },
       action: "order.update",
       category: "activity",
-      target: "QC",
-      details: `Attached ${files.length} QC document${files.length === 1 ? "" : "s"}`,
+      target: label,
+      details: `Attached ${files.length} document${files.length === 1 ? "" : "s"} to ${label}`,
     });
     revalidatePath("/risansi/departments/qc");
     return { ok: true };
@@ -283,15 +317,19 @@ export async function uploadQcDocumentsAction(
 }
 
 export async function deleteQcDocumentAction(
+  table: QcDocTable,
   id: string
 ): Promise<QcDocumentResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
-  if (!canEditQcDocuments(user.role)) {
-    return { ok: false, error: "You don't have permission to delete QC documents." };
+  if (!isQcDocTable(table)) {
+    return { ok: false, error: "Unknown document set." };
+  }
+  if (!canEditQcDocTable(table, user.role)) {
+    return { ok: false, error: "You don't have permission to delete documents here." };
   }
   try {
-    await deleteQcDocument(id);
+    await deleteQcDocument(table, id);
     revalidatePath("/risansi/departments/qc");
     return { ok: true };
   } catch (error) {

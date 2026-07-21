@@ -32,6 +32,7 @@ const MAPPINGS: Mapping[] = [
   { header: "Nature of Supply", table: "orders", column: "nature_of_supply", type: "text" },
   { header: "INDUSTRY TYPE", table: "orders", column: "industry_type", type: "text" },
   { header: "AGENT", table: "orders", column: "agent", type: "text" },
+  { header: "Representative", table: "orders", column: "agent", type: "text" },
   { header: "Item", table: "orders", column: "item", type: "text" },
   { header: "PO NO.", table: "orders", column: "po_no", type: "text" },
   { header: "Customer PO Date", table: "orders", column: "customer_po_date", type: "date" },

@@ -2,7 +2,13 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ClipboardCheck } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canAccessDepartment, canEditQcDocuments, canEditSection } from "@/lib/roles";
+import {
+  canAccessDepartment,
+  canEditQcDocuments,
+  canEditQcRequirementDocs,
+  canEditSection,
+  isCentral,
+} from "@/lib/roles";
 import { listOrdersForSection, listQcDocumentCounts } from "@/lib/orders";
 import { SECTION_BY_TABLE } from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
@@ -20,12 +26,15 @@ export default async function QcWorkspacePage() {
   if (!user) redirect("/login");
   if (!canAccessDepartment(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  // QC attributes are filled by Central Visibility; the QC role only views them.
+  // QC fills its own submission fields; Required QC Documents / Target Date
+  // stay centralOnly (Mitali fills those, read-only to QC — see order-schema.ts).
   const canEdit = canEditSection(user.role, TABLE);
+  const canEditCentral = isCentral(user.role);
   const section = SECTION_BY_TABLE.get(TABLE)!;
-  const [orders, docCounts] = await Promise.all([
+  const [orders, docCounts, requirementDocCounts] = await Promise.all([
     listOrdersForSection(TABLE),
-    listQcDocumentCounts(),
+    listQcDocumentCounts("order_qc_documents"),
+    listQcDocumentCounts("order_qc_requirement_documents"),
   ]);
 
   return (
@@ -39,9 +48,9 @@ export default async function QcWorkspacePage() {
             QC
           </h1>
           <p className="text-sm text-muted">
-            {canEdit
-              ? "QC documents and submission dates for each order."
-              : "QC documents and submission dates (set by Central Visibility)."}
+            Fill in the actual submission date and remarks; Required QC
+            Documents and the target date are set by Central Visibility.
+            {" "}Requirement Docs are reference files Central Visibility uploads for QC to work from.
           </p>
         </div>
       </div>
@@ -51,7 +60,21 @@ export default async function QcWorkspacePage() {
         fields={section.fields}
         orders={orders}
         canEdit={canEdit}
-        documents={{ canEdit: canEditQcDocuments(user.role), counts: docCounts }}
+        canEditCentral={canEditCentral}
+        documents={[
+          {
+            table: "order_qc_documents",
+            label: "Attach Docs",
+            canEdit: canEditQcDocuments(user.role),
+            counts: docCounts,
+          },
+          {
+            table: "order_qc_requirement_documents",
+            label: "Requirement Docs",
+            canEdit: canEditQcRequirementDocs(user.role),
+            counts: requirementDocCounts,
+          },
+        ]}
       />
     </div>
   );

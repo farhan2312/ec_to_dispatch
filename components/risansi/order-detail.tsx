@@ -15,13 +15,20 @@ import {
   canAccessDepartment,
   canEditChild,
   canEditQcDocuments,
+  canEditQcRequirementDocs,
   canEditSection,
   isCentral,
 } from "@/lib/roles";
-import type { OrderDetail as OrderDetailData } from "@/lib/orders";
+import type { OrderDetail as OrderDetailData, QcDocTable } from "@/lib/orders";
 import { OrderChildList } from "./order-children";
 import { OrderPipeline, pipelineSummary } from "./order-pipeline";
 import { QcDocumentsModal } from "./qc-documents-modal";
+
+type DocumentsConfig = {
+  table: QcDocTable;
+  label: string;
+  canEdit: boolean;
+};
 
 type Row = Record<string, unknown>;
 
@@ -60,7 +67,7 @@ function EditableSection({
   data,
   canEdit,
   canEditCentral,
-  documents,
+  documents = [],
 }: {
   orderId: string;
   section: OrderSection;
@@ -68,13 +75,13 @@ function EditableSection({
   canEdit: boolean;
   canEditCentral: boolean;
   // QC document attachments — only passed for the QC section.
-  documents?: { canEdit: boolean };
+  documents?: DocumentsConfig[];
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [docsOpen, setDocsOpen] = useState(false);
+  const [openDocs, setOpenDocs] = useState<DocumentsConfig | null>(null);
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       section.fields.map((f) => [f.column, toInput(data?.[f.column])])
@@ -111,16 +118,17 @@ function EditableSection({
           {section.title}
         </h2>
         <div className="flex items-center gap-2">
-          {documents && (
+          {documents.map((doc) => (
             <button
+              key={doc.table}
               type="button"
-              onClick={() => setDocsOpen(true)}
+              onClick={() => setOpenDocs(doc)}
               className="inline-flex items-center gap-1.5 rounded-lg border border-input-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
             >
               <Paperclip className="h-3.5 w-3.5" />
-              Attach Docs
+              {doc.label}
             </button>
-          )}
+          ))}
           {!editing && canEdit && (
             <button
               type="button"
@@ -134,12 +142,14 @@ function EditableSection({
         </div>
       </div>
 
-      {docsOpen && documents && (
+      {openDocs && (
         <QcDocumentsModal
+          table={openDocs.table}
+          title={openDocs.label}
           orderId={orderId}
           label={section.title}
-          canEdit={documents.canEdit}
-          onClose={() => setDocsOpen(false)}
+          canEdit={openDocs.canEdit}
+          onClose={() => setOpenDocs(null)}
         />
       )}
 
@@ -307,7 +317,18 @@ export function OrderDetail({
               canEditCentral={central}
               documents={
                 section.table === "order_qc"
-                  ? { canEdit: canEditQcDocuments(role) }
+                  ? [
+                      {
+                        table: "order_qc_documents",
+                        label: "Attach Docs",
+                        canEdit: canEditQcDocuments(role),
+                      },
+                      {
+                        table: "order_qc_requirement_documents",
+                        label: "Requirement Docs",
+                        canEdit: canEditQcRequirementDocs(role),
+                      },
+                    ]
                   : undefined
               }
             />

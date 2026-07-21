@@ -27,7 +27,6 @@ export type OrderListRow = {
   model_no: string | null;
   pi_no: string | null;
   payment_status: string | null;
-  actual_pump_status: string | null;
   dispatch_target_date: string | null;
   dispatch_status: string | null;
   order_value: string | null;
@@ -258,6 +257,23 @@ export async function deleteOrder(id: string): Promise<void> {
   await query(`DELETE FROM orders WHERE id = $1`, [id]);
 }
 
+// order_qc_documents: QC's own output (certs/reports), filled by QC.
+// order_qc_requirement_documents: reference/requirement files Central
+// Visibility uploads for QC to work from — the reverse direction.
+export type QcDocTable = "order_qc_documents" | "order_qc_requirement_documents";
+
+const QC_DOC_TABLES: readonly QcDocTable[] = [
+  "order_qc_documents",
+  "order_qc_requirement_documents",
+];
+
+// Table names are interpolated directly into SQL below (they can't be query
+// params), so every entry point re-validates against this allow-list — the
+// caller's TypeScript type isn't a guarantee once it crosses a Server Action.
+function isQcDocTable(table: string): table is QcDocTable {
+  return (QC_DOC_TABLES as readonly string[]).includes(table);
+}
+
 export type QcDocumentMeta = {
   id: string;
   file_name: string;
@@ -266,23 +282,29 @@ export type QcDocumentMeta = {
   uploaded_at: string;
 };
 
-/** File counts per order, for the QC list view (no bytes fetched). */
-export async function listQcDocumentCounts(): Promise<Record<string, number>> {
+/** File counts per order, for a QC document list view (no bytes fetched). */
+export async function listQcDocumentCounts(
+  table: QcDocTable
+): Promise<Record<string, number>> {
+  if (!isQcDocTable(table)) return {};
   const result = await query<{ order_id: string; count: string }>(
     `SELECT order_id, COUNT(*)::text AS count
-       FROM order_qc_documents
+       FROM ${table}
       GROUP BY order_id`
   );
   return Object.fromEntries(result.rows.map((r) => [r.order_id, Number(r.count)]));
 }
 
-/** Attached QC documents for one order (metadata only, no bytes). */
-export async function listQcDocuments(orderId: string): Promise<QcDocumentMeta[]> {
-  if (!UUID_RE.test(orderId)) return [];
+/** Attached documents for one order (metadata only, no bytes). */
+export async function listQcDocuments(
+  table: QcDocTable,
+  orderId: string
+): Promise<QcDocumentMeta[]> {
+  if (!isQcDocTable(table) || !UUID_RE.test(orderId)) return [];
   const result = await query<QcDocumentMeta>(
     `SELECT id, file_name, mime_type, file_size,
             to_char(uploaded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS uploaded_at
-       FROM order_qc_documents
+       FROM ${table}
       WHERE order_id = $1
       ORDER BY uploaded_at DESC`,
     [orderId]
@@ -290,39 +312,40 @@ export async function listQcDocuments(orderId: string): Promise<QcDocumentMeta[]
   return result.rows;
 }
 
-/** A single QC document's bytes, for download. */
+/** A single document's bytes, for download. Tries both QC document tables. */
 export async function getQcDocumentFile(
   id: string
 ): Promise<{ file_name: string; mime_type: string | null; file_data: Buffer } | null> {
   if (!UUID_RE.test(id)) return null;
-  const result = await query<{
-    file_name: string;
-    mime_type: string | null;
-    file_data: Buffer;
-  }>(
-    `SELECT file_name, mime_type, file_data FROM order_qc_documents WHERE id = $1`,
-    [id]
-  );
-  return result.rows[0] ?? null;
+  for (const table of QC_DOC_TABLES) {
+    const result = await query<{
+      file_name: string;
+      mime_type: string | null;
+      file_data: Buffer;
+    }>(`SELECT file_name, mime_type, file_data FROM ${table} WHERE id = $1`, [id]);
+    if (result.rows[0]) return result.rows[0];
+  }
+  return null;
 }
 
-/** Attach one QC document to an order. */
+/** Attach one document to an order. */
 export async function insertQcDocument(
+  table: QcDocTable,
   orderId: string,
   file: { name: string; mimeType: string | null; size: number; data: Buffer }
 ): Promise<void> {
-  if (!UUID_RE.test(orderId)) return;
+  if (!isQcDocTable(table) || !UUID_RE.test(orderId)) return;
   await query(
-    `INSERT INTO order_qc_documents (order_id, file_name, mime_type, file_size, file_data)
+    `INSERT INTO ${table} (order_id, file_name, mime_type, file_size, file_data)
      VALUES ($1, $2, $3, $4, $5)`,
     [orderId, file.name, file.mimeType, file.size, file.data]
   );
 }
 
-/** Remove a QC document. */
-export async function deleteQcDocument(id: string): Promise<void> {
-  if (!UUID_RE.test(id)) return;
-  await query(`DELETE FROM order_qc_documents WHERE id = $1`, [id]);
+/** Remove a document. */
+export async function deleteQcDocument(table: QcDocTable, id: string): Promise<void> {
+  if (!isQcDocTable(table) || !UUID_RE.test(id)) return;
+  await query(`DELETE FROM ${table} WHERE id = $1`, [id]);
 }
 
 // 1:1 detail tables keyed by order_id.
@@ -572,13 +595,18 @@ export async function listOrdersForSection(
     .map(([t, a]) => `LEFT JOIN ${t} ${a} ON ${a}.order_id = o.id`)
     .join("\n       ");
 
+  // Party is customer-identifying info; only send it to Billing & Operations
+  // and Accounts, not every department queue.
+  const partySelect =
+    table === "order_billing" || table === "order_accounts" ? ", o.party" : "";
+
   const result = await query<Record<string, unknown>>(
     `SELECT o.id,
             o.sl_no::int AS sl_no,
             o.so_no,
             o.ec_no,
-            o.party,
-            o.item,
+            o.item
+            ${partySelect},
             ${detailSelects}${contextSelects}
        FROM orders o
        LEFT JOIN ${table} d ON d.order_id = o.id
@@ -602,13 +630,11 @@ export async function listOrders(): Promise<OrderListRow[]> {
             o.order_value::text       AS order_value,
             b.pi_no,
             a.payment_status,
-            pl.actual_pump_status,
             to_char(o.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
             ad.dispatch_status
        FROM orders o
        LEFT JOIN order_billing b            ON b.order_id  = o.id
        LEFT JOIN order_accounts a           ON a.order_id  = o.id
-       LEFT JOIN order_planning pl          ON pl.order_id = o.id
        LEFT JOIN order_assembly_dispatch ad ON ad.order_id = o.id
       ORDER BY o.sl_no ASC`
   );

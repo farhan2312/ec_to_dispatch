@@ -43,6 +43,12 @@ export const NATURE_OF_SUPPLY_OPTIONS = opts([
   "Export",
 ]);
 export const INDUSTRY_TYPE_OPTIONS = opts(["Sugar", "Non Sugar"]);
+export const ITEM_OPTIONS = opts(["Pump", "Spare", "ROLB"]);
+export const DISPATCH_STATUS_OPTIONS = opts([
+  "Pending",
+  "LOT dispatch",
+  "Fully dispatch",
+]);
 
 // Payment status values. "Outstanding hold" is the escalation trigger.
 export const PAYMENT_HOLD_VALUE = "Outstanding hold";
@@ -77,7 +83,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "client_code", label: "Client Code", type: "text" },
       { column: "client_type", label: "Client Type", type: "text" },
       { column: "party", label: "Party", type: "text" },
-      { column: "agent", label: "Agent", type: "text" },
+      { column: "agent", label: "Representative", type: "text" },
       {
         column: "nature_of_supply",
         label: "Nature of Supply",
@@ -90,7 +96,12 @@ export const ORDER_SECTIONS: OrderSection[] = [
         type: "select",
         options: INDUSTRY_TYPE_OPTIONS,
       },
-      { column: "item", label: "Item", type: "text" },
+      {
+        column: "item",
+        label: "Item",
+        type: "select",
+        options: ITEM_OPTIONS,
+      },
       { column: "po_no", label: "PO No.", type: "text" },
       { column: "customer_po_date", label: "Customer PO Date", type: "date" },
       { column: "model_no", label: "Model No.", type: "text" },
@@ -228,12 +239,20 @@ export const ORDER_SECTIONS: OrderSection[] = [
     title: "QC",
     table: "order_qc",
     fields: [
+      // Filled by Central Visibility, read-only to QC.
       {
         column: "required_qc_documents",
         label: "Required QC Documents",
         type: "text",
+        centralOnly: true,
       },
-      { column: "qc_doc_target_date", label: "Target Date for Doc. Submission", type: "date" },
+      {
+        column: "qc_doc_target_date",
+        label: "Target Date for Doc. Submission",
+        type: "date",
+        centralOnly: true,
+      },
+      // Filled by QC.
       { column: "qc_doc_actual_date", label: "Actual Date of Doc. Submission", type: "date" },
       { column: "remarks", label: "Remarks", type: "text" },
     ],
@@ -279,7 +298,12 @@ export const ORDER_SECTIONS: OrderSection[] = [
     title: "Assembly & Dispatch",
     table: "order_assembly_dispatch",
     fields: [
-      { column: "dispatch_documents_required", label: "Documents Required by Assembly/Dispatch", type: "text" },
+      {
+        column: "dispatch_documents_required",
+        label: "Documents Required by Assembly/Dispatch",
+        type: "text",
+        centralOnly: true,
+      },
       {
         column: "dispatch_team_target_date",
         label: "Target Date for Dispatch Team",
@@ -293,7 +317,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
         column: "dispatch_status",
         label: "Dispatch Status",
         type: "select",
-        options: opts(["LOT dispatch", "Fully dispatch"]),
+        options: DISPATCH_STATUS_OPTIONS,
       },
     ],
   },

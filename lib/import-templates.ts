@@ -14,7 +14,7 @@ export const SYSTEM_GENERATED_HEADERS: string[] = [
   "Party",
   "Nature of Supply",
   "INDUSTRY TYPE",
-  "AGENT",
+  "Representative",
   "Item",
   "PO NO.",
   "Customer PO Date",

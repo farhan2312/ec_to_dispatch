@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2, Trash2 } from "lucide-react";
 import type { OrderListRow } from "@/lib/orders";
 import { deleteOrderAction } from "@/app/risansi/orders/actions";
+import { DISPATCH_STATUS_OPTIONS } from "@/lib/order-schema";
 import {
   FilterBar,
   Pagination,
@@ -19,12 +20,17 @@ function searchText(o: OrderListRow): string {
 }
 
 const ORDER_TEXT_FILTERS: FilterDef<OrderListRow>[] = [
-  { key: "agent", label: "Agent", getValue: (o) => o.agent },
+  { key: "agent", label: "Representative", getValue: (o) => o.agent },
   { key: "item", label: "Item", getValue: (o) => o.item },
 ];
 
 const ORDER_FILTERS: FilterDef<OrderListRow>[] = [
-  { key: "pump_status", label: "Pump Status", getValue: (o) => o.actual_pump_status },
+  {
+    key: "dispatch_status",
+    label: "Dispatch Status",
+    getValue: (o) => o.dispatch_status,
+    staticOptions: DISPATCH_STATUS_OPTIONS.map((o) => o.value),
+  },
 ];
 
 const numberFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });

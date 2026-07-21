@@ -8,7 +8,7 @@ import {
   listQcDocumentsAction,
   uploadQcDocumentsAction,
 } from "@/app/risansi/orders/actions";
-import type { QcDocumentMeta } from "@/lib/orders";
+import type { QcDocTable, QcDocumentMeta } from "@/lib/orders";
 
 function formatSize(bytes: number | null): string {
   if (!bytes || bytes <= 0) return "—";
@@ -28,11 +28,15 @@ function formatDate(iso: string): string {
 }
 
 export function QcDocumentsModal({
+  table,
+  title = "Attach Docs",
   orderId,
   label,
   canEdit,
   onClose,
 }: {
+  table: QcDocTable;
+  title?: string;
   orderId: string;
   label: string;
   canEdit: boolean;
@@ -46,14 +50,14 @@ export function QcDocumentsModal({
   const [error, setError] = useState<string | null>(null);
 
   async function reload() {
-    const rows = await listQcDocumentsAction(orderId);
+    const rows = await listQcDocumentsAction(table, orderId);
     setDocs(rows);
   }
 
   useEffect(() => {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderId]);
+  }, [table, orderId]);
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -61,7 +65,7 @@ export function QcDocumentsModal({
     setUploading(true);
     const formData = new FormData();
     for (const file of files) formData.append("files", file);
-    const result = await uploadQcDocumentsAction(orderId, formData);
+    const result = await uploadQcDocumentsAction(table, orderId, formData);
     setUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (!result.ok) {
@@ -74,7 +78,7 @@ export function QcDocumentsModal({
 
   async function handleDelete(id: string) {
     setDeletingId(id);
-    const result = await deleteQcDocumentAction(id);
+    const result = await deleteQcDocumentAction(table, id);
     setDeletingId(null);
     if (!result.ok) {
       setError(result.error);
@@ -98,7 +102,7 @@ export function QcDocumentsModal({
         </button>
 
         <h2 className="font-display text-lg font-semibold text-foreground">
-          Attach Docs
+          {title}
         </h2>
         <p className="mb-5 text-sm text-muted">{label}</p>
 

@@ -2,10 +2,12 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Truck } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canEditSection, isCentral } from "@/lib/roles";
+import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
 import { listOrdersForSection } from "@/lib/orders";
+import { listRemindersForDepartment } from "@/lib/reminders";
 import { SECTION_BY_TABLE } from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
+import { RemindersPanel } from "@/components/risansi/reminders-panel";
 
 export const metadata: Metadata = {
   title: "Assembly & Dispatch | Risansi",
@@ -21,7 +23,10 @@ export default async function AssemblyDispatchWorkspacePage() {
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
   const section = SECTION_BY_TABLE.get(TABLE)!;
-  const orders = await listOrdersForSection(TABLE);
+  const [orders, reminders] = await Promise.all([
+    listOrdersForSection(TABLE),
+    listRemindersForDepartment(reminderDeptForTable(TABLE)!),
+  ]);
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
@@ -38,6 +43,8 @@ export default async function AssemblyDispatchWorkspacePage() {
           </p>
         </div>
       </div>
+
+      <RemindersPanel reminders={reminders} />
 
       <DepartmentWorkspace
         table={TABLE}

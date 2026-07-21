@@ -24,13 +24,17 @@ const RANGES: { key: RangeKey; label: string }[] = [
 
 const DAY = 86_400_000;
 
+// Midnight IST today, as a timestamp — not `d.setHours(0,0,0,0)`, which zeroes
+// out the *runtime's* local timezone (UTC during server-side render, browser
+// tz after hydration), splitting "Today" across two different cutoffs.
+function todayStartIst(): number {
+  const isoDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  return new Date(`${isoDate}T00:00:00+05:30`).getTime();
+}
+
 function cutoff(range: RangeKey): number {
   const now = Date.now();
-  if (range === "today") {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    return d.getTime();
-  }
+  if (range === "today") return todayStartIst();
   if (range === "7d") return now - 7 * DAY;
   if (range === "30d") return now - 30 * DAY;
   return 0;

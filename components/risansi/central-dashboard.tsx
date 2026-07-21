@@ -52,14 +52,18 @@ function formatDate(value: string | null): string {
   });
 }
 
+// "Today" in IST as a YYYY-MM-DD string — matches how dispatch_target_date is
+// serialized, so this is a plain string compare with no Date-object timezone
+// ambiguity (the runtime's own local timezone never enters into it, whether
+// this renders on the server or in the browser).
+function todayIso(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+}
+
 function isOverdue(row: OrderOverviewRow): boolean {
   if (!row.dispatch_target_date) return false;
   if ((row.dispatch_status ?? "").trim() !== "") return false;
-  const target = new Date(row.dispatch_target_date);
-  if (Number.isNaN(target.getTime())) return false;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return target < today;
+  return row.dispatch_target_date < todayIso();
 }
 
 type Tone = "neutral" | "green" | "amber" | "red" | "blue";

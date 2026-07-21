@@ -34,6 +34,8 @@ import {
   canSeeDispatched,
   canSeeEscalations,
   isCentral,
+  reminderDeptForRole,
+  reminderDeptForTable,
 } from "@/lib/roles";
 import type { OrderTable } from "@/lib/order-schema";
 import { ThemeToggle } from "./theme-toggle";
@@ -122,11 +124,13 @@ type SidebarUser = { name: string; email: string; role: string };
 export function Sidebar({
   user,
   alertCount = 0,
+  reminderCount = 0,
   drawerOpen = false,
   onClose,
 }: {
   user: SidebarUser;
   alertCount?: number;
+  reminderCount?: number;
   drawerOpen?: boolean;
   onClose?: () => void;
 }) {
@@ -150,13 +154,16 @@ export function Sidebar({
     (item) => item.href !== "/risansi/orders" || isCentral(user.role)
   );
 
+  // The department this role gets deadline reminders for (badged in the nav).
+  const myReminderDept = reminderDeptForRole(user.role);
+
   // The active item is the nav href that is the longest matching prefix of the
   // current path, so only the most specific one highlights.
   const activeHref = NAV_HREFS.filter(
     (h) => pathname === h || pathname.startsWith(h + "/")
   ).reduce((best, h) => (h.length > best.length ? h : best), "");
 
-  function NavLink({ item }: { item: NavItem }) {
+  function NavLink({ item, badge = 0 }: { item: NavItem; badge?: number }) {
     const active = item.href === activeHref;
     const Icon = item.icon;
     return (
@@ -169,7 +176,12 @@ export function Sidebar({
         }`}
       >
         <Icon className="h-4 w-4 shrink-0" />
-        {item.label}
+        <span className="flex-1">{item.label}</span>
+        {badge > 0 && (
+          <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[11px] font-semibold text-white">
+            {badge > 99 ? "99+" : badge}
+          </span>
+        )}
       </Link>
     );
   }
@@ -224,7 +236,15 @@ export function Sidebar({
             </p>
             <div className="space-y-1">
               {visibleDepartments.map((item) => (
-                <NavLink key={item.href} item={item} />
+                <NavLink
+                  key={item.href}
+                  item={item}
+                  badge={
+                    reminderDeptForTable(item.table) === myReminderDept
+                      ? reminderCount
+                      : 0
+                  }
+                />
               ))}
             </div>
           </div>

@@ -10,10 +10,12 @@ type ShellUser = { name: string; email: string; role: string };
 export function AppShell({
   user,
   alertCount,
+  reminderCount,
   children,
 }: {
   user: ShellUser;
   alertCount: number;
+  reminderCount: number;
   children: React.ReactNode;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -29,6 +31,7 @@ export function AppShell({
       <Sidebar
         user={user}
         alertCount={alertCount}
+        reminderCount={reminderCount}
         drawerOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
       />

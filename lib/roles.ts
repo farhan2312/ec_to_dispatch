@@ -107,6 +107,39 @@ export function canEditQcRequirementDocs(role: string): boolean {
   return isCentral(role);
 }
 
+// Departments that work to a target date and therefore get deadline reminders
+// (7 days / 72h / 24h out). Billing and Accounts have no such date. Planning
+// has no target date of its own, so it borrows the order's Dispatch Target
+// Date — pump/order readiness (planning_readiness_date) must be in before
+// dispatch, same deadline Assembly & Dispatch works to.
+export type ReminderDept = "drawing" | "purchase" | "qc" | "planning" | "dispatch";
+
+const REMINDER_DEPT_BY_ROLE: Partial<Record<Role, ReminderDept>> = {
+  drawing: "drawing",
+  purchase: "purchase",
+  qc: "qc",
+  planning: "planning",
+  dispatch: "dispatch",
+};
+
+const REMINDER_DEPT_BY_TABLE: Partial<Record<OrderTable, ReminderDept>> = {
+  order_drawing: "drawing",
+  order_purchase: "purchase",
+  order_qc: "qc",
+  order_planning: "planning",
+  order_assembly_dispatch: "dispatch",
+};
+
+/** The reminder department a role is responsible for, if any. */
+export function reminderDeptForRole(role: string): ReminderDept | null {
+  return REMINDER_DEPT_BY_ROLE[role as Role] ?? null;
+}
+
+/** The reminder department a section table belongs to, if any. */
+export function reminderDeptForTable(table: OrderTable): ReminderDept | null {
+  return REMINDER_DEPT_BY_TABLE[table] ?? null;
+}
+
 export function roleLabel(role: string): string {
   return (ROLE_LABELS as Record<string, string>)[role] ?? role;
 }

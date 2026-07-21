@@ -1,5 +1,10 @@
 import { query } from "@/lib/db";
 
+// The DB session runs in UTC, but the business operates on IST days. Deadlines
+// are calendar dates, so "today" must be the IST calendar date, not the UTC
+// one — otherwise the day boundary is off by up to 5.5 hours.
+const TODAY_IST = "(now() AT TIME ZONE 'Asia/Kolkata')::date";
+
 export type AlertRow = {
   id: string;
   sl_no: number;
@@ -19,9 +24,9 @@ const ALERTS_SQL = `
   SELECT o.id, o.sl_no::int AS sl_no, o.so_no, o.ec_no, o.party,
          'Drawing'::text AS department, 'overdue'::text AS type,
          to_char(o.drg_target_date, 'YYYY-MM-DD') AS due_date,
-         (CURRENT_DATE - o.drg_target_date)::int AS days_overdue
+         (${TODAY_IST} - o.drg_target_date)::int AS days_overdue
     FROM orders o JOIN order_drawing dr ON dr.order_id = o.id
-   WHERE o.drg_target_date < CURRENT_DATE
+   WHERE o.drg_target_date < ${TODAY_IST}
      AND dr.drg_sent_to_client_date IS NULL
 
   UNION ALL
@@ -29,11 +34,11 @@ const ALERTS_SQL = `
   SELECT o.id, o.sl_no::int, o.so_no, o.ec_no, o.party,
          'Purchase'::text, 'overdue'::text,
          to_char(pl.purchase_target_date, 'YYYY-MM-DD'),
-         (CURRENT_DATE - pl.purchase_target_date)::int
+         (${TODAY_IST} - pl.purchase_target_date)::int
     FROM orders o
     JOIN order_planning pl ON pl.order_id = o.id
     LEFT JOIN order_purchase pu ON pu.order_id = o.id
-   WHERE pl.purchase_target_date < CURRENT_DATE
+   WHERE pl.purchase_target_date < ${TODAY_IST}
      AND pu.boi_receipt_date IS NULL
 
   UNION ALL
@@ -41,9 +46,9 @@ const ALERTS_SQL = `
   SELECT o.id, o.sl_no::int, o.so_no, o.ec_no, o.party,
          'QC'::text, 'ld_risk'::text,
          to_char(qc.qc_doc_target_date, 'YYYY-MM-DD'),
-         (CURRENT_DATE - qc.qc_doc_target_date)::int
+         (${TODAY_IST} - qc.qc_doc_target_date)::int
     FROM orders o JOIN order_qc qc ON qc.order_id = o.id
-   WHERE qc.qc_doc_target_date < CURRENT_DATE
+   WHERE qc.qc_doc_target_date < ${TODAY_IST}
      AND qc.qc_doc_actual_date IS NULL
 
   UNION ALL
@@ -51,10 +56,10 @@ const ALERTS_SQL = `
   SELECT o.id, o.sl_no::int, o.so_no, o.ec_no, o.party,
          'Assembly & Dispatch'::text, 'overdue'::text,
          to_char(o.dispatch_target_date, 'YYYY-MM-DD'),
-         (CURRENT_DATE - o.dispatch_target_date)::int
+         (${TODAY_IST} - o.dispatch_target_date)::int
     FROM orders o
     LEFT JOIN order_assembly_dispatch ad ON ad.order_id = o.id
-   WHERE o.dispatch_target_date < CURRENT_DATE
+   WHERE o.dispatch_target_date < ${TODAY_IST}
      AND (ad.dispatch_status IS NULL OR btrim(ad.dispatch_status) = '')
      AND ad.actual_packing_date IS NULL
 

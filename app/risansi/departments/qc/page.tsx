@@ -8,10 +8,13 @@ import {
   canEditQcRequirementDocs,
   canEditSection,
   isCentral,
+  reminderDeptForTable,
 } from "@/lib/roles";
 import { listOrdersForSection, listQcDocumentCounts } from "@/lib/orders";
+import { listRemindersForDepartment } from "@/lib/reminders";
 import { SECTION_BY_TABLE } from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
+import { RemindersPanel } from "@/components/risansi/reminders-panel";
 
 export const metadata: Metadata = {
   title: "QC | Risansi",
@@ -31,10 +34,11 @@ export default async function QcWorkspacePage() {
   const canEdit = canEditSection(user.role, TABLE);
   const canEditCentral = isCentral(user.role);
   const section = SECTION_BY_TABLE.get(TABLE)!;
-  const [orders, docCounts, requirementDocCounts] = await Promise.all([
+  const [orders, docCounts, requirementDocCounts, reminders] = await Promise.all([
     listOrdersForSection(TABLE),
     listQcDocumentCounts("order_qc_documents"),
     listQcDocumentCounts("order_qc_requirement_documents"),
+    listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);
 
   return (
@@ -54,6 +58,8 @@ export default async function QcWorkspacePage() {
           </p>
         </div>
       </div>
+
+      <RemindersPanel reminders={reminders} />
 
       <DepartmentWorkspace
         table={TABLE}

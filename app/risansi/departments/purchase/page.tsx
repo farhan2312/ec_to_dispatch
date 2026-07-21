@@ -2,13 +2,15 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Package } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canEditSection } from "@/lib/roles";
+import { canEditSection, reminderDeptForTable } from "@/lib/roles";
 import { listOrdersForSection } from "@/lib/orders";
+import { listRemindersForDepartment } from "@/lib/reminders";
 import {
   PURCHASE_CONTEXT_FIELDS,
   SECTION_BY_TABLE,
 } from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
+import { RemindersPanel } from "@/components/risansi/reminders-panel";
 
 export const metadata: Metadata = {
   title: "Purchase | Risansi",
@@ -24,14 +26,17 @@ export default async function PurchaseWorkspacePage() {
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
   const section = SECTION_BY_TABLE.get(TABLE)!;
-  const orders = await listOrdersForSection(
-    TABLE,
-    PURCHASE_CONTEXT_FIELDS.map((f) => ({
-      column: f.column,
-      type: f.type,
-      from: "order_planning" as const,
-    }))
-  );
+  const [orders, reminders] = await Promise.all([
+    listOrdersForSection(
+      TABLE,
+      PURCHASE_CONTEXT_FIELDS.map((f) => ({
+        column: f.column,
+        type: f.type,
+        from: "order_planning" as const,
+      }))
+    ),
+    listRemindersForDepartment(reminderDeptForTable(TABLE)!),
+  ]);
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
@@ -49,6 +54,8 @@ export default async function PurchaseWorkspacePage() {
           </p>
         </div>
       </div>
+
+      <RemindersPanel reminders={reminders} />
 
       <DepartmentWorkspace
         table={TABLE}

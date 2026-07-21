@@ -2,13 +2,15 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { PenTool } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canEditSection } from "@/lib/roles";
+import { canEditSection, reminderDeptForTable } from "@/lib/roles";
 import { listOrdersForSection } from "@/lib/orders";
+import { listRemindersForDepartment } from "@/lib/reminders";
 import {
   DRAWING_CONTEXT_FIELDS,
   SECTION_BY_TABLE,
 } from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
+import { RemindersPanel } from "@/components/risansi/reminders-panel";
 
 export const metadata: Metadata = {
   title: "Drawing | Risansi",
@@ -24,10 +26,13 @@ export default async function DrawingWorkspacePage() {
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
   const section = SECTION_BY_TABLE.get(TABLE)!;
-  const orders = await listOrdersForSection(
-    TABLE,
-    DRAWING_CONTEXT_FIELDS.map((f) => ({ column: f.column, type: f.type }))
-  );
+  const [orders, reminders] = await Promise.all([
+    listOrdersForSection(
+      TABLE,
+      DRAWING_CONTEXT_FIELDS.map((f) => ({ column: f.column, type: f.type }))
+    ),
+    listRemindersForDepartment(reminderDeptForTable(TABLE)!),
+  ]);
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
@@ -45,6 +50,8 @@ export default async function DrawingWorkspacePage() {
           </p>
         </div>
       </div>
+
+      <RemindersPanel reminders={reminders} />
 
       <DepartmentWorkspace
         table={TABLE}

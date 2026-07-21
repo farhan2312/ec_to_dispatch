@@ -129,39 +129,19 @@ export function pipelineSummary(detail: OrderDetailData): {
   return { complete, total: stages.length, status };
 }
 
-const STATUS_LABEL: Record<Status, string> = {
-  complete: "Complete",
-  in_progress: "In progress",
-  blocked: "Blocked",
-  pending: "Pending",
-};
-const STATUS_TEXT: Record<Status, string> = {
-  complete: "text-emerald-600",
-  in_progress: "text-amber-600",
-  blocked: "text-rose-600",
-  pending: "text-muted-foreground",
-};
-
-function Node({ status, index }: { status: Status; index: number }) {
-  if (status === "complete") {
+// Departments work in parallel, so there's no sequence to draw — each is just
+// a circle: filled green when that department's work is complete, blank
+// otherwise.
+function Node({ complete }: { complete: boolean }) {
+  if (complete) {
     return (
-      <div className="relative z-10 flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm">
+      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm">
         <Check className="h-5 w-5" />
       </div>
     );
   }
-  const ring =
-    status === "blocked"
-      ? "border-rose-500 text-rose-600"
-      : status === "in_progress"
-        ? "border-amber-500 text-amber-600"
-        : "border-gray-300 text-gray-400";
   return (
-    <div
-      className={`relative z-10 flex h-10 w-10 items-center justify-center rounded-full border-2 bg-surface text-sm font-semibold shadow-sm ${ring}`}
-    >
-      {status === "blocked" ? "!" : index}
-    </div>
+    <div className="h-10 w-10 rounded-full border-2 border-gray-300 bg-surface" />
   );
 }
 
@@ -170,36 +150,26 @@ export function OrderPipeline({ detail }: { detail: OrderDetailData }) {
   return (
     <div className="mb-8 rounded-xl border border-card-border bg-surface p-4 shadow-sm sm:p-6">
       <p className="mb-5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Department pipeline
+        Department progress
       </p>
-      <div className="overflow-x-auto">
-      <div className="flex min-w-[640px] items-start sm:min-w-0">
-        {stages.map((stage, i) => (
-          <div
-            key={stage.label}
-            className="relative flex flex-1 flex-col items-center"
-          >
-            {i > 0 && (
-              <div
-                className={`absolute right-1/2 top-5 h-0.5 w-full -translate-y-1/2 ${
-                  stages[i - 1].status === "complete"
-                    ? "bg-emerald-500"
-                    : "bg-gray-200"
-                }`}
-              />
-            )}
-            <Node status={stage.status} index={i + 1} />
-            <div className="mt-2 px-1 text-center">
-              <div className="text-[13px] font-medium leading-tight text-foreground">
+      <div className="flex flex-wrap gap-x-6 gap-y-5">
+        {stages.map((stage) => {
+          const complete = stage.status === "complete";
+          return (
+            <div
+              key={stage.label}
+              className="flex w-24 flex-col items-center text-center"
+            >
+              <Node complete={complete} />
+              <div className="mt-2 text-[13px] font-medium leading-tight text-foreground">
                 {stage.label}
               </div>
-              <div className={`text-xs ${STATUS_TEXT[stage.status]}`}>
-                {STATUS_LABEL[stage.status]}
-              </div>
+              {complete && (
+                <div className="text-xs text-emerald-600">Complete</div>
+              )}
             </div>
-          </div>
-        ))}
-      </div>
+          );
+        })}
       </div>
     </div>
   );

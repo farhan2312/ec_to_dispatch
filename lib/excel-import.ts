@@ -74,7 +74,7 @@ const MAPPINGS: Mapping[] = [
   { header: "ASSEMBLED/ PACKED QTY", table: "order_planning", column: "assembled_packed_qty", type: "text" },
   { header: "Assembly date", table: "order_planning", column: "assembly_date", type: "date" },
   { header: "Readiness Dt. Rcvd from Planning", table: "order_planning", column: "planning_readiness_date", type: "date" },
-  { header: "Final Dt. for Packing & Dispatch", table: "order_planning", column: "final_packing_dispatch_date", type: "date" },
+  { header: "Final Dt. for Packing & Dispatch", table: "order_assembly_dispatch", column: "final_packing_dispatch_date", type: "date" },
   { header: "Documents Required by Assembly/Dispatch Team", table: "order_assembly_dispatch", column: "dispatch_documents_required", type: "text" },
   { header: "Target Date for Dispatch Team", table: "order_assembly_dispatch", column: "dispatch_team_target_date", type: "date" },
   { header: "ACTUAL Material Packing Date", table: "order_assembly_dispatch", column: "actual_packing_date", type: "date" },

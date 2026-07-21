@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Pencil } from "lucide-react";
+import { ArrowLeft, Loader2, Paperclip, Pencil } from "lucide-react";
 import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
 import {
   ORDER_SECTIONS,
@@ -11,10 +11,17 @@ import {
   type OrderField,
   type OrderSection,
 } from "@/lib/order-schema";
-import { canEditChild, canEditSection, isCentral } from "@/lib/roles";
+import {
+  canAccessDepartment,
+  canEditChild,
+  canEditQcDocuments,
+  canEditSection,
+  isCentral,
+} from "@/lib/roles";
 import type { OrderDetail as OrderDetailData } from "@/lib/orders";
 import { OrderChildList } from "./order-children";
 import { OrderPipeline, pipelineSummary } from "./order-pipeline";
+import { QcDocumentsModal } from "./qc-documents-modal";
 
 type Row = Record<string, unknown>;
 
@@ -42,23 +49,32 @@ function formatDisplay(field: OrderField, value: unknown): string {
   return String(value);
 }
 
+function dependsSatisfied(field: OrderField, values: Record<string, string>): boolean {
+  if (!field.dependsOn) return true;
+  return field.dependsOn.every((d) => (values[d.column] ?? "") === d.value);
+}
+
 function EditableSection({
   orderId,
   section,
   data,
   canEdit,
   canEditCentral,
+  documents,
 }: {
   orderId: string;
   section: OrderSection;
   data: Row | null;
   canEdit: boolean;
   canEditCentral: boolean;
+  // QC document attachments — only passed for the QC section.
+  documents?: { canEdit: boolean };
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [docsOpen, setDocsOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       section.fields.map((f) => [f.column, toInput(data?.[f.column])])
@@ -94,17 +110,38 @@ function EditableSection({
         <h2 className="font-display text-base font-semibold text-foreground">
           {section.title}
         </h2>
-        {!editing && canEdit && (
-          <button
-            type="button"
-            onClick={startEdit}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-input-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-            Edit
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {documents && (
+            <button
+              type="button"
+              onClick={() => setDocsOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-input-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+              Attach Docs
+            </button>
+          )}
+          {!editing && canEdit && (
+            <button
+              type="button"
+              onClick={startEdit}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-input-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </button>
+          )}
+        </div>
       </div>
+
+      {docsOpen && documents && (
+        <QcDocumentsModal
+          orderId={orderId}
+          label={section.title}
+          canEdit={documents.canEdit}
+          onClose={() => setDocsOpen(false)}
+        />
+      )}
 
       {error && (
         <div
@@ -136,12 +173,7 @@ function EditableSection({
                   onChange={(e) =>
                     setValues((prev) => ({ ...prev, [field.column]: e.target.value }))
                   }
-                  disabled={
-                    field.dependsOn
-                      ? (values[field.dependsOn.column] ?? "") !==
-                        field.dependsOn.value
-                      : false
-                  }
+                  disabled={!dependsSatisfied(field, values)}
                   className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <option value="">—</option>
@@ -159,7 +191,8 @@ function EditableSection({
                   onChange={(e) =>
                     setValues((prev) => ({ ...prev, [field.column]: e.target.value }))
                   }
-                  className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
+                  disabled={!dependsSatisfied(field, values)}
+                  className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
                 />
               )
             ) : (
@@ -206,6 +239,12 @@ export function OrderDetail({
   role: string;
 }) {
   const order = detail.order;
+  const central = isCentral(role);
+  // Department roles see only their own section; central/admin see everything.
+  const visibleSections = ORDER_SECTIONS.filter((s) =>
+    canAccessDepartment(role, s.table)
+  );
+  const canSeeLots = canEditChild(role, "order_lots");
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
@@ -227,29 +266,30 @@ export function OrderDetail({
             {order.model_no ? ` — ${String(order.model_no)}` : ""}
           </h1>
         </div>
-        {(() => {
-          const s = pipelineSummary(detail);
-          const tone =
-            s.status === "Blocked"
-              ? "bg-rose-50 text-rose-700 ring-rose-200"
-              : s.status === "Complete"
-                ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                : "bg-amber-50 text-amber-700 ring-amber-200";
-          return (
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium ring-1 ring-inset ${tone}`}
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-current" />
-              {s.status} · {s.complete} of {s.total} complete
-            </span>
-          );
-        })()}
+        {central &&
+          (() => {
+            const s = pipelineSummary(detail);
+            const tone =
+              s.status === "Blocked"
+                ? "bg-rose-50 text-rose-700 ring-rose-200"
+                : s.status === "Complete"
+                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                  : "bg-amber-50 text-amber-700 ring-amber-200";
+            return (
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium ring-1 ring-inset ${tone}`}
+              >
+                <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                {s.status} · {s.complete} of {s.total} complete
+              </span>
+            );
+          })()}
       </div>
 
-      <OrderPipeline detail={detail} />
+      {central && <OrderPipeline detail={detail} />}
 
       <div className="max-w-4xl space-y-6">
-        {ORDER_SECTIONS.map((section) => {
+        {visibleSections.map((section) => {
           // Core section's data lives under `order`; detail tables under their
           // own table name.
           const data =
@@ -264,19 +304,26 @@ export function OrderDetail({
               section={section}
               data={data ?? null}
               canEdit={canEditSection(role, section.table)}
-              canEditCentral={isCentral(role)}
+              canEditCentral={central}
+              documents={
+                section.table === "order_qc"
+                  ? { canEdit: canEditQcDocuments(role) }
+                  : undefined
+              }
             />
           );
         })}
 
-        <OrderChildList
-          orderId={orderId}
-          table="order_lots"
-          title="Dispatch Lots"
-          fields={LOT_FIELDS}
-          rows={detail.order_lots}
-          canEdit={canEditChild(role, "order_lots")}
-        />
+        {canSeeLots && (
+          <OrderChildList
+            orderId={orderId}
+            table="order_lots"
+            title="Dispatch Lots"
+            fields={LOT_FIELDS}
+            rows={detail.order_lots}
+            canEdit={canEditChild(role, "order_lots")}
+          />
+        )}
       </div>
     </div>
   );

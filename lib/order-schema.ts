@@ -19,9 +19,11 @@ export type OrderField = {
   label: string;
   type: OrderFieldType;
   options?: { value: string; label: string }[];
-  // When set, the field only applies while another field equals `value`
-  // (e.g. GB Status only when Gear Box = "Yes").
-  dependsOn?: { column: string; value: string };
+  // When set, the field only applies while every listed field equals its
+  // `value` (e.g. GB Status only when Gear Box = "Yes"; AND-ed together so a
+  // field can gate on more than one condition, e.g. BOI = "Yes" AND Gear Box
+  // = "Yes").
+  dependsOn?: { column: string; value: string }[];
   // When true, only Central Visibility / Admin may edit this field; the owning
   // department sees it read-only (e.g. LD in the Planning section).
   centralOnly?: boolean;
@@ -172,24 +174,52 @@ export const ORDER_SECTIONS: OrderSection[] = [
     table: "order_purchase",
     fields: [
       { column: "boi", label: "BOI", type: "select", options: YES_NO },
-      { column: "gear_box", label: "Gear Box", type: "select", options: YES_NO },
+      {
+        column: "gear_box",
+        label: "Gear Box",
+        type: "select",
+        options: YES_NO,
+        dependsOn: [{ column: "boi", value: "Yes" }],
+      },
       {
         column: "gb_status",
         label: "GB Status",
         type: "select",
         options: PART_STATUS,
-        dependsOn: { column: "gear_box", value: "Yes" },
+        dependsOn: [
+          { column: "boi", value: "Yes" },
+          { column: "gear_box", value: "Yes" },
+        ],
       },
-      { column: "motor", label: "Motor", type: "select", options: YES_NO },
+      {
+        column: "motor",
+        label: "Motor",
+        type: "select",
+        options: YES_NO,
+        dependsOn: [{ column: "boi", value: "Yes" }],
+      },
       {
         column: "motor_status",
         label: "Motor Status",
         type: "select",
         options: PART_STATUS,
-        dependsOn: { column: "motor", value: "Yes" },
+        dependsOn: [
+          { column: "boi", value: "Yes" },
+          { column: "motor", value: "Yes" },
+        ],
       },
-      { column: "pending_parts", label: "Pending Parts / BOI Others", type: "text" },
-      { column: "boi_receipt_date", label: "BOI Receipt Date", type: "date" },
+      {
+        column: "pending_parts",
+        label: "Pending Parts / BOI Others",
+        type: "text",
+        dependsOn: [{ column: "boi", value: "Yes" }],
+      },
+      {
+        column: "boi_receipt_date",
+        label: "BOI Receipt Date",
+        type: "date",
+        dependsOn: [{ column: "boi", value: "Yes" }],
+      },
       { column: "remarks", label: "Remarks", type: "text" },
     ],
   },
@@ -201,8 +231,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
       {
         column: "required_qc_documents",
         label: "Required QC Documents",
-        type: "select",
-        options: opts(["MTC", "IIR", "DIMENSIONAL Report"]),
+        type: "text",
       },
       { column: "qc_doc_target_date", label: "Target Date for Doc. Submission", type: "date" },
       { column: "qc_doc_actual_date", label: "Actual Date of Doc. Submission", type: "date" },
@@ -227,7 +256,6 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "purchase_target_date", label: "Target Date for Purchase", type: "date" },
       { column: "pump_readiness_remarks", label: "Pump Readiness Remarks", type: "text" },
       { column: "planning_readiness_date", label: "Readiness Date Rcvd from Planning", type: "date" },
-      { column: "final_packing_dispatch_date", label: "Final Date for Packing & Dispatch", type: "date" },
       { column: "planning_status", label: "Planning Status", type: "text" },
       {
         column: "actual_pump_status",
@@ -252,7 +280,13 @@ export const ORDER_SECTIONS: OrderSection[] = [
     table: "order_assembly_dispatch",
     fields: [
       { column: "dispatch_documents_required", label: "Documents Required by Assembly/Dispatch", type: "text" },
-      { column: "dispatch_team_target_date", label: "Target Date for Dispatch Team", type: "date" },
+      {
+        column: "dispatch_team_target_date",
+        label: "Target Date for Dispatch Team",
+        type: "date",
+        centralOnly: true,
+      },
+      { column: "final_packing_dispatch_date", label: "Final Date for Packing & Dispatch", type: "date" },
       { column: "actual_packing_date", label: "Actual Material Packing Date", type: "date" },
       { column: "delay_remarks", label: "Remarks / Reason of Delay", type: "text" },
       {
@@ -294,9 +328,12 @@ export const DRAWING_CONTEXT_FIELDS: OrderField[] = [
   { column: "drg_target_date", label: "Target Date for DRG", type: "date" },
 ];
 
-// Target Date for Purchase (owned by Planning) shown read-only in Purchase.
+// Target Date for Purchase (owned by Planning), and LD / LD Date (owned by
+// Central Visibility), shown read-only in Purchase.
 export const PURCHASE_CONTEXT_FIELDS: OrderField[] = [
   { column: "purchase_target_date", label: "Target Date for Purchase", type: "date" },
+  { column: "ld", label: "LD", type: "select", options: YES_NO },
+  { column: "ld_date", label: "LD Date", type: "date" },
 ];
 
 // Order-level dispatch dates (owned by Central Visibility) shown read-only in

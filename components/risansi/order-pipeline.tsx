@@ -52,9 +52,8 @@ export function computeStages(detail: OrderDetailData): Stage[] {
         ? "in_progress"
         : "pending";
 
-  // Planning — complete once final packing/dispatch date is set.
+  // Planning — complete once marked completed.
   const planning: Status =
-    has(pl, "final_packing_dispatch_date") ||
     lower(pl, "planning_status") === "completed"
       ? "complete"
       : anyOf(pl, [
@@ -91,11 +90,13 @@ export function computeStages(detail: OrderDetailData): Stage[] {
   // Assembly & Dispatch — complete once fully dispatched / packed.
   const dispatch: Status =
     lower(ad, "dispatch_status") === "fully dispatch" ||
-    has(ad, "actual_packing_date")
+    has(ad, "actual_packing_date") ||
+    has(ad, "final_packing_dispatch_date")
       ? "complete"
       : anyOf(ad, [
             "dispatch_documents_required",
             "dispatch_team_target_date",
+            "final_packing_dispatch_date",
             "delay_remarks",
             "dispatch_status",
           ])

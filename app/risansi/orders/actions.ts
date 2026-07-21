@@ -6,10 +6,16 @@ import {
   addChildRow,
   createOrder,
   deleteChildRow,
+  deleteOrder,
+  deleteQcDocument,
+  getOrderDetail,
   insertParsedOrders,
+  insertQcDocument,
+  listQcDocuments,
   updateChildRow,
   updateOrderSection,
   type NewOrderInput,
+  type QcDocumentMeta,
 } from "@/lib/orders";
 import { parseOrdersWorkbook } from "@/lib/excel-import";
 import {
@@ -21,6 +27,7 @@ import {
 import {
   canCreateOrders,
   canEditChild,
+  canEditQcDocuments,
   canEditSection,
   isCentral,
 } from "@/lib/roles";
@@ -58,6 +65,39 @@ export async function createOrderAction(
   } catch (error) {
     console.error("createOrder failed:", error);
     return { ok: false, error: "Could not create the order. Please try again." };
+  }
+}
+
+export type DeleteOrderResult = { ok: true } | { ok: false; error: string };
+
+export async function deleteOrderAction(
+  orderId: string
+): Promise<DeleteOrderResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  // Same roles that create orders may delete them (Central Visibility / Admin).
+  if (!canCreateOrders(user.role)) {
+    return { ok: false, error: "You don't have permission to delete orders." };
+  }
+
+  try {
+    const detail = await getOrderDetail(orderId);
+    const label = detail
+      ? String(detail.order.so_no ?? detail.order.ec_no ?? `#${detail.order.sl_no}`)
+      : orderId;
+    await deleteOrder(orderId);
+    await logAudit({
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: "order.delete",
+      category: "activity",
+      target: label,
+      details: `Deleted order ${label}`,
+    });
+    revalidatePath("/risansi/orders");
+    return { ok: true };
+  } catch (error) {
+    console.error("deleteOrder failed:", error);
+    return { ok: false, error: "Could not delete the order. Please try again." };
   }
 }
 
@@ -181,6 +221,82 @@ export async function deleteOrderChildAction(
   } catch (error) {
     console.error("deleteOrderChild failed:", error);
     return { ok: false, error: "Could not delete the row." };
+  }
+}
+
+export type QcDocumentResult = { ok: true } | { ok: false; error: string };
+
+const MAX_QC_FILE_BYTES = 8 * 1024 * 1024; // stay under the 10MB action body cap
+
+export async function listQcDocumentsAction(
+  orderId: string
+): Promise<QcDocumentMeta[]> {
+  const user = await getCurrentUser();
+  if (!user || !canEditQcDocuments(user.role)) return [];
+  return listQcDocuments(orderId);
+}
+
+export async function uploadQcDocumentsAction(
+  orderId: string,
+  formData: FormData
+): Promise<QcDocumentResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canEditQcDocuments(user.role)) {
+    return { ok: false, error: "You don't have permission to attach QC documents." };
+  }
+
+  const files = formData
+    .getAll("files")
+    .filter((f): f is File => f instanceof File && f.size > 0);
+  if (files.length === 0) {
+    return { ok: false, error: "Choose at least one file." };
+  }
+  const tooBig = files.find((f) => f.size > MAX_QC_FILE_BYTES);
+  if (tooBig) {
+    return { ok: false, error: `"${tooBig.name}" is larger than 8MB.` };
+  }
+
+  try {
+    for (const file of files) {
+      const data = Buffer.from(await file.arrayBuffer());
+      await insertQcDocument(orderId, {
+        name: file.name,
+        mimeType: file.type || null,
+        size: file.size,
+        data,
+      });
+    }
+    await logAudit({
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: "order.update",
+      category: "activity",
+      target: "QC",
+      details: `Attached ${files.length} QC document${files.length === 1 ? "" : "s"}`,
+    });
+    revalidatePath("/risansi/departments/qc");
+    return { ok: true };
+  } catch (error) {
+    console.error("uploadQcDocuments failed:", error);
+    return { ok: false, error: "Could not upload the file(s). Please try again." };
+  }
+}
+
+export async function deleteQcDocumentAction(
+  id: string
+): Promise<QcDocumentResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canEditQcDocuments(user.role)) {
+    return { ok: false, error: "You don't have permission to delete QC documents." };
+  }
+  try {
+    await deleteQcDocument(id);
+    revalidatePath("/risansi/departments/qc");
+    return { ok: true };
+  } catch (error) {
+    console.error("deleteQcDocument failed:", error);
+    return { ok: false, error: "Could not delete the file. Please try again." };
   }
 }
 

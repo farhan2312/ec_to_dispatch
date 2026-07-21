@@ -1,14 +1,31 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2, Trash2 } from "lucide-react";
 import type { OrderListRow } from "@/lib/orders";
-import { Pagination, SearchInput, useTableSearch } from "./table-tools";
+import { deleteOrderAction } from "@/app/risansi/orders/actions";
+import {
+  FilterBar,
+  Pagination,
+  useTableFilters,
+  type FilterDef,
+} from "./table-tools";
 
 function searchText(o: OrderListRow): string {
   return [o.sl_no, o.so_no, o.ec_no, o.party, o.item, o.model_no, o.pi_no]
     .filter(Boolean)
     .join(" ");
 }
+
+const ORDER_TEXT_FILTERS: FilterDef<OrderListRow>[] = [
+  { key: "agent", label: "Agent", getValue: (o) => o.agent },
+  { key: "item", label: "Item", getValue: (o) => o.item },
+];
+
+const ORDER_FILTERS: FilterDef<OrderListRow>[] = [
+  { key: "pump_status", label: "Pump Status", getValue: (o) => o.actual_pump_status },
+];
 
 const numberFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 
@@ -44,20 +61,64 @@ function StatusChip({ value }: { value: string | null }) {
   );
 }
 
-export function OrdersTable({ orders }: { orders: OrderListRow[] }) {
+export function OrdersTable({
+  orders,
+  canDelete = false,
+}: {
+  orders: OrderListRow[];
+  canDelete?: boolean;
+}) {
   const router = useRouter();
-  const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
-    useTableSearch(orders, searchText);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const {
+    query,
+    setQuery,
+    selected,
+    setFilter,
+    textValues,
+    setTextFilter,
+    clearAll,
+    options,
+    activeCount,
+    pageRows,
+    page,
+    setPage,
+    totalPages,
+    total,
+    from,
+    to,
+  } = useTableFilters(orders, searchText, ORDER_FILTERS, ORDER_TEXT_FILTERS);
+  const colSpan = canDelete ? 12 : 11;
+
+  async function handleDelete(order: OrderListRow) {
+    const label = order.so_no ?? order.ec_no ?? `#${order.sl_no}`;
+    if (!confirm(`Delete order ${label}? This permanently removes it and all its department data.`)) {
+      return;
+    }
+    setDeletingId(order.id);
+    const res = await deleteOrderAction(order.id);
+    setDeletingId(null);
+    if (!res.ok) alert(res.error);
+    else router.refresh();
+  }
 
   return (
     <div>
-      <div className="mb-3">
-        <SearchInput
-          value={query}
-          onChange={setQuery}
-          placeholder="Search SO, EC, party, item…"
-        />
-      </div>
+      <FilterBar
+        filters={ORDER_FILTERS}
+        options={options}
+        selected={selected}
+        setFilter={setFilter}
+        textFilters={ORDER_TEXT_FILTERS}
+        textValues={textValues}
+        setTextFilter={setTextFilter}
+        query={query}
+        setQuery={setQuery}
+        activeCount={activeCount}
+        clearAll={clearAll}
+        total={total}
+        searchPlaceholder="Search SO, EC, party, item…"
+      />
 
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">
         <div className="overflow-x-auto">
@@ -75,12 +136,13 @@ export function OrdersTable({ orders }: { orders: OrderListRow[] }) {
             <th className="px-4 py-3">Dispatch Target</th>
             <th className="px-4 py-3">Dispatch Status</th>
             <th className="px-4 py-3 text-right">Order Value</th>
+            {canDelete && <th className="px-4 py-3"></th>}
           </tr>
         </thead>
         <tbody className="divide-y divide-card-border">
           {pageRows.length === 0 && (
             <tr>
-              <td colSpan={11} className="px-4 py-10 text-center text-sm text-muted">
+              <td colSpan={colSpan} className="px-4 py-10 text-center text-sm text-muted">
                 No orders match your search.
               </td>
             </tr>
@@ -110,6 +172,26 @@ export function OrdersTable({ orders }: { orders: OrderListRow[] }) {
               <td className="px-4 py-3 text-right tabular-nums">
                 {formatValue(order.order_value)}
               </td>
+              {canDelete && (
+                <td className="px-4 py-3 text-right">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(order);
+                    }}
+                    disabled={deletingId === order.id}
+                    aria-label="Delete order"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                  >
+                    {deletingId === order.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ClipboardCheck } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canAccessDepartment, canEditSection } from "@/lib/roles";
-import { listOrdersForSection } from "@/lib/orders";
+import { canAccessDepartment, canEditQcDocuments, canEditSection } from "@/lib/roles";
+import { listOrdersForSection, listQcDocumentCounts } from "@/lib/orders";
 import { SECTION_BY_TABLE } from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
 
@@ -23,7 +23,10 @@ export default async function QcWorkspacePage() {
   // QC attributes are filled by Central Visibility; the QC role only views them.
   const canEdit = canEditSection(user.role, TABLE);
   const section = SECTION_BY_TABLE.get(TABLE)!;
-  const orders = await listOrdersForSection(TABLE);
+  const [orders, docCounts] = await Promise.all([
+    listOrdersForSection(TABLE),
+    listQcDocumentCounts(),
+  ]);
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
@@ -48,6 +51,7 @@ export default async function QcWorkspacePage() {
         fields={section.fields}
         orders={orders}
         canEdit={canEdit}
+        documents={{ canEdit: canEditQcDocuments(user.role), counts: docCounts }}
       />
     </div>
   );

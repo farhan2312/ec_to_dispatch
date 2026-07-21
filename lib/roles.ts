@@ -93,6 +93,14 @@ export function canEditChild(role: string, _table: "order_lots"): boolean {
   return canEditSection(role, "order_assembly_dispatch");
 }
 
+/**
+ * QC document attachments — unlike the rest of the QC section (filled by
+ * Central Visibility), the QC role itself uploads/deletes these.
+ */
+export function canEditQcDocuments(role: string): boolean {
+  return role === "qc" || isCentral(role);
+}
+
 export function roleLabel(role: string): string {
   return (ROLE_LABELS as Record<string, string>)[role] ?? role;
 }

@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Pencil, X } from "lucide-react";
+import { Loader2, Paperclip, Pencil, X } from "lucide-react";
 import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
 import {
   SECTION_BY_TABLE,
@@ -10,6 +10,14 @@ import {
   type OrderTable,
 } from "@/lib/order-schema";
 import { Pagination, SearchInput, useTableSearch } from "./table-tools";
+import { QcDocumentsModal } from "./qc-documents-modal";
+
+// Only the QC workspace passes this today; kept generic in case another
+// department needs file attachments later.
+type DocumentsConfig = {
+  canEdit: boolean;
+  counts: Record<string, number>;
+};
 
 type Row = Record<string, unknown>;
 
@@ -46,6 +54,7 @@ export function DepartmentWorkspace({
   readonlyFields = [],
   canEdit = true,
   canEditCentral = true,
+  documents,
 }: {
   table: OrderTable;
   fields: OrderField[];
@@ -54,8 +63,11 @@ export function DepartmentWorkspace({
   canEdit?: boolean;
   // Whether the current user may edit `centralOnly` fields (Central Visibility).
   canEditCentral?: boolean;
+  // QC document attachments — omitted everywhere except the QC workspace.
+  documents?: DocumentsConfig;
 }) {
   const [editRow, setEditRow] = useState<Row | null>(null);
+  const [docsRow, setDocsRow] = useState<Row | null>(null);
 
   const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
     useTableSearch(orders, rowSearchText);
@@ -71,7 +83,12 @@ export function DepartmentWorkspace({
     );
   }
 
-  const colCount = 4 + readonlyFields.length + fields.length + (canEdit ? 1 : 0);
+  const colCount =
+    4 +
+    readonlyFields.length +
+    fields.length +
+    (canEdit ? 1 : 0) +
+    (documents ? 1 : 0);
   const title = SECTION_BY_TABLE.get(table)?.title ?? "Details";
 
   return (
@@ -106,6 +123,7 @@ export function DepartmentWorkspace({
                     {f.label}
                   </th>
                 ))}
+                {documents && <th className="px-3 py-3 whitespace-nowrap">Attach Docs</th>}
                 {canEdit && <th className="px-4 py-3 text-right">Edit</th>}
               </tr>
             </thead>
@@ -145,6 +163,19 @@ export function DepartmentWorkspace({
                       {formatValue(f, order[f.column])}
                     </td>
                   ))}
+                  {documents && (
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => setDocsRow(order)}
+                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                      >
+                        <Paperclip className="h-3.5 w-3.5" />
+                        {documents.counts[String(order.id)] ?? 0} file
+                        {(documents.counts[String(order.id)] ?? 0) === 1 ? "" : "s"}
+                      </button>
+                    </td>
+                  )}
                   {canEdit && (
                     <td className="px-4 py-3 text-right">
                       <button
@@ -182,6 +213,18 @@ export function DepartmentWorkspace({
           canEditCentral={canEditCentral}
           data={editRow}
           onClose={() => setEditRow(null)}
+        />
+      )}
+
+      {docsRow && documents && (
+        <QcDocumentsModal
+          orderId={String(docsRow.id)}
+          label={[docsRow.so_no, docsRow.ec_no, docsRow.party]
+            .filter(Boolean)
+            .map(String)
+            .join(" · ")}
+          canEdit={documents.canEdit}
+          onClose={() => setDocsRow(null)}
         />
       )}
     </div>
@@ -295,7 +338,9 @@ function EditSectionModal({
                 );
               }
               const disabled = field.dependsOn
-                ? (values[field.dependsOn.column] ?? "") !== field.dependsOn.value
+                ? !field.dependsOn.every(
+                    (d) => (values[d.column] ?? "") === d.value
+                  )
                 : false;
               return (
                 <div key={field.column}>

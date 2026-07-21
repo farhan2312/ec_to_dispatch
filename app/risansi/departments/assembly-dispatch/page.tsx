@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Truck } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canEditSection } from "@/lib/roles";
+import { canEditSection, isCentral } from "@/lib/roles";
 import { listOrdersForSection } from "@/lib/orders";
 import { SECTION_BY_TABLE } from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
@@ -39,7 +39,12 @@ export default async function AssemblyDispatchWorkspacePage() {
         </div>
       </div>
 
-      <DepartmentWorkspace table={TABLE} fields={section.fields} orders={orders} />
+      <DepartmentWorkspace
+        table={TABLE}
+        fields={section.fields}
+        orders={orders}
+        canEditCentral={isCentral(user.role)}
+      />
     </div>
   );
 }

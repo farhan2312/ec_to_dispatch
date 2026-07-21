@@ -192,6 +192,21 @@ CREATE TABLE IF NOT EXISTS order_qc (
 );
 ALTER TABLE order_qc ADD COLUMN IF NOT EXISTS remarks TEXT;
 
+-- QC document attachments (1:many). Filled by the QC role itself (unlike the
+-- rest of the QC section, which Central Visibility fills); stored directly in
+-- Postgres as bytea.
+CREATE TABLE IF NOT EXISTS order_qc_documents (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id      UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    file_name     TEXT NOT NULL,
+    mime_type     TEXT,
+    file_size     INT,
+    file_data     BYTEA NOT NULL,
+    uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS order_qc_documents_order_id_idx
+    ON order_qc_documents(order_id);
+
 -- Planning — cols AT–AX, BB, BC, BG.
 CREATE TABLE IF NOT EXISTS order_planning (
     order_id                      UUID PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
@@ -466,5 +481,31 @@ BEGIN
         ALTER TABLE order_assembly_dispatch DROP COLUMN actual_pump_status;
         ALTER TABLE order_assembly_dispatch DROP COLUMN assembled_packed_qty;
         ALTER TABLE order_assembly_dispatch DROP COLUMN assembly_date;
+    END IF;
+END $$;
+
+-- Final Dt. for Packing & Dispatch moves from Planning into Assembly &
+-- Dispatch (filled by Assembly & Dispatch). Idempotent.
+ALTER TABLE order_assembly_dispatch ADD COLUMN IF NOT EXISTS final_packing_dispatch_date DATE;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_planning'
+           AND column_name = 'final_packing_dispatch_date'
+    ) THEN
+        INSERT INTO order_assembly_dispatch (order_id)
+            SELECT pl.order_id FROM order_planning pl
+             WHERE pl.final_packing_dispatch_date IS NOT NULL
+               AND NOT EXISTS (
+                 SELECT 1 FROM order_assembly_dispatch ad WHERE ad.order_id = pl.order_id
+               );
+        UPDATE order_assembly_dispatch ad
+           SET final_packing_dispatch_date = pl.final_packing_dispatch_date
+          FROM order_planning pl
+         WHERE pl.order_id = ad.order_id
+           AND pl.final_packing_dispatch_date IS NOT NULL
+           AND ad.final_packing_dispatch_date IS NULL;
+        ALTER TABLE order_planning DROP COLUMN final_packing_dispatch_date;
     END IF;
 END $$;

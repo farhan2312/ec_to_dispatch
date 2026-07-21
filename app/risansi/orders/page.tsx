@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { ClipboardList, Plus } from "lucide-react";
 import { listOrders } from "@/lib/orders";
 import { getCurrentUser } from "@/lib/session";
-import { canCreateOrders } from "@/lib/roles";
+import { canCreateOrders, isCentral } from "@/lib/roles";
 import { OrdersTable } from "@/components/risansi/orders-table";
 import { ImportOrdersButton } from "@/components/risansi/import-orders-button";
 
@@ -14,8 +15,14 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function OrdersPage() {
-  const [orders, user] = await Promise.all([listOrders(), getCurrentUser()]);
-  const canCreate = user ? canCreateOrders(user.role) : false;
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  // The whole-order list/summary is Central Visibility & Admin only;
+  // department roles use their own workspace instead.
+  if (!isCentral(user.role)) redirect("/risansi/dashboard");
+
+  const orders = await listOrders();
+  const canCreate = canCreateOrders(user.role);
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
@@ -59,7 +66,7 @@ export default async function OrdersPage() {
           </p>
         </div>
       ) : (
-        <OrdersTable orders={orders} />
+        <OrdersTable orders={orders} canDelete={canCreate} />
       )}
     </div>
   );

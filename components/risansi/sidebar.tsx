@@ -33,6 +33,7 @@ import {
   canCreateOrders,
   canSeeDispatched,
   canSeeEscalations,
+  isCentral,
 } from "@/lib/roles";
 import type { OrderTable } from "@/lib/order-schema";
 import { ThemeToggle } from "./theme-toggle";
@@ -144,6 +145,11 @@ export function Sidebar({
     canAccessDepartment(user.role, item.table)
   );
 
+  // Department roles only need their own workspace, not the whole-order list.
+  const visiblePrimaryNav = PRIMARY_NAV.filter(
+    (item) => item.href !== "/risansi/orders" || isCentral(user.role)
+  );
+
   // The active item is the nav href that is the longest matching prefix of the
   // current path, so only the most specific one highlights.
   const activeHref = NAV_HREFS.filter(
@@ -196,7 +202,7 @@ export function Sidebar({
             EC to Dispatch
           </p>
           <div className="space-y-1">
-            {PRIMARY_NAV.map((item) => (
+            {visiblePrimaryNav.map((item) => (
               <NavLink key={item.href} item={item} />
             ))}
             {canCreateOrders(user.role) && (

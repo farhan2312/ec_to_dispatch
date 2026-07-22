@@ -21,7 +21,7 @@ import {
 } from "@/lib/roles";
 import type { OrderDetail as OrderDetailData, QcDocTable } from "@/lib/orders";
 import { OrderChildList } from "./order-children";
-import { OrderPipeline, pipelineSummary } from "./order-pipeline";
+import { OrderPipeline } from "./order-pipeline";
 import { QcDocumentsModal } from "./qc-documents-modal";
 
 type DocumentsConfig = {
@@ -162,7 +162,7 @@ function EditableSection({
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {section.fields.map((field) => {
           // centralOnly fields stay read-only for non-central editors.
           const fieldEditable = editing && (!field.centralOnly || canEditCentral);
@@ -276,29 +276,11 @@ export function OrderDetail({
             {order.model_no ? ` — ${String(order.model_no)}` : ""}
           </h1>
         </div>
-        {central &&
-          (() => {
-            const s = pipelineSummary(detail);
-            const tone =
-              s.status === "Blocked"
-                ? "bg-rose-50 text-rose-700 ring-rose-200"
-                : s.status === "Complete"
-                  ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                  : "bg-amber-50 text-amber-700 ring-amber-200";
-            return (
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium ring-1 ring-inset ${tone}`}
-              >
-                <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                {s.status} · {s.complete} of {s.total} complete
-              </span>
-            );
-          })()}
       </div>
 
       {central && <OrderPipeline detail={detail} />}
 
-      <div className="max-w-4xl space-y-6">
+      <div className="max-w-6xl space-y-6">
         {visibleSections.map((section) => {
           // Core section's data lives under `order`; detail tables under their
           // own table name.

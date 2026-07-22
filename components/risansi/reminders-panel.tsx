@@ -1,5 +1,8 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
-import { BellRing, Clock } from "lucide-react";
+import { BellRing, ChevronDown, Clock } from "lucide-react";
 import type { ReminderRow, ReminderTier } from "@/lib/reminders";
 
 const TIER_STYLE: Record<
@@ -52,17 +55,24 @@ export function RemindersPanel({
   reminders: ReminderRow[];
   showDepartment?: boolean;
 }) {
+  const [open, setOpen] = useState(true);
+
   if (reminders.length === 0) return null;
 
   const critical = reminders.filter((r) => r.tier === "24h").length;
 
   return (
     <div className="mb-6 overflow-hidden rounded-xl border border-card-border bg-surface shadow-sm">
-      <div className="flex items-center gap-2.5 border-b border-card-border px-5 py-3.5">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2.5 border-b border-card-border px-5 py-3.5 text-left transition-colors hover:bg-background/60"
+      >
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
           <BellRing className="h-4 w-4" />
         </span>
-        <div>
+        <div className="flex-1">
           <p className="text-sm font-semibold text-foreground">Reminders</p>
           <p className="text-xs text-muted">
             {reminders.length} upcoming deadline
@@ -70,46 +80,53 @@ export function RemindersPanel({
             {critical > 0 ? ` · ${critical} due within 24h` : ""}
           </p>
         </div>
-      </div>
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
+            open ? "rotate-180" : ""
+          }`}
+        />
+      </button>
 
-      <ul className="divide-y divide-card-border">
-        {reminders.map((r) => {
-          const style = TIER_STYLE[r.tier];
-          return (
-            <li
-              key={`${r.id}-${r.dept}`}
-              className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="flex min-w-0 items-start gap-3">
-                <span
-                  className={`mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${style.chip}`}
-                >
-                  <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
-                  {style.label}
-                </span>
-                <div className="min-w-0">
-                  <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-                    <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                    {dueText(r.days_left)} · {formatDate(r.due_date)}
-                    {showDepartment ? ` · ${r.department}` : ""}
-                  </p>
-                  <p className="truncate text-xs text-muted">
-                    #{r.sl_no} · {r.so_no ?? "—"}
-                    {r.ec_no ? ` · ${r.ec_no}` : ""}
-                    {r.party ? ` · ${r.party}` : ""}
-                  </p>
-                </div>
-              </div>
-              <Link
-                href={`/risansi/orders/${r.id}`}
-                className="shrink-0 text-sm font-medium text-primary hover:text-primary-hover"
+      {open && (
+        <ul className="divide-y divide-card-border">
+          {reminders.map((r) => {
+            const style = TIER_STYLE[r.tier];
+            return (
+              <li
+                key={`${r.id}-${r.dept}`}
+                className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
               >
-                Open
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
+                <div className="flex min-w-0 items-start gap-3">
+                  <span
+                    className={`mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${style.chip}`}
+                  >
+                    <span className={`h-1.5 w-1.5 rounded-full ${style.dot}`} />
+                    {style.label}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+                      <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                      {dueText(r.days_left)} · {formatDate(r.due_date)}
+                      {showDepartment ? ` · ${r.department}` : ""}
+                    </p>
+                    <p className="truncate text-xs text-muted">
+                      #{r.sl_no} · {r.so_no ?? "—"}
+                      {r.ec_no ? ` · ${r.ec_no}` : ""}
+                      {r.party ? ` · ${r.party}` : ""}
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href={`/risansi/orders/${r.id}`}
+                  className="shrink-0 text-sm font-medium text-primary hover:text-primary-hover"
+                >
+                  Open
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }

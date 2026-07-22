@@ -190,20 +190,6 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
   const overdue = rows.filter(isOverdue).length;
   const totalValue = rows.reduce((sum, r) => sum + (Number(r.order_value) || 0), 0);
 
-  // Department progress — share of orders each department has acted on.
-  const departments = [
-    { label: "Billing", done: rows.filter((r) => r.pi_no).length },
-    { label: "Accounts", done: rows.filter((r) => r.payment_status).length },
-    { label: "Drawing", done: rows.filter((r) => r.drg_status).length },
-    {
-      label: "Purchase",
-      done: rows.filter((r) => r.gb_status || r.motor_status).length,
-    },
-    { label: "QC", done: rows.filter((r) => r.qc_submitted).length },
-    { label: "Planning", done: rows.filter((r) => r.planning_status).length },
-    { label: "Dispatch", done: rows.filter((r) => r.dispatch_status).length },
-  ];
-
   // Pipeline pagination.
   const [page, setPage] = useState(1);
   const totalPages = Math.max(1, Math.ceil(rows.length / PIPELINE_PAGE_SIZE));
@@ -313,30 +299,6 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
 
       {/* charts */}
       <div className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <ChartCard title="Department progress">
-          <div className="space-y-3">
-            {departments.map((d) => {
-              const pct = total ? Math.round((d.done / total) * 100) : 0;
-              return (
-                <div key={d.label}>
-                  <div className="mb-1 flex items-center justify-between text-xs">
-                    <span className="text-muted">{d.label}</span>
-                    <span className="tabular-nums text-foreground">
-                      {d.done}/{total} · {pct}%
-                    </span>
-                  </div>
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-card-border">
-                    <div
-                      className="h-full rounded-full bg-primary"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </ChartCard>
-
         <ChartCard title="Payment status">
           <BarList items={paymentBreakdown} total={total} />
         </ChartCard>

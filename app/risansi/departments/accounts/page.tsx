@@ -18,11 +18,16 @@ export const dynamic = "force-dynamic";
 
 const TABLE = "order_accounts" as const;
 
-export default async function AccountsWorkspacePage() {
+export default async function AccountsWorkspacePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ edit?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
+  const { edit } = await searchParams;
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const orders = await listOrdersForSection(
     TABLE,
@@ -50,6 +55,7 @@ export default async function AccountsWorkspacePage() {
         fields={section.fields}
         orders={orders}
         readonlyFields={PAYMENT_TERMS_CONTEXT_FIELDS}
+        openOrderId={edit}
       />
     </div>
   );

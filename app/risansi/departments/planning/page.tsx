@@ -17,11 +17,16 @@ export const dynamic = "force-dynamic";
 
 const TABLE = "order_planning" as const;
 
-export default async function PlanningWorkspacePage() {
+export default async function PlanningWorkspacePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ edit?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
+  const { edit } = await searchParams;
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const [orders, reminders] = await Promise.all([
     listOrdersForSection(
@@ -56,6 +61,7 @@ export default async function PlanningWorkspacePage() {
         orders={orders}
         readonlyFields={PLANNING_CONTEXT_FIELDS}
         canEditCentral={isCentral(user.role)}
+        openOrderId={edit}
       />
     </div>
   );

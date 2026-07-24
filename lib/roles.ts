@@ -140,6 +140,22 @@ export function reminderDeptForTable(table: OrderTable): ReminderDept | null {
   return REMINDER_DEPT_BY_TABLE[table] ?? null;
 }
 
+// Each department role's workspace page (mirrors the sidebar's DEPARTMENT_NAV).
+const DEPARTMENT_HREF: Partial<Record<Role, string>> = {
+  operations: "/risansi/departments/billing",
+  accounts: "/risansi/departments/accounts",
+  drawing: "/risansi/departments/drawing",
+  planning: "/risansi/departments/planning",
+  purchase: "/risansi/departments/purchase",
+  qc: "/risansi/departments/qc",
+  dispatch: "/risansi/departments/assembly-dispatch",
+};
+
+/** The department workspace page a role owns, if any (null for central/admin). */
+export function departmentHrefForRole(role: string): string | null {
+  return DEPARTMENT_HREF[role as Role] ?? null;
+}
+
 export function roleLabel(role: string): string {
   return (ROLE_LABELS as Record<string, string>)[role] ?? role;
 }

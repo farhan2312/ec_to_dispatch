@@ -6,6 +6,11 @@ import { isCentral, reminderDeptForRole, type ReminderDept } from "@/lib/roles";
 // one — otherwise the day boundary is off by up to 5.5 hours.
 const TODAY_IST = "(now() AT TIME ZONE 'Asia/Kolkata')::date";
 
+// Planning works to the order's dispatch target — but once Central Visibility
+// revises that date, the revised one is the deadline that counts.
+const PLANNING_DUE =
+  "COALESCE(o.dispatch_target_revised_date, o.dispatch_target_date)";
+
 // A reminder fires while a department's target date is still ahead (not yet
 // overdue — that's alerts.ts) but within a week, and the completing step hasn't
 // happened. The three milestones the business wants — 7 days / 72h / 24h out —
@@ -61,30 +66,33 @@ const REMINDERS_SQL = `
    WHERE qc.qc_doc_target_date >= ${TODAY_IST}
      AND qc.qc_doc_target_date <= ${TODAY_IST} + 7
      AND qc.qc_doc_actual_date IS NULL
+     AND (o.qc_required IS NULL OR o.qc_required <> 'No')
 
   UNION ALL
-  -- Planning readiness due before dispatch (Planning has no target date of
-  -- its own, so it borrows the order's dispatch target)
+  -- Planning readiness due before dispatch (Planning has no target date of its
+  -- own, so it borrows the order's dispatch target — the revised one if set)
   SELECT o.id, o.sl_no::int, o.so_no, o.ec_no, o.party,
          'planning'::text, 'Planning'::text,
-         to_char(o.dispatch_target_date, 'YYYY-MM-DD'),
-         (o.dispatch_target_date - ${TODAY_IST})::int
+         to_char(${PLANNING_DUE}, 'YYYY-MM-DD'),
+         (${PLANNING_DUE} - ${TODAY_IST})::int
     FROM orders o
     LEFT JOIN order_planning pl ON pl.order_id = o.id
-   WHERE o.dispatch_target_date >= ${TODAY_IST}
-     AND o.dispatch_target_date <= ${TODAY_IST} + 7
+   WHERE ${PLANNING_DUE} >= ${TODAY_IST}
+     AND ${PLANNING_DUE} <= ${TODAY_IST} + 7
      AND pl.planning_readiness_date IS NULL
 
   UNION ALL
-  -- Dispatch due to be completed
+  -- Assembly & Dispatch due to complete, against the dispatch team's own
+  -- target date (set by Central Visibility) — not the order-level dispatch
+  -- target, which Planning works to.
   SELECT o.id, o.sl_no::int, o.so_no, o.ec_no, o.party,
          'dispatch'::text, 'Assembly & Dispatch'::text,
-         to_char(o.dispatch_target_date, 'YYYY-MM-DD'),
-         (o.dispatch_target_date - ${TODAY_IST})::int
+         to_char(ad.dispatch_team_target_date, 'YYYY-MM-DD'),
+         (ad.dispatch_team_target_date - ${TODAY_IST})::int
     FROM orders o
-    LEFT JOIN order_assembly_dispatch ad ON ad.order_id = o.id
-   WHERE o.dispatch_target_date >= ${TODAY_IST}
-     AND o.dispatch_target_date <= ${TODAY_IST} + 7
+    JOIN order_assembly_dispatch ad ON ad.order_id = o.id
+   WHERE ad.dispatch_team_target_date >= ${TODAY_IST}
+     AND ad.dispatch_team_target_date <= ${TODAY_IST} + 7
      AND (ad.dispatch_status IS NULL OR btrim(ad.dispatch_status) = '')
      AND ad.actual_packing_date IS NULL
 `;

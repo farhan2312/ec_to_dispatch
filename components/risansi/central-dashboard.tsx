@@ -184,11 +184,51 @@ function BarList({ items, total }: { items: BarItem[]; total: number }) {
   );
 }
 
+// Same completion condition each department uses in the pipeline/notification
+// logic. Kept local (and small) to avoid a dependency on lib/notifications.
+const done = {
+  billing: (r: OrderOverviewRow) => !!r.pi_no,
+  accounts: (r: OrderOverviewRow) => {
+    const p = (r.payment_status ?? "").trim().toLowerCase();
+    return p === "payment rcvd" || p === "after receipt";
+  },
+  drawing: (r: OrderOverviewRow) =>
+    (r.drg_status ?? "").trim().toLowerCase() === "drg approved",
+  purchase: (r: OrderOverviewRow) => {
+    // BOI parts received when any part-status column shows RECEIVED / stock.
+    const ok = (v: string | null) => {
+      const s = (v ?? "").trim().toUpperCase();
+      return s === "RECEIVED" || s === "AVAILABLE STOCK";
+    };
+    return ok(r.gb_status) || ok(r.motor_status);
+  },
+  qc: (r: OrderOverviewRow) => r.qc_submitted,
+  planning: (r: OrderOverviewRow) =>
+    (r.planning_status ?? "").trim().toLowerCase() === "completed",
+  dispatch: (r: OrderOverviewRow) =>
+    (r.dispatch_status ?? "").trim().toLowerCase() === "fully dispatch",
+};
+
 export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
   const total = rows.length;
   const holds = rows.filter((r) => isHold(r.payment_status)).length;
   const overdue = rows.filter(isOverdue).length;
   const totalValue = rows.reduce((sum, r) => sum + (Number(r.order_value) || 0), 0);
+
+  // Share of orders each department has completed. QC's denominator excludes
+  // orders flagged "QC Needed = No", since that department isn't involved.
+  const qcApplicable = rows.filter(
+    (r) => (r.qc_required ?? "").trim().toLowerCase() !== "no"
+  ).length;
+  const departmentProgress: { label: string; done: number; of: number }[] = [
+    { label: "Billing & Operations", done: rows.filter(done.billing).length, of: total },
+    { label: "Accounts", done: rows.filter(done.accounts).length, of: total },
+    { label: "Drawing", done: rows.filter(done.drawing).length, of: total },
+    { label: "Purchase", done: rows.filter(done.purchase).length, of: total },
+    { label: "QC", done: rows.filter(done.qc).length, of: qcApplicable },
+    { label: "Planning", done: rows.filter(done.planning).length, of: total },
+    { label: "Assembly & Dispatch", done: rows.filter(done.dispatch).length, of: total },
+  ];
 
   // Pipeline pagination.
   const [page, setPage] = useState(1);
@@ -297,6 +337,37 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
         />
       </div>
 
+      {/* department progress — one full-width row */}
+     {/* <div className="mb-8">
+        <ChartCard title="Department progress">
+          {total === 0 ? (
+            <p className="text-sm text-muted">No orders yet.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+              {departmentProgress.map((d) => {
+                const pct = d.of > 0 ? Math.round((d.done / d.of) * 100) : 0;
+                return (
+                  <div key={d.label}>
+                    <div className="mb-1 flex items-center justify-between text-xs">
+                      <span className="text-muted">{d.label}</span>
+                      <span className="tabular-nums text-foreground">
+                        {d.done}/{d.of} · {pct}%
+                      </span>
+                    </div>
+                    <div className="h-2 w-full overflow-hidden rounded-full bg-card-border">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </ChartCard>
+      </div>
+     */}
       {/* charts */}
       <div className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartCard title="Payment status">

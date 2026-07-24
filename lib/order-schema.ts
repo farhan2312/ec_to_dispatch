@@ -35,6 +35,7 @@ function opts(values: string[]): { value: string; label: string }[] {
 }
 
 const YES_NO = opts(["Yes", "No"]);
+export const YES_NO_OPTIONS = YES_NO;
 const PART_STATUS = opts(["PENDING", "RECEIVED", "AVAILABLE STOCK"]);
 
 export const NATURE_OF_SUPPLY_OPTIONS = opts([
@@ -95,6 +96,13 @@ export const ORDER_SECTIONS: OrderSection[] = [
         label: "Industry Type",
         type: "select",
         options: INDUSTRY_TYPE_OPTIONS,
+      },
+      // 'No' means the QC department isn't involved for this order.
+      {
+        column: "qc_required",
+        label: "QC Needed",
+        type: "select",
+        options: YES_NO,
       },
       {
         column: "item",

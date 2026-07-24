@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Paperclip, Pencil, X } from "lucide-react";
 import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
@@ -59,6 +59,7 @@ export function DepartmentWorkspace({
   canEdit = true,
   canEditCentral = true,
   documents = [],
+  openOrderId,
 }: {
   table: OrderTable;
   fields: OrderField[];
@@ -69,6 +70,8 @@ export function DepartmentWorkspace({
   canEditCentral?: boolean;
   // QC document attachments — omitted everywhere except the QC workspace.
   documents?: DocumentsConfig[];
+  // Deep-link from a notification: open this order's edit modal on load.
+  openOrderId?: string;
 }) {
   const [editRow, setEditRow] = useState<Row | null>(null);
   const [docsPanel, setDocsPanel] = useState<{ row: Row; config: DocumentsConfig } | null>(
@@ -77,6 +80,13 @@ export function DepartmentWorkspace({
 
   const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
     useTableSearch(orders, rowSearchText);
+
+  useEffect(() => {
+    if (!openOrderId || !canEdit) return;
+    const row = orders.find((o) => String(o.id) === openOrderId);
+    if (row) setEditRow(row);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openOrderId]);
 
   if (orders.length === 0) {
     return (

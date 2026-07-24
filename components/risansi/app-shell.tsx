@@ -11,11 +11,13 @@ export function AppShell({
   user,
   alertCount,
   reminderCount,
+  notifUnread,
   children,
 }: {
   user: ShellUser;
   alertCount: number;
   reminderCount: number;
+  notifUnread: number;
   children: React.ReactNode;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -32,6 +34,7 @@ export function AppShell({
         user={user}
         alertCount={alertCount}
         reminderCount={reminderCount}
+        notifUnread={notifUnread}
         drawerOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
       />

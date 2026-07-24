@@ -21,7 +21,6 @@ import {
 } from "@/lib/roles";
 import type { OrderDetail as OrderDetailData, QcDocTable } from "@/lib/orders";
 import { OrderChildList } from "./order-children";
-import { OrderPipeline } from "./order-pipeline";
 import { QcDocumentsModal } from "./qc-documents-modal";
 
 type DocumentsConfig = {
@@ -250,9 +249,15 @@ export function OrderDetail({
 }) {
   const order = detail.order;
   const central = isCentral(role);
+  // When QC Needed = No, the QC department isn't involved, so its section is
+  // hidden from the order entirely.
+  const qcNeeded =
+    String(order.qc_required ?? "").trim().toLowerCase() !== "no";
   // Department roles see only their own section; central/admin see everything.
-  const visibleSections = ORDER_SECTIONS.filter((s) =>
-    canAccessDepartment(role, s.table)
+  const visibleSections = ORDER_SECTIONS.filter(
+    (s) =>
+      canAccessDepartment(role, s.table) &&
+      (s.table !== "order_qc" || qcNeeded)
   );
   const canSeeLots = canEditChild(role, "order_lots");
 
@@ -277,8 +282,6 @@ export function OrderDetail({
           </h1>
         </div>
       </div>
-
-      {central && <OrderPipeline detail={detail} />}
 
       <div className="max-w-6xl space-y-6">
         {visibleSections.map((section) => {

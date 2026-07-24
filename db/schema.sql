@@ -525,3 +525,31 @@ BEGIN
         ALTER TABLE order_planning DROP COLUMN final_packing_dispatch_date;
     END IF;
 END $$;
+
+-- ---------------------------------------------------------------------------
+-- notifications
+-- Event feed shown in the in-portal notification bell. Each row targets one
+-- recipient role (a role may have several users; unread state is tracked
+-- per-user via users.notifications_seen_at, below). Emitted when a triggering
+-- event happens (payment terms filled, a target date set, a department
+-- completing its work) — see lib/notifications.ts.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS notifications (
+    id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    recipient_role TEXT         NOT NULL,
+    order_id       UUID         REFERENCES orders(id) ON DELETE CASCADE,
+    type           TEXT         NOT NULL,   -- payment_terms | target_date | dept_complete
+    message        TEXT         NOT NULL,
+    created_at     TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS notifications_recipient_idx
+    ON notifications(recipient_role, created_at DESC);
+
+-- Per-user "last opened the bell" timestamp; unread = notifications newer than
+-- this. Null means everything is unread.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS notifications_seen_at TIMESTAMPTZ;
+
+-- QC Needed flag (orders.qc_required, Yes/No). 'No' means the QC department is
+-- not involved for this order — it's hidden from the QC workspace and skipped
+-- by QC reminders. Null/anything-but-'No' is treated as needed. Idempotent.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS qc_required TEXT;

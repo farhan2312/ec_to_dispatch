@@ -35,6 +35,7 @@ import {
   isCentral,
 } from "@/lib/roles";
 import { logAudit } from "@/lib/audit";
+import { notifySectionSaved } from "@/lib/notifications";
 
 export type CreateOrderResult =
   | { ok: true; slNo: number }
@@ -55,14 +56,29 @@ export async function createOrderAction(
   }
 
   try {
-    const { sl_no } = await createOrder(input);
+    const { id, sl_no } = await createOrder(input);
+    const label = (input.so_no ?? input.ec_no ?? `#${sl_no}`).trim();
     await logAudit({
       actor: { id: user.id, email: user.email, role: user.role },
       action: "order.create",
       category: "activity",
-      target: (input.so_no ?? input.ec_no ?? `#${sl_no}`).trim(),
+      target: label,
       details: `Created order #${sl_no}`,
     });
+
+    // Creating an order doesn't notify anyone by itself, but the trigger
+    // fields (payment terms, target dates) count as being set if they're
+    // filled in on the create form — otherwise those departments would never
+    // hear about them. `before: null` makes every filled field a transition.
+    await notifySectionSaved({
+      orderId: id,
+      orderLabel: label,
+      table: "orders",
+      actorRole: user.role,
+      before: null,
+      after: input as Record<string, unknown>,
+    });
+
     revalidatePath("/risansi/orders");
     return { ok: true, slNo: sl_no };
   } catch (error) {
@@ -139,15 +155,38 @@ export async function updateOrderSectionAction(
     );
   }
 
+  const tbl = table as OrderTable;
   try {
-    await updateOrderSection(orderId, table as OrderTable, allowedValues);
+    // Snapshot before the save so we can detect empty→filled / incomplete→
+    // complete transitions and notify the right departments.
+    const before = await getOrderDetail(orderId);
+    await updateOrderSection(orderId, tbl, allowedValues);
     await logAudit({
       actor: { id: user.id, email: user.email, role: user.role },
       action: "order.update",
       category: "activity",
-      target: SECTION_BY_TABLE.get(table as OrderTable)?.title ?? table,
-      details: `Updated ${SECTION_BY_TABLE.get(table as OrderTable)?.title ?? table}`,
+      target: SECTION_BY_TABLE.get(tbl)?.title ?? table,
+      details: `Updated ${SECTION_BY_TABLE.get(tbl)?.title ?? table}`,
     });
+
+    if (before) {
+      const after = await getOrderDetail(orderId);
+      if (after) {
+        const o = before.order;
+        const label = String(o.so_no ?? o.ec_no ?? `#${o.sl_no}`);
+        const pick = (d: typeof before) =>
+          tbl === "orders" ? d.order : (d[tbl] as Record<string, unknown> | null);
+        await notifySectionSaved({
+          orderId,
+          orderLabel: label,
+          table: tbl,
+          actorRole: user.role,
+          before: pick(before),
+          after: pick(after),
+        });
+      }
+    }
+
     revalidatePath(`/risansi/orders/${orderId}`);
     revalidatePath("/risansi/orders");
     return { ok: true };

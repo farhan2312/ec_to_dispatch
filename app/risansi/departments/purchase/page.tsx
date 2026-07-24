@@ -20,11 +20,16 @@ export const dynamic = "force-dynamic";
 
 const TABLE = "order_purchase" as const;
 
-export default async function PurchaseWorkspacePage() {
+export default async function PurchaseWorkspacePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ edit?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
+  const { edit } = await searchParams;
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const [orders, reminders] = await Promise.all([
     listOrdersForSection(
@@ -62,6 +67,7 @@ export default async function PurchaseWorkspacePage() {
         fields={section.fields}
         orders={orders}
         readonlyFields={PURCHASE_CONTEXT_FIELDS}
+        openOrderId={edit}
       />
     </div>
   );

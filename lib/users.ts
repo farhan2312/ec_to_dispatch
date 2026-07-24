@@ -14,6 +14,7 @@ export type User = {
   status: UserStatus;
   created_at: string;
   updated_at: string;
+  notifications_seen_at: string | null;
 };
 
 export type NewUser = {
@@ -32,7 +33,7 @@ export class EmailInUseError extends Error {
 }
 
 const PUBLIC_COLUMNS =
-  "id, full_name, email, role, status, created_at, updated_at";
+  "id, full_name, email, role, status, created_at, updated_at, notifications_seen_at";
 
 /**
  * Create a user with the given status. Throws EmailInUseError if the email is
@@ -153,6 +154,11 @@ export async function updatePassword(
     id,
     passwordHash,
   ]);
+}
+
+/** Mark the moment a user last opened their notification bell (clears unread). */
+export async function markNotificationsSeen(id: string): Promise<void> {
+  await query(`UPDATE users SET notifications_seen_at = now() WHERE id = $1`, [id]);
 }
 
 /** List users with the given status, newest first. */

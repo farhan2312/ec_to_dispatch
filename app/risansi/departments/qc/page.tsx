@@ -24,11 +24,16 @@ export const dynamic = "force-dynamic";
 
 const TABLE = "order_qc" as const;
 
-export default async function QcWorkspacePage() {
+export default async function QcWorkspacePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ edit?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canAccessDepartment(user.role, TABLE)) redirect("/risansi/dashboard");
 
+  const { edit } = await searchParams;
   // QC fills its own submission fields; Required QC Documents / Target Date
   // stay centralOnly (Mitali fills those, read-only to QC — see order-schema.ts).
   const canEdit = canEditSection(user.role, TABLE);
@@ -81,6 +86,7 @@ export default async function QcWorkspacePage() {
             counts: requirementDocCounts,
           },
         ]}
+        openOrderId={edit}
       />
     </div>
   );

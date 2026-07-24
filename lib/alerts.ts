@@ -52,14 +52,15 @@ const ALERTS_SQL = `
      AND qc.qc_doc_actual_date IS NULL
 
   UNION ALL
-  -- Dispatch not done by its target date
+  -- Dispatch not done by the dispatch team's own target date (set by Central
+  -- Visibility) — not the order-level dispatch target, which Planning works to.
   SELECT o.id, o.sl_no::int, o.so_no, o.ec_no, o.party,
          'Assembly & Dispatch'::text, 'overdue'::text,
-         to_char(o.dispatch_target_date, 'YYYY-MM-DD'),
-         (${TODAY_IST} - o.dispatch_target_date)::int
+         to_char(ad.dispatch_team_target_date, 'YYYY-MM-DD'),
+         (${TODAY_IST} - ad.dispatch_team_target_date)::int
     FROM orders o
-    LEFT JOIN order_assembly_dispatch ad ON ad.order_id = o.id
-   WHERE o.dispatch_target_date < ${TODAY_IST}
+    JOIN order_assembly_dispatch ad ON ad.order_id = o.id
+   WHERE ad.dispatch_team_target_date < ${TODAY_IST}
      AND (ad.dispatch_status IS NULL OR btrim(ad.dispatch_status) = '')
      AND ad.actual_packing_date IS NULL
 

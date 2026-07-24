@@ -125,12 +125,14 @@ export function Sidebar({
   user,
   alertCount = 0,
   reminderCount = 0,
+  notifUnread = 0,
   drawerOpen = false,
   onClose,
 }: {
   user: SidebarUser;
   alertCount?: number;
   reminderCount?: number;
+  notifUnread?: number;
   drawerOpen?: boolean;
   onClose?: () => void;
 }) {
@@ -156,6 +158,11 @@ export function Sidebar({
 
   // The department this role gets deadline reminders for (badged in the nav).
   const myReminderDept = reminderDeptForRole(user.role);
+
+  // Notifications badge: unread events, plus live escalations for oversight
+  // roles (whose Notifications page also lists those escalations).
+  const notifBadge =
+    notifUnread + (canSeeEscalations(user.role) ? alertCount : 0);
 
   // The active item is the nav href that is the longest matching prefix of the
   // current path, so only the most specific one highlights.
@@ -217,6 +224,14 @@ export function Sidebar({
             {visiblePrimaryNav.map((item) => (
               <NavLink key={item.href} item={item} />
             ))}
+            <NavLink
+              item={{
+                label: "Notifications",
+                href: "/risansi/notifications",
+                icon: Bell,
+              }}
+              badge={notifBadge}
+            />
             {canCreateOrders(user.role) && (
               <NavLink
                 item={{
@@ -256,22 +271,6 @@ export function Sidebar({
               Oversight
             </p>
             <div className="space-y-1">
-              <Link
-                href="/risansi/notifications"
-                className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                  activeHref === "/risansi/notifications"
-                    ? "bg-sidebar-active text-white"
-                    : "text-sidebar-foreground hover:bg-sidebar-hover"
-                }`}
-              >
-                <Bell className="h-4 w-4 shrink-0" />
-                <span className="flex-1">Notifications</span>
-                {alertCount > 0 && (
-                  <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[11px] font-semibold text-white">
-                    {alertCount > 99 ? "99+" : alertCount}
-                  </span>
-                )}
-              </Link>
               <NavLink
                 item={{
                   label: "Payment Holds",

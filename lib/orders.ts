@@ -46,6 +46,7 @@ export type NewOrderInput = {
   agent?: string;
   nature_of_supply?: string;
   industry_type?: string;
+  qc_required?: string;
   item?: string;
   po_no?: string;
   customer_po_date?: string;
@@ -91,13 +92,14 @@ export async function createOrder(
     `INSERT INTO orders (
         so_no, ec_no, ec_generated_date, ec_rcvd_operations_date,
         ec_sent_production_date, file_no, client_code, client_type, party, agent,
-        nature_of_supply, industry_type, item, po_no, customer_po_date, model_no,
-        pump_qty, pump_sno, orientation, liquid_application, version, project,
-        payment_terms, master_reason_of_delay, dispatch_target_date,
+        nature_of_supply, industry_type, qc_required, item, po_no,
+        customer_po_date, model_no, pump_qty, pump_sno, orientation,
+        liquid_application, version, project, payment_terms,
+        master_reason_of_delay, dispatch_target_date,
         dispatch_target_revised_date, drg_target_date, order_value
      ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,
-        $23,$24,$25,$26,$27,$28
+        $23,$24,$25,$26,$27,$28,$29
      )
      RETURNING id, sl_no::int AS sl_no`,
     [
@@ -113,6 +115,7 @@ export async function createOrder(
       nullify(input.agent),
       nullify(input.nature_of_supply),
       nullify(input.industry_type),
+      nullify(input.qc_required),
       nullify(input.item),
       nullify(input.po_no),
       nullify(input.customer_po_date),
@@ -480,6 +483,7 @@ export type OrderOverviewRow = {
   gb_status: string | null;
   motor_status: string | null;
   qc_submitted: boolean;
+  qc_required: string | null;
   planning_status: string | null;
   dispatch_target_date: string | null;
   dispatch_status: string | null;
@@ -502,6 +506,7 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             pu.gb_status,
             pu.motor_status,
             (qc.qc_doc_actual_date IS NOT NULL) AS qc_submitted,
+            o.qc_required,
             pl.planning_status,
             to_char(o.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
             ad.dispatch_status
@@ -600,6 +605,13 @@ export async function listOrdersForSection(
   const partySelect =
     table === "order_billing" || table === "order_accounts" ? ", o.party" : "";
 
+  // QC isn't involved when an order is flagged QC Needed = No, so those orders
+  // are excluded from the QC workspace entirely.
+  const whereSql =
+    table === "order_qc"
+      ? `WHERE (o.qc_required IS NULL OR o.qc_required <> 'No')`
+      : "";
+
   const result = await query<Record<string, unknown>>(
     `SELECT o.id,
             o.sl_no::int AS sl_no,
@@ -611,6 +623,7 @@ export async function listOrdersForSection(
        FROM orders o
        LEFT JOIN ${table} d ON d.order_id = o.id
        ${extraJoinSql}
+      ${whereSql}
       ORDER BY o.sl_no ASC`
   );
   return result.rows;

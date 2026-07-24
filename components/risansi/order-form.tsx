@@ -10,6 +10,7 @@ import {
   INDUSTRY_TYPE_OPTIONS,
   ITEM_OPTIONS,
   NATURE_OF_SUPPLY_OPTIONS,
+  YES_NO_OPTIONS,
 } from "@/lib/order-schema";
 
 type FieldType = "text" | "date" | "number" | "select";
@@ -59,6 +60,7 @@ const SECTIONS: Section[] = [
     title: "Item",
     fields: [
       { name: "item", label: "Item", type: "select", options: ITEM_OPTIONS },
+      { name: "qc_required", label: "QC Needed", type: "select", options: YES_NO_OPTIONS },
       { name: "po_no", label: "PO No.", type: "text" },
       { name: "customer_po_date", label: "Customer PO Date", type: "date" },
       { name: "model_no", label: "Model No.", type: "text" },

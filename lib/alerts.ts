@@ -25,7 +25,7 @@ const ALERTS_SQL = `
          'Drawing'::text AS department, 'overdue'::text AS type,
          to_char(o.drg_target_date, 'YYYY-MM-DD') AS due_date,
          (${TODAY_IST} - o.drg_target_date)::int AS days_overdue
-    FROM orders o JOIN order_drawing dr ON dr.order_id = o.id
+    FROM orders o LEFT JOIN order_drawing dr ON dr.order_id = o.id
    WHERE o.drg_target_date < ${TODAY_IST}
      AND dr.drg_sent_to_client_date IS NULL
 

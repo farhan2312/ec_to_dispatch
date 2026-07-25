@@ -33,12 +33,14 @@ export type ReminderRow = {
 // Same four department deadlines as the overdue engine, shifted to the
 // upcoming window. Each branch tags its dept key + label.
 const REMINDERS_SQL = `
-  -- Drawing due to be sent to the client
+  -- Drawing due to be sent to the client. The target date is on the order
+  -- (set by Central Visibility), while the "sent" date lives on order_drawing,
+  -- which may not exist yet — so LEFT JOIN, or a fresh order would be missed.
   SELECT o.id, o.sl_no::int AS sl_no, o.so_no, o.ec_no, o.party,
          'drawing'::text AS dept, 'Drawing'::text AS department,
          to_char(o.drg_target_date, 'YYYY-MM-DD') AS due_date,
          (o.drg_target_date - ${TODAY_IST})::int AS days_left
-    FROM orders o JOIN order_drawing dr ON dr.order_id = o.id
+    FROM orders o LEFT JOIN order_drawing dr ON dr.order_id = o.id
    WHERE o.drg_target_date >= ${TODAY_IST}
      AND o.drg_target_date <= ${TODAY_IST} + 7
      AND dr.drg_sent_to_client_date IS NULL

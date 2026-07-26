@@ -553,3 +553,25 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS notifications_seen_at TIMESTAMPTZ;
 -- not involved for this order — it's hidden from the QC workspace and skipped
 -- by QC reminders. Null/anything-but-'No' is treated as needed. Idempotent.
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS qc_required TEXT;
+
+-- ---------------------------------------------------------------------------
+-- chat_messages
+-- 1:1 direct messages. A conversation is just the pair of users — no separate
+-- conversations table. Business rule (enforced in lib/chat.ts): every thread
+-- pairs one central-side user (Admin / Central Visibility) with one department
+-- user, so departments can only ever message Central Visibility.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id            UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+    sender_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    recipient_id  UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    body          TEXT         NOT NULL,
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    read_at       TIMESTAMPTZ
+);
+-- Thread fetch: all messages between two users, oldest first.
+CREATE INDEX IF NOT EXISTS chat_messages_pair_idx
+    ON chat_messages(sender_id, recipient_id, created_at);
+-- Unread badge: messages addressed to me that I haven't read.
+CREATE INDEX IF NOT EXISTS chat_messages_inbox_idx
+    ON chat_messages(recipient_id, read_at);

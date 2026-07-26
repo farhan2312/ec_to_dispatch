@@ -17,6 +17,7 @@ import {
   KeyRound,
   LayoutDashboard,
   LogOut,
+  MessageSquare,
   Package,
   PenTool,
   Receipt,
@@ -114,6 +115,7 @@ const NAV_HREFS: string[] = [
   "/risansi/orders/import",
   ...DEPARTMENT_NAV.map((i) => i.href),
   "/risansi/notifications",
+  "/risansi/messages",
   "/risansi/escalations",
   "/risansi/dispatched",
   ...ADMIN_NAV.map((i) => i.href),
@@ -126,6 +128,7 @@ export function Sidebar({
   alertCount = 0,
   reminderCount = 0,
   notifUnread = 0,
+  messageUnread = 0,
   drawerOpen = false,
   onClose,
 }: {
@@ -133,6 +136,7 @@ export function Sidebar({
   alertCount?: number;
   reminderCount?: number;
   notifUnread?: number;
+  messageUnread?: number;
   drawerOpen?: boolean;
   onClose?: () => void;
 }) {
@@ -231,6 +235,14 @@ export function Sidebar({
                 icon: Bell,
               }}
               badge={notifBadge}
+            />
+            <NavLink
+              item={{
+                label: "Messages",
+                href: "/risansi/messages",
+                icon: MessageSquare,
+              }}
+              badge={messageUnread}
             />
             {canCreateOrders(user.role) && (
               <NavLink

@@ -381,6 +381,15 @@ export type ImportOrdersResult =
   | { ok: true; inserted: number; skipped: number; matchedColumns: number }
   | { ok: false; error: string };
 
+// The tables whose columns carry notification triggers (payment terms, target
+// dates). notifySectionSaved is a no-op for a table with no trigger fields set.
+const NOTIFY_ON_IMPORT: OrderTable[] = [
+  "orders",
+  "order_planning",
+  "order_qc",
+  "order_assembly_dispatch",
+];
+
 export async function importOrdersAction(
   formData: FormData
 ): Promise<ImportOrdersResult> {
@@ -413,13 +422,36 @@ export async function importOrdersAction(
       return { ok: false, error: "No data rows found to import." };
     }
 
-    const { inserted } = await insertParsedOrders(parsed.rows);
+    const { inserted, created } = await insertParsedOrders(parsed.rows);
     await logAudit({
       actor: { id: user.id, email: user.email, role: user.role },
       action: "order.import",
       category: "activity",
       details: `Imported ${inserted} order${inserted === 1 ? "" : "s"} from Excel`,
     });
+
+    // Fire the same field notifications the create form does, for every
+    // imported order — a target date / payment terms set in the sheet counts
+    // as newly set (before: null). Best-effort; must not fail the import.
+    try {
+      for (const order of created) {
+        for (const table of NOTIFY_ON_IMPORT) {
+          const after = order.row[table] ?? null;
+          if (!after) continue;
+          await notifySectionSaved({
+            orderId: order.id,
+            orderLabel: order.label,
+            table,
+            actorRole: user.role,
+            before: null,
+            after,
+          });
+        }
+      }
+    } catch (error) {
+      console.error("import notifications failed:", error);
+    }
+
     revalidatePath("/risansi/orders");
     return {
       ok: true,

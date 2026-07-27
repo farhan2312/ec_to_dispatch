@@ -371,33 +371,40 @@ function insertSql(table: string, columns: string[]): string {
   return `INSERT INTO ${table} (${cols}) VALUES (${params})`;
 }
 
+// One imported order, with enough context to emit its notifications.
+export type ImportedOrder = { id: string; label: string; row: ParsedOrder };
+
 /**
  * Bulk-insert parsed orders (from an Excel import) inside one transaction.
  * Each row inserts the core order, then any populated detail/child tables.
  * Column names come from the controlled import mapping, not user input.
+ * Returns the created orders so the caller can fire the same field
+ * notifications the create form does.
  */
 export async function insertParsedOrders(
   rows: ParsedOrder[]
-): Promise<{ inserted: number }> {
-  if (rows.length === 0) return { inserted: 0 };
+): Promise<{ inserted: number; created: ImportedOrder[] }> {
+  if (rows.length === 0) return { inserted: 0, created: [] };
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
     let inserted = 0;
+    const created: ImportedOrder[] = [];
 
     for (const row of rows) {
       const core = row.orders ?? {};
       const coreCols = Object.keys(core);
       const orderResult = coreCols.length
-        ? await client.query<{ id: string }>(
-            `${insertSql("orders", coreCols)} RETURNING id`,
+        ? await client.query<{ id: string; sl_no: number }>(
+            `${insertSql("orders", coreCols)} RETURNING id, sl_no::int AS sl_no`,
             coreCols.map((c) => core[c])
           )
-        : await client.query<{ id: string }>(
-            "INSERT INTO orders DEFAULT VALUES RETURNING id"
+        : await client.query<{ id: string; sl_no: number }>(
+            "INSERT INTO orders DEFAULT VALUES RETURNING id, sl_no::int AS sl_no"
           );
       const orderId = orderResult.rows[0].id;
+      const slNo = orderResult.rows[0].sl_no;
 
       for (const table of DETAIL_TABLES) {
         const data = row[table];
@@ -419,11 +426,13 @@ export async function insertParsedOrders(
         ]);
       }
 
+      const label = String(core.so_no ?? core.ec_no ?? `#${slNo}`);
+      created.push({ id: orderId, label, row });
       inserted++;
     }
 
     await client.query("COMMIT");
-    return { inserted };
+    return { inserted, created };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

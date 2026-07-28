@@ -181,6 +181,39 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
 }
 
 /**
+ * Full records for many orders in one query (same shape as getOrderDetail) —
+ * for bulk export. `ids` limits to those orders; omitted, returns every order.
+ * Ordered by Sl. No.
+ */
+export async function listOrderDetails(ids?: string[]): Promise<OrderDetail[]> {
+  const result = await query<OrderDetail>(
+    `SELECT
+        to_jsonb(o)  AS order,
+        to_jsonb(b)  AS order_billing,
+        to_jsonb(ac) AS order_accounts,
+        to_jsonb(dr) AS order_drawing,
+        to_jsonb(pu) AS order_purchase,
+        to_jsonb(qc) AS order_qc,
+        to_jsonb(pl) AS order_planning,
+        to_jsonb(ad) AS order_assembly_dispatch,
+        COALESCE((SELECT jsonb_agg(to_jsonb(l) ORDER BY l.created_at)
+                  FROM order_lots l WHERE l.order_id = o.id), '[]'::jsonb) AS order_lots
+       FROM orders o
+       LEFT JOIN order_billing b            ON b.order_id  = o.id
+       LEFT JOIN order_accounts ac          ON ac.order_id = o.id
+       LEFT JOIN order_drawing dr           ON dr.order_id = o.id
+       LEFT JOIN order_purchase pu          ON pu.order_id = o.id
+       LEFT JOIN order_qc qc                ON qc.order_id = o.id
+       LEFT JOIN order_planning pl          ON pl.order_id = o.id
+       LEFT JOIN order_assembly_dispatch ad ON ad.order_id = o.id
+      ${ids ? "WHERE o.id = ANY($1)" : ""}
+      ORDER BY o.sl_no ASC`,
+    ids ? [ids] : []
+  );
+  return result.rows;
+}
+
+/**
  * Update one department section of an order. For the core `orders` table this
  * is an UPDATE; for a 1:1 detail table it upserts on order_id. Column names are
  * validated against the section schema (never taken raw from the client).

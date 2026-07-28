@@ -14,7 +14,7 @@ type TargetTable =
 
 type ValueType = "text" | "date" | "int" | "numeric";
 
-type Mapping = { header: string; table: TargetTable; column: string; type: ValueType };
+export type Mapping = { header: string; table: TargetTable; column: string; type: ValueType };
 
 // Maps every tracker column (assets/excelData.xlsx) to its table + column.
 // Sl. No. (auto identity) is intentionally omitted.
@@ -101,6 +101,11 @@ function normalize(header: unknown): string {
 
 const MAP_BY_HEADER = new Map<string, Mapping>();
 for (const m of MAPPINGS) MAP_BY_HEADER.set(normalize(m.header), m);
+
+/** The table/column/type a canonical export/import header maps to, if any. */
+export function mappingForHeader(header: string): Mapping | undefined {
+  return MAP_BY_HEADER.get(normalize(header));
+}
 
 function coerceDate(value: unknown): string | null {
   if (value == null || value === "") return null;

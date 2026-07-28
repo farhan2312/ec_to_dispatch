@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Trash2 } from "lucide-react";
+import { Download, Loader2, Trash2 } from "lucide-react";
 import type { OrderListRow } from "@/lib/orders";
 import { deleteOrderAction } from "@/app/risansi/orders/actions";
 import { DISPATCH_STATUS_OPTIONS } from "@/lib/order-schema";
@@ -87,6 +87,7 @@ export function OrdersTable({
     options,
     activeCount,
     pageRows,
+    filtered,
     page,
     setPage,
     totalPages,
@@ -95,6 +96,16 @@ export function OrdersTable({
     to,
   } = useTableFilters(orders, searchText, ORDER_FILTERS, ORDER_TEXT_FILTERS);
   const colSpan = canDelete ? 12 : 11;
+  const isFiltered = activeCount > 0 || query.trim() !== "";
+
+  function handleExport() {
+    const url = isFiltered
+      ? `/api/orders/export?ids=${filtered.map((o) => o.id).join(",")}`
+      : "/api/orders/export";
+    const a = document.createElement("a");
+    a.href = url;
+    a.click();
+  }
 
   async function handleDelete(order: OrderListRow) {
     const label = order.so_no ?? order.ec_no ?? `#${order.sl_no}`;
@@ -125,6 +136,17 @@ export function OrdersTable({
         total={total}
         searchPlaceholder="Search SO, EC, party, item…"
       />
+
+      <div className="mb-3 flex justify-end">
+        <button
+          type="button"
+          onClick={handleExport}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-900 border border-blue-900 px-3 text-sm font-medium text-white transition-colors hover:bg-blue-800 disabled:opacity-50"
+        >
+          <Download className="h-4 w-4" />
+          {isFiltered ? `Export ${total} filtered` : "Export all"}
+        </button>
+      </div>
 
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">
         <div className="overflow-x-auto">

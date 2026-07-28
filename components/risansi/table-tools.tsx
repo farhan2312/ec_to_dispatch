@@ -163,6 +163,8 @@ export function useTableFilters<T>(
     setPage,
     totalPages,
     pageRows,
+    // The full filtered set across all pages — e.g. for "export what I see".
+    filtered,
     total,
     from,
     to,

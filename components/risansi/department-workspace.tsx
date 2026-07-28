@@ -6,6 +6,8 @@ import { Loader2, Paperclip, Pencil, X } from "lucide-react";
 import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
 import {
   SECTION_BY_TABLE,
+  canonicalSelectValue,
+  selectOptionsFor,
   type OrderField,
   type OrderTable,
 } from "@/lib/order-schema";
@@ -42,6 +44,7 @@ function formatValue(field: OrderField, value: unknown): string {
       });
     }
   }
+  if (field.type === "select") return canonicalSelectValue(field, s);
   return s;
 }
 
@@ -285,7 +288,9 @@ function EditSectionModal({
 }) {
   const router = useRouter();
   const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(fields.map((f) => [f.column, toInput(data[f.column])]))
+    Object.fromEntries(
+      fields.map((f) => [f.column, canonicalSelectValue(f, toInput(data[f.column]))])
+    )
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -391,7 +396,7 @@ function EditSectionModal({
                       className={`${inputClass} cursor-pointer`}
                     >
                       <option value="">—</option>
-                      {field.options?.map((o) => (
+                      {selectOptionsFor(field, values[field.column] ?? "").map((o) => (
                         <option key={o.value} value={o.value}>
                           {o.label}
                         </option>

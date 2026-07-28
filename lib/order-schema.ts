@@ -118,7 +118,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "orientation", label: "Orientation", type: "text" },
       { column: "liquid_application", label: "Liquid / Application", type: "text" },
       { column: "version", label: "Version", type: "text" },
-      { column: "project", label: "Project", type: "text" },
+      { column: "project", label: "Project", type: "select", options: YES_NO },
       { column: "payment_terms", label: "Payment Terms", type: "text" },
       { column: "master_reason_of_delay", label: "Master Reason of Delay", type: "text" },
       { column: "dispatch_target_date", label: "Dispatch Target Date", type: "date" },
@@ -334,6 +334,39 @@ export const ORDER_SECTIONS: OrderSection[] = [
 export const SECTION_BY_TABLE = new Map<OrderTable, OrderSection>(
   ORDER_SECTIONS.map((s) => [s.table, s])
 );
+
+/**
+ * For a select field, the option value that matches `raw` case-insensitively;
+ * otherwise `raw` trimmed. Lets a stored value like "yes" or "PUMP" (from an
+ * import with loose casing) resolve to the canonical option "Yes" / "Pump", so
+ * the dropdown shows it and a save writes it back cleanly. Non-select fields
+ * and unmatched values are returned unchanged.
+ */
+export function canonicalSelectValue(field: OrderField, raw: string): string {
+  const t = (raw ?? "").trim();
+  if (field.type !== "select" || !field.options || t === "") return t;
+  const match = field.options.find(
+    (o) => o.value.toLowerCase() === t.toLowerCase()
+  );
+  return match ? match.value : t;
+}
+
+/**
+ * The option list to render for a select, with the current value appended when
+ * it isn't already one of the defined options — so an unrecognized stored value
+ * still displays (and is preserved on save) rather than showing blank.
+ */
+export function selectOptionsFor(
+  field: OrderField,
+  current: string
+): { value: string; label: string }[] {
+  const opts = field.options ?? [];
+  const t = (current ?? "").trim();
+  if (t !== "" && !opts.some((o) => o.value === t)) {
+    return [...opts, { value: t, label: t }];
+  }
+  return opts;
+}
 
 // Dispatch lots are the one remaining 1:many child (an order can have many).
 export type ChildTable = "order_lots";

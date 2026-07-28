@@ -8,6 +8,8 @@ import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
 import {
   ORDER_SECTIONS,
   LOT_FIELDS,
+  canonicalSelectValue,
+  selectOptionsFor,
   type OrderField,
   type OrderSection,
 } from "@/lib/order-schema";
@@ -52,7 +54,14 @@ function formatDisplay(field: OrderField, value: unknown): string {
     const n = Number(value);
     if (Number.isFinite(n)) return new Intl.NumberFormat("en-IN").format(n);
   }
+  if (field.type === "select") return canonicalSelectValue(field, String(value));
   return String(value);
+}
+
+// Seed the form value for a field, normalizing select casing so a stored
+// value like "yes" resolves to its option "Yes".
+function seedValue(field: OrderField, data: Row | null): string {
+  return canonicalSelectValue(field, toInput(data?.[field.column]));
 }
 
 function dependsSatisfied(field: OrderField, values: Record<string, string>): boolean {
@@ -82,16 +91,12 @@ function EditableSection({
   const [error, setError] = useState<string | null>(null);
   const [openDocs, setOpenDocs] = useState<DocumentsConfig | null>(null);
   const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      section.fields.map((f) => [f.column, toInput(data?.[f.column])])
-    )
+    Object.fromEntries(section.fields.map((f) => [f.column, seedValue(f, data)]))
   );
 
   function startEdit() {
     setValues(
-      Object.fromEntries(
-        section.fields.map((f) => [f.column, toInput(data?.[f.column])])
-      )
+      Object.fromEntries(section.fields.map((f) => [f.column, seedValue(f, data)]))
     );
     setError(null);
     setEditing(true);
@@ -186,7 +191,7 @@ function EditableSection({
                   className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <option value="">—</option>
-                  {field.options?.map((o) => (
+                  {selectOptionsFor(field, values[field.column] ?? "").map((o) => (
                     <option key={o.value} value={o.value}>
                       {o.label}
                     </option>

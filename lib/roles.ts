@@ -40,6 +40,7 @@ export const REQUESTABLE_ROLES: Role[] = [
 // Actual Date of Doc. Submission and Remarks).
 const TABLE_OWNER: Record<OrderTable, Role> = {
   orders: "central_visibility",
+  order_items: "central_visibility",
   order_billing: "operations",
   order_accounts: "accounts",
   order_drawing: "drawing",

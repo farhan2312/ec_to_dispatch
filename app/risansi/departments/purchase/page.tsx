@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Package } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditSection, reminderDeptForTable } from "@/lib/roles";
-import { listOrdersForSection } from "@/lib/orders";
+import { listItemsForSection } from "@/lib/orders";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import {
   PURCHASE_CONTEXT_FIELDS,
@@ -32,12 +32,17 @@ export default async function PurchaseWorkspacePage({
   const { edit } = await searchParams;
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const [orders, reminders] = await Promise.all([
-    listOrdersForSection(
+    listItemsForSection(
       TABLE,
       PURCHASE_CONTEXT_FIELDS.map((f) => ({
         column: f.column,
         type: f.type,
-        from: "order_planning" as const,
+        // Target Date for Purchase lives on order_planning (per EC); LD/LD Date
+        // are SO-level on orders.
+        from:
+          f.column === "purchase_target_date"
+            ? ("order_planning" as const)
+            : ("orders" as const),
       }))
     ),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),

@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Truck } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
-import { listOrdersForSection } from "@/lib/orders";
+import { listItemsForSection } from "@/lib/orders";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import { SECTION_BY_TABLE } from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
@@ -29,7 +29,7 @@ export default async function AssemblyDispatchWorkspacePage({
   const { edit } = await searchParams;
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const [orders, reminders] = await Promise.all([
-    listOrdersForSection(TABLE),
+    listItemsForSection(TABLE),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);
 

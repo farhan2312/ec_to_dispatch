@@ -10,9 +10,9 @@ import {
   isCentral,
   reminderDeptForTable,
 } from "@/lib/roles";
-import { listOrdersForSection, listQcDocumentCounts } from "@/lib/orders";
+import { listItemsForSection, listQcDocumentCounts } from "@/lib/orders";
 import { listRemindersForDepartment } from "@/lib/reminders";
-import { SECTION_BY_TABLE } from "@/lib/order-schema";
+import { QC_CONTEXT_FIELDS, SECTION_BY_TABLE } from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
 import { RemindersPanel } from "@/components/risansi/reminders-panel";
 
@@ -40,7 +40,14 @@ export default async function QcWorkspacePage({
   const canEditCentral = isCentral(user.role);
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const [orders, docCounts, requirementDocCounts, reminders] = await Promise.all([
-    listOrdersForSection(TABLE),
+    listItemsForSection(
+      TABLE,
+      QC_CONTEXT_FIELDS.map((f) => ({
+        column: f.column,
+        type: f.type,
+        from: "order_items" as const,
+      }))
+    ),
     listQcDocumentCounts("order_qc_documents"),
     listQcDocumentCounts("order_qc_requirement_documents"),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
@@ -70,6 +77,7 @@ export default async function QcWorkspacePage({
         table={TABLE}
         fields={section.fields}
         orders={orders}
+        readonlyFields={QC_CONTEXT_FIELDS}
         canEdit={canEdit}
         canEditCentral={canEditCentral}
         documents={[

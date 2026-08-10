@@ -124,7 +124,17 @@ CREATE TABLE IF NOT EXISTS orders (
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS orders_so_no_idx ON orders (so_no);
-CREATE INDEX IF NOT EXISTS orders_ec_no_idx ON orders (ec_no);
+-- ec_no is temporarily dropped from orders (see the trim below), so this
+-- index can only be (re)created while the column exists.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'orders' AND column_name = 'ec_no'
+    ) THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS orders_ec_no_idx ON orders (ec_no)';
+    END IF;
+END $$;
 
 -- Billing & Operations / PI — cols W–AB.
 CREATE TABLE IF NOT EXISTS order_billing (
@@ -204,8 +214,17 @@ CREATE TABLE IF NOT EXISTS order_qc_documents (
     file_data     BYTEA NOT NULL,
     uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS order_qc_documents_order_id_idx
-    ON order_qc_documents(order_id);
+-- order_qc_documents is rekeyed to item_id in the v2 restructure below, so this
+-- order_id index only applies while the old column still exists.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_qc_documents' AND column_name = 'order_id'
+    ) THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS order_qc_documents_order_id_idx ON order_qc_documents(order_id)';
+    END IF;
+END $$;
 
 -- QC requirement documents (1:many). The reverse direction from
 -- order_qc_documents: reference/requirement files Central Visibility uploads
@@ -220,8 +239,16 @@ CREATE TABLE IF NOT EXISTS order_qc_requirement_documents (
     file_data     BYTEA NOT NULL,
     uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS order_qc_requirement_documents_order_id_idx
-    ON order_qc_requirement_documents(order_id);
+-- Rekeyed to item_id in the v2 restructure below (guard as above).
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_qc_requirement_documents' AND column_name = 'order_id'
+    ) THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS order_qc_requirement_documents_order_id_idx ON order_qc_requirement_documents(order_id)';
+    END IF;
+END $$;
 
 -- Planning — cols AT–AX, BB, BC, BG.
 CREATE TABLE IF NOT EXISTS order_planning (
@@ -345,7 +372,16 @@ CREATE TABLE IF NOT EXISTS order_lots (
     invoice_date         DATE,          -- BO Invoice Date
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS order_lots_order_id_idx ON order_lots (order_id);
+-- Rekeyed to item_id in the v2 restructure below (guard as above).
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_lots' AND column_name = 'order_id'
+    ) THEN
+        EXECUTE 'CREATE INDEX IF NOT EXISTS order_lots_order_id_idx ON order_lots (order_id)';
+    END IF;
+END $$;
 
 -- updated_at triggers for the core + 1:1 detail tables.
 DROP TRIGGER IF EXISTS orders_set_updated_at ON orders;
@@ -450,13 +486,26 @@ BEGIN
 END $$;
 
 -- LD moves from orders into order_planning (filled by Central Visibility,
--- visible to Planning). Idempotent.
-ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS ld TEXT;
+-- visible to Planning). Idempotent. Only runs while order_planning is still
+-- SO-keyed (has order_id); after the v2 restructure below rekeys it to item_id,
+-- LD lives permanently on orders and this dance is skipped.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_planning' AND column_name = 'order_id'
+    ) THEN
+        ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS ld TEXT;
+    END IF;
+END $$;
 DO $$
 BEGIN
     IF EXISTS (
         SELECT 1 FROM information_schema.columns
          WHERE table_name = 'orders' AND column_name = 'ld'
+    ) AND EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_planning' AND column_name = 'order_id'
     ) THEN
         INSERT INTO order_planning (order_id)
             SELECT o.id FROM orders o
@@ -575,3 +624,256 @@ CREATE INDEX IF NOT EXISTS chat_messages_pair_idx
 -- Unread badge: messages addressed to me that I haven't read.
 CREATE INDEX IF NOT EXISTS chat_messages_inbox_idx
     ON chat_messages(recipient_id, read_at);
+
+-- Sales Order Date, alongside the existing Sales Order Number (so_no). Part
+-- of the "Purchase Order Details" group on the create form (SO No./Date next
+-- to PO No./Date). Idempotent.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS so_date DATE;
+
+-- Currency for the Purchase/Sales Order Value (INR or USD), next to the
+-- value itself rather than baked into the label text. Idempotent.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_currency TEXT;
+
+-- Trim orders down to just Client + Purchase Order Details (+ system
+-- columns). Everything else (EC fields, Item, QC Needed, Project, Payment
+-- Terms, target dates) is dropped for now — the application code that reads
+-- them (lib/reminders.ts, lib/alerts.ts, lib/notifications.ts, the order form
+-- and summary) is intentionally left in place, since these columns are coming
+-- back later. Until they're re-added, anything touching them will error.
+ALTER TABLE orders DROP COLUMN IF EXISTS ec_no;
+ALTER TABLE orders DROP COLUMN IF EXISTS ec_generated_date;
+ALTER TABLE orders DROP COLUMN IF EXISTS ec_rcvd_operations_date;
+ALTER TABLE orders DROP COLUMN IF EXISTS ec_sent_production_date;
+ALTER TABLE orders DROP COLUMN IF EXISTS file_no;
+ALTER TABLE orders DROP COLUMN IF EXISTS item;
+ALTER TABLE orders DROP COLUMN IF EXISTS qc_required;
+ALTER TABLE orders DROP COLUMN IF EXISTS model_no;
+ALTER TABLE orders DROP COLUMN IF EXISTS pump_qty;
+ALTER TABLE orders DROP COLUMN IF EXISTS pump_sno;
+ALTER TABLE orders DROP COLUMN IF EXISTS orientation;
+ALTER TABLE orders DROP COLUMN IF EXISTS liquid_application;
+ALTER TABLE orders DROP COLUMN IF EXISTS version;
+ALTER TABLE orders DROP COLUMN IF EXISTS project;
+ALTER TABLE orders DROP COLUMN IF EXISTS payment_terms;
+ALTER TABLE orders DROP COLUMN IF EXISTS master_reason_of_delay;
+ALTER TABLE orders DROP COLUMN IF EXISTS dispatch_target_date;
+ALTER TABLE orders DROP COLUMN IF EXISTS dispatch_target_revised_date;
+ALTER TABLE orders DROP COLUMN IF EXISTS drg_target_date;
+
+-- QC Req and Payment Terms return to the order (Central Visibility sets them
+-- at intake, same as before they were trimmed above). LD / LD Date move from
+-- Planning back onto the order too, so Central sets them at intake instead of
+-- only later in Planning. Order Type (item) is NOT re-added here — it moves to
+-- the per-EC order_items table in the v2 restructure below. Idempotent.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS qc_required TEXT;    -- QC Req (Yes/No)
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_terms TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS ld TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS ld_date DATE;
+-- ld and ld_date are moved independently: depending on migration history
+-- order_planning may carry one without the other.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_planning' AND column_name = 'ld'
+    ) THEN
+        UPDATE orders o SET ld = COALESCE(o.ld, pl.ld)
+          FROM order_planning pl WHERE pl.order_id = o.id;
+        ALTER TABLE order_planning DROP COLUMN ld;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_planning' AND column_name = 'ld_date'
+    ) THEN
+        UPDATE orders o SET ld_date = COALESCE(o.ld_date, pl.ld_date)
+          FROM order_planning pl WHERE pl.order_id = o.id;
+        ALTER TABLE order_planning DROP COLUMN ld_date;
+    END IF;
+END $$;
+
+-- ===========================================================================
+-- v2 restructure: one SO (orders) → many ECs (order_items), each EC being one
+-- pump or spare. Every department detail table moves from being keyed by the
+-- SO (order_id) to being keyed by the EC (item_id) — so each pump flows through
+-- Drawing → Purchase → QC → Planning → Dispatch on its own timeline. Client,
+-- Purchase Order, Billing & Operations, Accounts, and the SO-level commercial
+-- flags (Payment Terms / QC Req / LD) stay on the SO.
+--
+-- This is a destructive-by-consent migration: the per-department rows are
+-- dropped and recreated keyed to order_items (the user approved a clean reset
+-- of that data). It is guarded to run exactly once — the DROP only fires while
+-- the detail tables still carry the old order_id column.
+-- ===========================================================================
+
+-- Per-EC line item (one pump or spare under an SO). Holds the intake attributes
+-- and the per-EC target dates set by Central Visibility at Add-On time.
+CREATE TABLE IF NOT EXISTS order_items (
+    id                            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id                      UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    seq                           BIGINT GENERATED BY DEFAULT AS IDENTITY, -- display order
+    ec_no                         TEXT,           -- EC No.
+    ec_date                       DATE,           -- EC date
+    item_type                     TEXT,           -- Pump / Spare / ROLB
+    model_no                      TEXT,
+    quantity                      INTEGER,
+    orientation                   TEXT,
+    pump_sno                      TEXT,           -- Pump Serial No.
+    application                   TEXT,           -- Liquid / Application
+    version                       TEXT,           -- Series Version
+    boi                           TEXT,           -- BOI (Yes/No) intake flag
+    dispatch_target_date          DATE,           -- Dispatch date
+    dispatch_target_revised_date  DATE,           -- Revised dispatch date
+    drg_target_date               DATE,           -- Target date for drawing
+    qc_doc_target_date            DATE,           -- QC target date
+    created_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS order_items_order_id_idx ON order_items (order_id);
+
+DROP TRIGGER IF EXISTS order_items_set_updated_at ON order_items;
+CREATE TRIGGER order_items_set_updated_at BEFORE UPDATE ON order_items
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- Drop the old SO-keyed detail tables once, so they can be recreated EC-keyed.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_drawing' AND column_name = 'order_id'
+    ) THEN
+        DROP TABLE IF EXISTS order_lots CASCADE;
+        DROP TABLE IF EXISTS order_qc_documents CASCADE;
+        DROP TABLE IF EXISTS order_qc_requirement_documents CASCADE;
+        DROP TABLE IF EXISTS order_drawing CASCADE;
+        DROP TABLE IF EXISTS order_purchase CASCADE;
+        DROP TABLE IF EXISTS order_qc CASCADE;
+        DROP TABLE IF EXISTS order_planning CASCADE;
+        DROP TABLE IF EXISTS order_assembly_dispatch CASCADE;
+    END IF;
+END $$;
+
+-- Drawing (per EC).
+CREATE TABLE IF NOT EXISTS order_drawing (
+    item_id                  UUID PRIMARY KEY REFERENCES order_items(id) ON DELETE CASCADE,
+    drg_status               TEXT,
+    drg_sent_to_client_date  DATE,
+    drg_approval_date        DATE,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Purchase / BOI (per EC). boi here drives the department's gear-box/motor
+-- gating; order_items.boi is the intake flag captured on the Add-On form.
+CREATE TABLE IF NOT EXISTS order_purchase (
+    item_id               UUID PRIMARY KEY REFERENCES order_items(id) ON DELETE CASCADE,
+    boi                   TEXT,
+    gear_box              TEXT,
+    gb_status             TEXT,
+    motor                 TEXT,
+    motor_status          TEXT,
+    pending_parts         TEXT,
+    boi_receipt_date      DATE,
+    remarks               TEXT,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- QC (per EC). Target date now lives on order_items; QC fills the actual date.
+CREATE TABLE IF NOT EXISTS order_qc (
+    item_id                UUID PRIMARY KEY REFERENCES order_items(id) ON DELETE CASCADE,
+    required_qc_documents  TEXT,
+    qc_doc_actual_date     DATE,
+    remarks                TEXT,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- QC document attachments (per EC, 1:many).
+CREATE TABLE IF NOT EXISTS order_qc_documents (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    item_id       UUID NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+    file_name     TEXT NOT NULL,
+    mime_type     TEXT,
+    file_size     INT,
+    file_data     BYTEA NOT NULL,
+    uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS order_qc_documents_item_id_idx
+    ON order_qc_documents(item_id);
+
+-- QC requirement documents (per EC, 1:many).
+CREATE TABLE IF NOT EXISTS order_qc_requirement_documents (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    item_id       UUID NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+    file_name     TEXT NOT NULL,
+    mime_type     TEXT,
+    file_size     INT,
+    file_data     BYTEA NOT NULL,
+    uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS order_qc_requirement_documents_item_id_idx
+    ON order_qc_requirement_documents(item_id);
+
+-- Planning (per EC).
+CREATE TABLE IF NOT EXISTS order_planning (
+    item_id                       UUID PRIMARY KEY REFERENCES order_items(id) ON DELETE CASCADE,
+    purchase_target_date          DATE,
+    planning_documents_required   TEXT,
+    pump_readiness_remarks        TEXT,
+    planning_readiness_date       DATE,
+    planning_status               TEXT,
+    actual_pump_status            TEXT,
+    assembled_packed_qty          TEXT,
+    assembly_date                 DATE,
+    created_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Assembly & Dispatch (per EC).
+CREATE TABLE IF NOT EXISTS order_assembly_dispatch (
+    item_id                      UUID PRIMARY KEY REFERENCES order_items(id) ON DELETE CASCADE,
+    dispatch_documents_required  TEXT,
+    dispatch_team_target_date    DATE,
+    final_packing_dispatch_date  DATE,
+    actual_packing_date          DATE,
+    delay_remarks                TEXT,
+    dispatch_status              TEXT,
+    created_at                   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at                   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Dispatch lots (per EC, 1:many).
+CREATE TABLE IF NOT EXISTS order_lots (
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    item_id              UUID NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+    lot_no               TEXT,
+    lot_dispatch_date    DATE,
+    packing_slip_remark  TEXT,
+    invoice_date         DATE,
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS order_lots_item_id_idx ON order_lots (item_id);
+
+-- updated_at triggers for the recreated 1:1 detail tables.
+DROP TRIGGER IF EXISTS order_drawing_set_updated_at ON order_drawing;
+CREATE TRIGGER order_drawing_set_updated_at BEFORE UPDATE ON order_drawing
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+DROP TRIGGER IF EXISTS order_purchase_set_updated_at ON order_purchase;
+CREATE TRIGGER order_purchase_set_updated_at BEFORE UPDATE ON order_purchase
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+DROP TRIGGER IF EXISTS order_qc_set_updated_at ON order_qc;
+CREATE TRIGGER order_qc_set_updated_at BEFORE UPDATE ON order_qc
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+DROP TRIGGER IF EXISTS order_planning_set_updated_at ON order_planning;
+CREATE TRIGGER order_planning_set_updated_at BEFORE UPDATE ON order_planning
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+DROP TRIGGER IF EXISTS order_assembly_dispatch_set_updated_at ON order_assembly_dispatch;
+CREATE TRIGGER order_assembly_dispatch_set_updated_at BEFORE UPDATE ON order_assembly_dispatch
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- Order Type moves to the EC (order_items.item_type); remove it from the SO.
+ALTER TABLE orders DROP COLUMN IF EXISTS item;
+
+-- Notifications can target a specific EC (for per-EC target-date events); the
+-- SO-level events (payment terms) keep using order_id only.
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS item_id UUID REFERENCES order_items(id) ON DELETE CASCADE;

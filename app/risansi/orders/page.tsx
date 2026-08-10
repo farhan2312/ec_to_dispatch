@@ -6,7 +6,6 @@ import { listOrders } from "@/lib/orders";
 import { getCurrentUser } from "@/lib/session";
 import { canCreateOrders, isCentral } from "@/lib/roles";
 import { OrdersTable } from "@/components/risansi/orders-table";
-import { ImportOrdersButton } from "@/components/risansi/import-orders-button";
 
 export const metadata: Metadata = {
   title: "Orders | Risansi",
@@ -45,7 +44,6 @@ export default async function OrdersPage() {
 
         {canCreate && (
           <div className="flex shrink-0 items-center gap-2">
-            <ImportOrdersButton />
             <Link
               href="/risansi/orders/new"
               className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
@@ -61,8 +59,7 @@ export default async function OrdersPage() {
         <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
           <p className="text-sm font-medium text-foreground">No orders yet</p>
           <p className="mt-1 text-sm text-muted">
-            Orders will appear here once added via the create form or Excel
-            import.
+            Orders will appear here once added via the create form.
           </p>
         </div>
       ) : (

@@ -60,9 +60,9 @@ function NotificationFeed({
   hrefFor,
 }: {
   items: NotificationRow[];
-  // Where "Open" should land — a department's own edit form, or the order
-  // summary for central/admin (see the page component below).
-  hrefFor: (orderId: string) => string;
+  // Where "Open" should land — a department's own edit form, or the SO / EC
+  // detail for central/admin (see the page component below).
+  hrefFor: (n: NotificationRow) => string;
 }) {
   if (items.length === 0) {
     return (
@@ -98,7 +98,7 @@ function NotificationFeed({
               </div>
               {n.order_id && (
                 <Link
-                  href={hrefFor(n.order_id)}
+                  href={hrefFor(n)}
                   className="shrink-0 text-sm font-medium text-primary hover:text-primary-hover"
                 >
                   Open
@@ -216,11 +216,17 @@ export default async function NotificationsPage() {
     oversight ? listAlerts() : Promise.resolve<AlertRow[]>([]),
   ]);
 
-  // Departments open straight into their own edit form for that order;
-  // central/admin open the full order summary, as before.
+  // Departments open straight into their own workspace, deep-linked to the EC
+  // row (item_id) when the event is per-EC; central/admin open the EC detail
+  // when known, else the SO.
   const deptHref = departmentHrefForRole(user.role);
-  const hrefFor = (orderId: string) =>
-    deptHref ? `${deptHref}?edit=${orderId}` : `/risansi/orders/${orderId}`;
+  const hrefFor = (n: NotificationRow) => {
+    if (deptHref) return `${deptHref}?edit=${n.item_id ?? n.order_id}`;
+    if (n.item_id && n.order_id) {
+      return `/risansi/orders/${n.order_id}/items/${n.item_id}`;
+    }
+    return `/risansi/orders/${n.order_id}`;
+  };
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">

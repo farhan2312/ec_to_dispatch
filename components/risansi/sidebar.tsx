@@ -12,7 +12,6 @@ import {
   ChevronsUpDown,
   ClipboardCheck,
   ClipboardList,
-  FileSpreadsheet,
   Gauge,
   KeyRound,
   LayoutDashboard,
@@ -31,7 +30,6 @@ import {
 import { logout } from "@/app/risansi/actions";
 import {
   canAccessDepartment,
-  canCreateOrders,
   canSeeDispatched,
   canSeeEscalations,
   isCentral,
@@ -109,10 +107,9 @@ const ADMIN_NAV: NavItem[] = [
 ];
 
 // All nav destinations — used to resolve the single active item by longest
-// matching prefix (so /risansi/orders/import doesn't also light up Orders).
+// matching prefix.
 const NAV_HREFS: string[] = [
   ...PRIMARY_NAV.map((i) => i.href),
-  "/risansi/orders/import",
   ...DEPARTMENT_NAV.map((i) => i.href),
   "/risansi/notifications",
   "/risansi/messages",
@@ -244,15 +241,6 @@ export function Sidebar({
               }}
               badge={messageUnread}
             />
-            {canCreateOrders(user.role) && (
-              <NavLink
-                item={{
-                  label: "Import Orders",
-                  href: "/risansi/orders/import",
-                  icon: FileSpreadsheet,
-                }}
-              />
-            )}
           </div>
         </div>
 

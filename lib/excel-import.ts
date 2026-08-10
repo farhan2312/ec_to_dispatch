@@ -1,8 +1,7 @@
-import ExcelJS from "exceljs";
-
 // Which detail table each field belongs to.
 type TargetTable =
   | "orders"
+  | "order_items"
   | "order_billing"
   | "order_accounts"
   | "order_drawing"
@@ -20,7 +19,8 @@ export type Mapping = { header: string; table: TargetTable; column: string; type
 // Sl. No. (auto identity) is intentionally omitted.
 const MAPPINGS: Mapping[] = [
   { header: "SO NO.", table: "orders", column: "so_no", type: "text" },
-  { header: "EC No.", table: "orders", column: "ec_no", type: "text" },
+  { header: "Sales Order Date", table: "orders", column: "so_date", type: "date" },
+  { header: "EC No.", table: "order_items", column: "ec_no", type: "text" },
   { header: "EC Generated Date", table: "orders", column: "ec_generated_date", type: "date" },
   { header: "EC RCVD In OPERATIONS", table: "orders", column: "ec_rcvd_operations_date", type: "date" },
   { header: "EC sent date in Production", table: "orders", column: "ec_sent_production_date", type: "date" },
@@ -34,15 +34,15 @@ const MAPPINGS: Mapping[] = [
   { header: "AGENT", table: "orders", column: "agent", type: "text" },
   { header: "Representative", table: "orders", column: "agent", type: "text" },
   { header: "QC Needed", table: "orders", column: "qc_required", type: "text" },
-  { header: "Item", table: "orders", column: "item", type: "text" },
+  { header: "Item", table: "order_items", column: "item_type", type: "text" },
   { header: "PO NO.", table: "orders", column: "po_no", type: "text" },
   { header: "Customer PO Date", table: "orders", column: "customer_po_date", type: "date" },
-  { header: "Model No.", table: "orders", column: "model_no", type: "text" },
-  { header: "IF PUMP (QTY)", table: "orders", column: "pump_qty", type: "int" },
-  { header: "PUMP S.NO.", table: "orders", column: "pump_sno", type: "text" },
-  { header: "ORIENTATION", table: "orders", column: "orientation", type: "text" },
-  { header: "LIQUID/ APPLICATION", table: "orders", column: "liquid_application", type: "text" },
-  { header: "VERSION", table: "orders", column: "version", type: "text" },
+  { header: "Model No.", table: "order_items", column: "model_no", type: "text" },
+  { header: "IF PUMP (QTY)", table: "order_items", column: "quantity", type: "int" },
+  { header: "PUMP S.NO.", table: "order_items", column: "pump_sno", type: "text" },
+  { header: "ORIENTATION", table: "order_items", column: "orientation", type: "text" },
+  { header: "LIQUID/ APPLICATION", table: "order_items", column: "application", type: "text" },
+  { header: "VERSION", table: "order_items", column: "version", type: "text" },
   { header: "Payment Terms", table: "orders", column: "payment_terms", type: "text" },
   { header: "Freight Terms", table: "order_billing", column: "freight_terms", type: "text" },
   { header: "Packing Requirement", table: "order_billing", column: "packing_requirement", type: "text" },
@@ -53,7 +53,7 @@ const MAPPINGS: Mapping[] = [
   { header: "DRG. Status", table: "order_drawing", column: "drg_status", type: "text" },
   { header: "DRG SENT TO CLIENT Dt.", table: "order_drawing", column: "drg_sent_to_client_date", type: "date" },
   { header: "DRG. Approval Date", table: "order_drawing", column: "drg_approval_date", type: "date" },
-  { header: "Target Dt. For Drg", table: "orders", column: "drg_target_date", type: "date" },
+  { header: "Target Dt. For Drg", table: "order_items", column: "drg_target_date", type: "date" },
   { header: "BOI", table: "order_purchase", column: "boi", type: "text" },
   { header: "Gear BOX", table: "order_purchase", column: "gear_box", type: "text" },
   { header: "GB STATUS", table: "order_purchase", column: "gb_status", type: "text" },
@@ -63,12 +63,12 @@ const MAPPINGS: Mapping[] = [
   { header: "BOI DATE RECEIPT DATE", table: "order_purchase", column: "boi_receipt_date", type: "date" },
   { header: "Target Dt. For Purchase", table: "order_planning", column: "purchase_target_date", type: "date" },
   { header: "Required QC Documents", table: "order_qc", column: "required_qc_documents", type: "text" },
-  { header: "Target Dt. For Doc. Submission", table: "order_qc", column: "qc_doc_target_date", type: "date" },
+  { header: "Target Dt. For Doc. Submission", table: "order_items", column: "qc_doc_target_date", type: "date" },
   { header: "Actual Dt. Of Doc. Submission", table: "order_qc", column: "qc_doc_actual_date", type: "date" },
-  { header: "LD (Yes)", table: "order_planning", column: "ld", type: "text" },
-  { header: "LD Date", table: "order_planning", column: "ld_date", type: "date" },
-  { header: "DISP. TARGET DT.", table: "orders", column: "dispatch_target_date", type: "date" },
-  { header: "Revise Disp. Target Dt", table: "orders", column: "dispatch_target_revised_date", type: "date" },
+  { header: "LD (Yes)", table: "orders", column: "ld", type: "text" },
+  { header: "LD Date", table: "orders", column: "ld_date", type: "date" },
+  { header: "DISP. TARGET DT.", table: "order_items", column: "dispatch_target_date", type: "date" },
+  { header: "Revise Disp. Target Dt", table: "order_items", column: "dispatch_target_revised_date", type: "date" },
   { header: "Docuemnts Required from Planning", table: "order_planning", column: "planning_documents_required", type: "text" },
   { header: "Documents Required from Planning", table: "order_planning", column: "planning_documents_required", type: "text" },
   { header: "Pump Readiness Remarks", table: "order_planning", column: "pump_readiness_remarks", type: "text" },
@@ -91,6 +91,7 @@ const MAPPINGS: Mapping[] = [
   { header: "Lot Wise Disp. Dt.", table: "order_lots", column: "lot_dispatch_date", type: "date" },
   { header: "Invoice Date", table: "order_lots", column: "invoice_date", type: "date" },
   { header: "Order Value", table: "orders", column: "order_value", type: "numeric" },
+  { header: "Currency", table: "orders", column: "order_currency", type: "text" },
 ];
 
 function normalize(header: unknown): string {
@@ -107,122 +108,3 @@ export function mappingForHeader(header: string): Mapping | undefined {
   return MAP_BY_HEADER.get(normalize(header));
 }
 
-function coerceDate(value: unknown): string | null {
-  if (value == null || value === "") return null;
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  const s = String(value).trim();
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
-}
-
-function coerceNumber(value: unknown): number | null {
-  if (value == null || value === "") return null;
-  const n = Number(String(value).replace(/,/g, "").trim());
-  return Number.isFinite(n) ? n : null;
-}
-
-function coerceInt(value: unknown): number | null {
-  const n = coerceNumber(value);
-  return n == null ? null : Math.trunc(n);
-}
-
-function cellText(value: unknown): string | null {
-  if (value == null) return null;
-  // exceljs rich text / hyperlink / formula objects
-  if (typeof value === "object") {
-    const obj = value as Record<string, unknown>;
-    if ("text" in obj) return String(obj.text).trim() || null;
-    if ("result" in obj) return String(obj.result).trim() || null;
-    if ("richText" in obj && Array.isArray(obj.richText)) {
-      return (
-        obj.richText.map((r) => (r as { text?: string }).text ?? "").join("").trim() ||
-        null
-      );
-    }
-  }
-  const s = String(value).trim();
-  return s === "" ? null : s;
-}
-
-export type ParsedOrder = Partial<Record<TargetTable, Record<string, unknown>>>;
-
-export type ParseResult = {
-  rows: ParsedOrder[];
-  matchedColumns: number;
-  totalDataRows: number;
-  skipped: number;
-};
-
-/**
- * Parse an uploaded workbook buffer into structured rows keyed by target table.
- * Auto-detects the header row (scans the first 10 rows for the best match).
- */
-export async function parseOrdersWorkbook(
-  buffer: ArrayBuffer
-): Promise<ParseResult> {
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buffer);
-  const sheet = wb.worksheets[0];
-  if (!sheet) return { rows: [], matchedColumns: 0, totalDataRows: 0, skipped: 0 };
-
-  // Find the header row: the row (within the first 10) with the most matches.
-  let headerRowNum = 1;
-  let bestMatches = 0;
-  const scanTo = Math.min(sheet.rowCount, 10);
-  for (let r = 1; r <= scanTo; r++) {
-    const row = sheet.getRow(r);
-    let matches = 0;
-    row.eachCell((cell) => {
-      if (MAP_BY_HEADER.has(normalize(cellText(cell.value)))) matches++;
-    });
-    if (matches > bestMatches) {
-      bestMatches = matches;
-      headerRowNum = r;
-    }
-  }
-
-  // Column index -> mapping.
-  const colMap = new Map<number, Mapping>();
-  const headerRow = sheet.getRow(headerRowNum);
-  headerRow.eachCell((cell, colNumber) => {
-    const mapping = MAP_BY_HEADER.get(normalize(cellText(cell.value)));
-    if (mapping) colMap.set(colNumber, mapping);
-  });
-
-  const rows: ParsedOrder[] = [];
-  let skipped = 0;
-
-  for (let r = headerRowNum + 1; r <= sheet.rowCount; r++) {
-    const row = sheet.getRow(r);
-    const parsed: ParsedOrder = {};
-    let hasValue = false;
-
-    for (const [colNumber, mapping] of colMap) {
-      const raw = row.getCell(colNumber).value;
-      let value: unknown = null;
-      if (mapping.type === "date") value = coerceDate(raw);
-      else if (mapping.type === "numeric") value = coerceNumber(raw);
-      else if (mapping.type === "int") value = coerceInt(raw);
-      else value = cellText(raw);
-
-      if (value == null) continue;
-      hasValue = true;
-      const bucket = (parsed[mapping.table] ??= {});
-      bucket[mapping.column] = value;
-    }
-
-    if (!hasValue) {
-      skipped++;
-      continue;
-    }
-    rows.push(parsed);
-  }
-
-  return {
-    rows,
-    matchedColumns: colMap.size,
-    totalDataRows: rows.length + skipped,
-    skipped,
-  };
-}

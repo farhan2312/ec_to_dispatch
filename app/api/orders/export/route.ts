@@ -2,34 +2,31 @@ import type { NextRequest } from "next/server";
 import ExcelJS from "exceljs";
 import { getCurrentUser } from "@/lib/session";
 import { isCentral } from "@/lib/roles";
-import { listOrderDetails, type OrderDetail } from "@/lib/orders";
+import { listItemDetails, type ItemDetail } from "@/lib/orders";
 import { mappingForHeader } from "@/lib/excel-import";
 import { BULK_HEADERS } from "@/lib/import-templates";
 
 export const runtime = "nodejs";
 
-// Same full column set as the bulk import template, so an export can be
-// re-imported unchanged. "Sl. No." is prepended for reference — it's not in
-// BULK_HEADERS (auto-generated on import) and isn't a recognized import
-// header, so a re-import just ignores it.
+// One row per EC item. "Sl. No." (the parent SO) is prepended for reference.
 const HEADERS = ["Sl. No.", ...BULK_HEADERS];
 
-function cellValue(detail: OrderDetail, header: string): string | number | Date | null {
+function cellValue(detail: ItemDetail, header: string): string | number | Date | null {
   if (header === "Sl. No.") return Number(detail.order.sl_no ?? null) || null;
 
   const mapping = mappingForHeader(header);
   if (!mapping) return null;
 
-  // order_lots is the one 1:many table; a single export row can only carry
-  // one lot's worth, so — same limitation the bulk importer itself has for a
-  // one-row-per-order sheet — only the first lot is included. The core table
-  // is keyed "orders" in the import mapping but "order" on OrderDetail.
+  // order_lots is 1:many; a single export row carries only the first lot.
+  // "orders" is the parent SO, "order_items" is the EC row itself.
   const source: Record<string, unknown> | null =
     mapping.table === "order_lots"
       ? detail.order_lots[0] ?? null
       : mapping.table === "orders"
         ? detail.order
-        : (detail[mapping.table] as Record<string, unknown> | null);
+        : mapping.table === "order_items"
+          ? detail.item
+          : (detail[mapping.table] as Record<string, unknown> | null);
   const raw = source?.[mapping.column];
   if (raw == null || raw === "") return null;
 
@@ -55,7 +52,7 @@ export async function GET(req: NextRequest) {
   const idsParam = req.nextUrl.searchParams.get("ids");
   const filtered = idsParam !== null;
   const ids = filtered ? idsParam.split(",").filter(Boolean) : undefined;
-  const orders = await listOrderDetails(ids);
+  const orders = await listItemDetails(ids);
 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Orders");

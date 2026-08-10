@@ -313,7 +313,7 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatCard
           icon={ClipboardList}
-          label="Total orders"
+          label="Total ECs"
           value={numberFmt.format(total)}
           accent="bg-primary/10 text-primary"
         />
@@ -425,7 +425,7 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
                   <tr key={row.id} className="text-foreground">
                     <td className="px-4 py-3 font-medium tabular-nums">
                       <Link
-                        href={`/risansi/orders/${row.id}`}
+                        href={`/risansi/orders/${row.order_id}/items/${row.id}`}
                         className="text-primary hover:text-primary-hover"
                       >
                         {row.sl_no}
@@ -433,7 +433,9 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       <div>{row.so_no ?? "—"}</div>
-                      <div className="text-xs text-muted">{row.ec_no ?? ""}</div>
+                      <div className="text-xs text-muted">
+                        {[row.ec_no, row.item_type].filter(Boolean).join(" · ")}
+                      </div>
                     </td>
                     <td className="px-4 py-3">{row.party ?? "—"}</td>
                     <td className="px-3 py-3">

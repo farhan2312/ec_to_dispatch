@@ -4,21 +4,23 @@ import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/session";
 import {
   addChildRow,
+  createItem,
   createOrder,
   deleteChildRow,
+  deleteItem,
   deleteOrder,
   deleteQcDocument,
+  getItemDetail,
   getOrderDetail,
-  insertParsedOrders,
   insertQcDocument,
   listQcDocuments,
   updateChildRow,
   updateOrderSection,
+  type NewItemInput,
   type NewOrderInput,
   type QcDocTable,
   type QcDocumentMeta,
 } from "@/lib/orders";
-import { parseOrdersWorkbook } from "@/lib/excel-import";
 import {
   CHILD_FIELDS,
   SECTION_BY_TABLE,
@@ -50,14 +52,16 @@ export async function createOrderAction(
     return { ok: false, error: "You don't have permission to create orders." };
   }
 
-  // Require at least one identifier so we don't create blank rows.
-  if (!(input.so_no ?? "").trim() && !(input.ec_no ?? "").trim()) {
-    return { ok: false, error: "Enter at least an SO No. or EC No." };
+  if (!(input.client_code ?? "").trim()) {
+    return { ok: false, error: "Client Code is required." };
+  }
+  if (!(input.client_type ?? "").trim()) {
+    return { ok: false, error: "Client Type is required." };
   }
 
   try {
     const { id, sl_no } = await createOrder(input);
-    const label = (input.so_no ?? input.ec_no ?? `#${sl_no}`).trim();
+    const label = (input.so_no ?? `#${sl_no}`).trim();
     await logAudit({
       actor: { id: user.id, email: user.email, role: user.role },
       action: "order.create",
@@ -87,6 +91,87 @@ export async function createOrderAction(
   }
 }
 
+export type CreateItemResult =
+  | { ok: true; itemId: string }
+  | { ok: false; error: string };
+
+/** Add an EC/pump item to an SO (the Add-On form). Central Visibility only. */
+export async function createItemAction(
+  orderId: string,
+  input: NewItemInput
+): Promise<CreateItemResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canCreateOrders(user.role)) {
+    return { ok: false, error: "You don't have permission to add EC items." };
+  }
+
+  const order = await getOrderDetail(orderId);
+  if (!order) return { ok: false, error: "Order not found." };
+
+  try {
+    const { id: itemId } = await createItem(orderId, input);
+    const soLabel = String(order.order.so_no ?? `#${order.order.sl_no}`);
+    const ecLabel = (input.ec_no ?? "").trim();
+    const label = ecLabel ? `${soLabel} · ${ecLabel}` : soLabel;
+    await logAudit({
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: "order.update",
+      category: "activity",
+      target: label,
+      details: `Added EC item to ${soLabel}`,
+    });
+
+    // Target dates filled on the Add-On form count as newly set, so notify the
+    // departments that work to them (before: null → every filled field fires).
+    await notifySectionSaved({
+      orderId,
+      itemId,
+      orderLabel: label,
+      table: "order_items",
+      actorRole: user.role,
+      before: null,
+      after: input as Record<string, unknown>,
+    });
+
+    revalidatePath("/risansi/orders");
+    revalidatePath(`/risansi/orders/${orderId}`);
+    return { ok: true, itemId };
+  } catch (error) {
+    console.error("createItem failed:", error);
+    return { ok: false, error: "Could not add the EC item. Please try again." };
+  }
+}
+
+export type DeleteItemResult = { ok: true } | { ok: false; error: string };
+
+/** Delete an EC item (cascades to its department detail + lots). */
+export async function deleteItemAction(itemId: string): Promise<DeleteItemResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canCreateOrders(user.role)) {
+    return { ok: false, error: "You don't have permission to delete EC items." };
+  }
+  try {
+    const detail = await getItemDetail(itemId);
+    const orderId = detail ? String(detail.order.id) : null;
+    await deleteItem(itemId);
+    await logAudit({
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: "order.update",
+      category: "activity",
+      target: detail ? String(detail.item.ec_no ?? "EC item") : "EC item",
+      details: "Deleted EC item",
+    });
+    revalidatePath("/risansi/orders");
+    if (orderId) revalidatePath(`/risansi/orders/${orderId}`);
+    return { ok: true };
+  } catch (error) {
+    console.error("deleteItem failed:", error);
+    return { ok: false, error: "Could not delete the EC item. Please try again." };
+  }
+}
+
 export type DeleteOrderResult = { ok: true } | { ok: false; error: string };
 
 export async function deleteOrderAction(
@@ -102,7 +187,7 @@ export async function deleteOrderAction(
   try {
     const detail = await getOrderDetail(orderId);
     const label = detail
-      ? String(detail.order.so_no ?? detail.order.ec_no ?? `#${detail.order.sl_no}`)
+      ? String(detail.order.so_no ?? `#${detail.order.sl_no}`)
       : orderId;
     await deleteOrder(orderId);
     await logAudit({
@@ -124,15 +209,21 @@ export type UpdateSectionResult =
   | { ok: true }
   | { ok: false; error: string };
 
+/**
+ * Save one section. `id` is the SO's order_id for SO-scope sections
+ * (orders/billing/accounts) or the EC's item_id for item-scope sections
+ * (order_items + drawing/purchase/qc/planning/dispatch).
+ */
 export async function updateOrderSectionAction(
-  orderId: string,
+  id: string,
   table: string,
   values: Record<string, string>
 ): Promise<UpdateSectionResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
 
-  if (!SECTION_BY_TABLE.has(table as OrderTable)) {
+  const section = SECTION_BY_TABLE.get(table as OrderTable);
+  if (!section) {
     return { ok: false, error: "Unknown section." };
   }
 
@@ -146,9 +237,8 @@ export async function updateOrderSectionAction(
   // Non-central users can't edit fields marked centralOnly (filled by Mitali).
   let allowedValues = values;
   if (!isCentral(user.role)) {
-    const section = SECTION_BY_TABLE.get(table as OrderTable);
     const centralOnly = new Set(
-      section?.fields.filter((f) => f.centralOnly).map((f) => f.column) ?? []
+      section.fields.filter((f) => f.centralOnly).map((f) => f.column)
     );
     allowedValues = Object.fromEntries(
       Object.entries(values).filter(([k]) => !centralOnly.has(k))
@@ -157,37 +247,71 @@ export async function updateOrderSectionAction(
 
   const tbl = table as OrderTable;
   try {
-    // Snapshot before the save so we can detect empty→filled / incomplete→
-    // complete transitions and notify the right departments.
-    const before = await getOrderDetail(orderId);
-    await updateOrderSection(orderId, tbl, allowedValues);
-    await logAudit({
-      actor: { id: user.id, email: user.email, role: user.role },
-      action: "order.update",
-      category: "activity",
-      target: SECTION_BY_TABLE.get(tbl)?.title ?? table,
-      details: `Updated ${SECTION_BY_TABLE.get(tbl)?.title ?? table}`,
-    });
-
-    if (before) {
-      const after = await getOrderDetail(orderId);
-      if (after) {
-        const o = before.order;
-        const label = String(o.so_no ?? o.ec_no ?? `#${o.sl_no}`);
-        const pick = (d: typeof before) =>
-          tbl === "orders" ? d.order : (d[tbl] as Record<string, unknown> | null);
-        await notifySectionSaved({
-          orderId,
-          orderLabel: label,
-          table: tbl,
-          actorRole: user.role,
-          before: pick(before),
-          after: pick(after),
-        });
+    if (section.scope === "so") {
+      const before = await getOrderDetail(id);
+      await updateOrderSection(id, tbl, allowedValues);
+      await logAudit({
+        actor: { id: user.id, email: user.email, role: user.role },
+        action: "order.update",
+        category: "activity",
+        target: section.title,
+        details: `Updated ${section.title}`,
+      });
+      if (before) {
+        const after = await getOrderDetail(id);
+        if (after) {
+          const o = before.order;
+          const label = String(o.so_no ?? `#${o.sl_no}`);
+          const pick = (d: NonNullable<typeof before>) =>
+            tbl === "orders"
+              ? d.order
+              : ((d as Record<string, unknown>)[tbl] as Record<string, unknown> | null);
+          await notifySectionSaved({
+            orderId: id,
+            orderLabel: label,
+            table: tbl,
+            actorRole: user.role,
+            before: pick(before),
+            after: pick(after),
+          });
+        }
       }
+      revalidatePath(`/risansi/orders/${id}`);
+    } else {
+      // Item-scope: id is the item_id.
+      const before = await getItemDetail(id);
+      await updateOrderSection(id, tbl, allowedValues);
+      await logAudit({
+        actor: { id: user.id, email: user.email, role: user.role },
+        action: "order.update",
+        category: "activity",
+        target: section.title,
+        details: `Updated ${section.title}`,
+      });
+      if (before) {
+        const after = await getItemDetail(id);
+        if (after) {
+          const o = before.order;
+          const ec = before.item.ec_no;
+          const label = `${String(o.so_no ?? `#${o.sl_no}`)}${ec ? ` · ${ec}` : ""}`;
+          const pick = (d: NonNullable<typeof before>) =>
+            tbl === "order_items"
+              ? d.item
+              : ((d as Record<string, unknown>)[tbl] as Record<string, unknown> | null);
+          await notifySectionSaved({
+            orderId: String(o.id),
+            itemId: id,
+            orderLabel: label,
+            table: tbl,
+            actorRole: user.role,
+            before: pick(before),
+            after: pick(after),
+          });
+        }
+      }
+      revalidatePath(`/risansi/orders/${String(before?.order.id ?? "")}/items/${id}`);
     }
 
-    revalidatePath(`/risansi/orders/${orderId}`);
     revalidatePath("/risansi/orders");
     return { ok: true };
   } catch (error) {
@@ -377,93 +501,3 @@ export async function deleteQcDocumentAction(
   }
 }
 
-export type ImportOrdersResult =
-  | { ok: true; inserted: number; skipped: number; matchedColumns: number }
-  | { ok: false; error: string };
-
-// The tables whose columns carry notification triggers (payment terms, target
-// dates). notifySectionSaved is a no-op for a table with no trigger fields set.
-const NOTIFY_ON_IMPORT: OrderTable[] = [
-  "orders",
-  "order_planning",
-  "order_qc",
-  "order_assembly_dispatch",
-];
-
-export async function importOrdersAction(
-  formData: FormData
-): Promise<ImportOrdersResult> {
-  const user = await getCurrentUser();
-  if (!user) return { ok: false, error: "You are not signed in." };
-  if (!canCreateOrders(user.role)) {
-    return { ok: false, error: "You don't have permission to import orders." };
-  }
-
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    return { ok: false, error: "Please choose an Excel (.xlsx) file." };
-  }
-  if (!/\.xlsx?$/i.test(file.name)) {
-    return { ok: false, error: "Only .xlsx / .xls files are supported." };
-  }
-
-  try {
-    const buffer = await file.arrayBuffer();
-    const parsed = await parseOrdersWorkbook(buffer);
-
-    if (parsed.matchedColumns === 0) {
-      return {
-        ok: false,
-        error:
-          "No recognizable tracker columns were found. Check the file's header row.",
-      };
-    }
-    if (parsed.rows.length === 0) {
-      return { ok: false, error: "No data rows found to import." };
-    }
-
-    const { inserted, created } = await insertParsedOrders(parsed.rows);
-    await logAudit({
-      actor: { id: user.id, email: user.email, role: user.role },
-      action: "order.import",
-      category: "activity",
-      details: `Imported ${inserted} order${inserted === 1 ? "" : "s"} from Excel`,
-    });
-
-    // Fire the same field notifications the create form does, for every
-    // imported order — a target date / payment terms set in the sheet counts
-    // as newly set (before: null). Best-effort; must not fail the import.
-    try {
-      for (const order of created) {
-        for (const table of NOTIFY_ON_IMPORT) {
-          const after = order.row[table] ?? null;
-          if (!after) continue;
-          await notifySectionSaved({
-            orderId: order.id,
-            orderLabel: order.label,
-            table,
-            actorRole: user.role,
-            before: null,
-            after,
-          });
-        }
-      }
-    } catch (error) {
-      console.error("import notifications failed:", error);
-    }
-
-    revalidatePath("/risansi/orders");
-    return {
-      ok: true,
-      inserted,
-      skipped: parsed.skipped,
-      matchedColumns: parsed.matchedColumns,
-    };
-  } catch (error) {
-    console.error("importOrders failed:", error);
-    return {
-      ok: false,
-      error: "Could not import the file. Please check its format and try again.",
-    };
-  }
-}

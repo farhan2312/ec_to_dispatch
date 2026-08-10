@@ -7,9 +7,8 @@ import { Loader2 } from "lucide-react";
 import { createOrderAction } from "@/app/risansi/orders/actions";
 import type { NewOrderInput } from "@/lib/orders";
 import {
+  CURRENCY_OPTIONS,
   INDUSTRY_TYPE_OPTIONS,
-  ITEM_OPTIONS,
-  NATURE_OF_SUPPLY_OPTIONS,
   YES_NO_OPTIONS,
 } from "@/lib/order-schema";
 
@@ -20,85 +19,111 @@ type Field = {
   type: FieldType;
   options?: { value: string; label: string }[];
   dependsOn?: { name: keyof NewOrderInput; value: string };
+  required?: boolean;
 };
 type Section = { title: string; fields: Field[] };
 
+// Client details come first — they're filled before anything else when
+// creating an order. Client Code and Client Type are compulsory.
 const SECTIONS: Section[] = [
-  {
-    title: "Order identity",
-    fields: [
-      { name: "so_no", label: "SO No.", type: "text" },
-      { name: "ec_no", label: "EC No.", type: "text" },
-      { name: "ec_generated_date", label: "EC Generated Date", type: "date" },
-      { name: "ec_rcvd_operations_date", label: "EC Received in Operations", type: "date" },
-      { name: "ec_sent_production_date", label: "EC Sent to Production", type: "date" },
-      { name: "file_no", label: "File No.", type: "text" },
-    ],
-  },
   {
     title: "Client",
     fields: [
-      { name: "client_code", label: "Client Code", type: "text" },
-      { name: "client_type", label: "Client Type", type: "text" },
-      { name: "party", label: "Party", type: "text" },
-      { name: "agent", label: "Representative", type: "text" },
-      {
-        name: "nature_of_supply",
-        label: "Nature of Supply",
-        type: "select",
-        options: NATURE_OF_SUPPLY_OPTIONS,
-      },
+      { name: "client_code", label: "Client Code", type: "text", required: true },
+      { name: "party", label: "Client Name", type: "text" },
       {
         name: "industry_type",
-        label: "Industry Type",
+        label: "Industry",
         type: "select",
         options: INDUSTRY_TYPE_OPTIONS,
       },
+      { name: "client_type", label: "Client Type", type: "text", required: true },
+      { name: "nature_of_supply", label: "Market Type", type: "text" },
+      { name: "agent", label: "Rep(s)", type: "text" },
     ],
   },
   {
-    title: "Item",
+    title: "Purchase Order Details",
     fields: [
-      { name: "item", label: "Item", type: "select", options: ITEM_OPTIONS },
-      { name: "qc_required", label: "QC Needed", type: "select", options: YES_NO_OPTIONS },
-      { name: "po_no", label: "PO No.", type: "text" },
-      { name: "customer_po_date", label: "Customer PO Date", type: "date" },
-      { name: "model_no", label: "Model No.", type: "text" },
-      { name: "pump_qty", label: "If Pump (Qty)", type: "number" },
-      { name: "pump_sno", label: "Pump S.No.", type: "text" },
-      { name: "orientation", label: "Orientation", type: "text" },
-      { name: "liquid_application", label: "Liquid / Application", type: "text" },
-      { name: "version", label: "Version", type: "text" },
-    ],
-  },
-  {
-    title: "Commercial & Dispatch",
-    fields: [
-      { name: "project", label: "Project", type: "select", options: YES_NO_OPTIONS },
+      { name: "po_no", label: "Purchase Order Number", type: "text" },
+      { name: "customer_po_date", label: "Purchase Order Date", type: "date" },
+      {
+        name: "order_value",
+        label: "Purchase/Sales Order Value (without GST)",
+        type: "number",
+      },
+      {
+        name: "order_currency",
+        label: "Currency",
+        type: "select",
+        options: CURRENCY_OPTIONS,
+      },
+      { name: "so_no", label: "Sales Order Number", type: "text" },
+      { name: "so_date", label: "Sales Order Date", type: "date" },
+      { name: "qc_required", label: "QC Req", type: "select", options: YES_NO_OPTIONS },
       { name: "payment_terms", label: "Payment Terms", type: "text" },
+      { name: "ld", label: "LD", type: "select", options: YES_NO_OPTIONS },
       {
-        name: "master_reason_of_delay",
-        label: "Master Reason of Delay",
-        type: "text",
-      },
-      {
-        name: "dispatch_target_date",
-        label: "Dispatch Target Date",
+        name: "ld_date",
+        label: "LD Date",
         type: "date",
+        dependsOn: { name: "ld", value: "Yes" },
       },
-      {
-        name: "dispatch_target_revised_date",
-        label: "Revised Dispatch Target Date",
-        type: "date",
-      },
-      {
-        name: "drg_target_date",
-        label: "Target Date for DRG",
-        type: "date",
-      },
-      { name: "order_value", label: "Order Value", type: "number" },
     ],
   },
+
+  // --- Everything below is commented out, not deleted: the orders table was
+  // trimmed to Client + Purchase Order Details columns only, so these fields
+  // have no column to save into right now. Restore a section verbatim (and
+  // re-add its columns via ALTER TABLE) when that data comes back.
+  //
+  // {
+  //   title: "Order identity",
+  //   fields: [
+  //     { name: "ec_no", label: "EC No.", type: "text" },
+  //     { name: "ec_generated_date", label: "EC Generated Date", type: "date" },
+  //     { name: "ec_rcvd_operations_date", label: "EC Received in Operations", type: "date" },
+  //     { name: "ec_sent_production_date", label: "EC Sent to Production", type: "date" },
+  //     { name: "file_no", label: "File No.", type: "text" },
+  //   ],
+  // },
+  // {
+  //   title: "Item",
+  //   fields: [
+  //     { name: "model_no", label: "Model No.", type: "text" },
+  //     { name: "pump_qty", label: "If Pump (Qty)", type: "number" },
+  //     { name: "pump_sno", label: "Pump S.No.", type: "text" },
+  //     { name: "orientation", label: "Orientation", type: "text" },
+  //     { name: "liquid_application", label: "Liquid / Application", type: "text" },
+  //     { name: "version", label: "Version", type: "text" },
+  //   ],
+  // },
+  // {
+  //   title: "Commercial & Dispatch",
+  //   fields: [
+  //     { name: "project", label: "Project", type: "select", options: YES_NO_OPTIONS },
+  //     {
+  //       name: "master_reason_of_delay",
+  //       label: "Master Reason of Delay",
+  //       type: "text",
+  //     },
+  //     {
+  //       name: "dispatch_target_date",
+  //       label: "Dispatch Target Date",
+  //       type: "date",
+  //     },
+  //     {
+  //       name: "dispatch_target_revised_date",
+  //       label: "Revised Dispatch Target Date",
+  //       type: "date",
+  //     },
+  //     {
+  //       name: "drg_target_date",
+  //       label: "Target Date for DRG",
+  //       type: "date",
+  //     },
+  //   ],
+  // },
 ];
 
 const inputClass =
@@ -114,9 +139,26 @@ export function OrderForm() {
     setValues((prev) => ({ ...prev, [name]: value }));
   }
 
+  function firstMissingRequired(): Field | null {
+    for (const section of SECTIONS) {
+      for (const field of section.fields) {
+        if (field.required && !(values[field.name] ?? "").trim()) return field;
+      }
+    }
+    return null;
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+
+    const missing = firstMissingRequired();
+    if (missing) {
+      setError(`${missing.label} is required.`);
+      document.getElementById(missing.name)?.focus();
+      return;
+    }
+
     setIsSubmitting(true);
     const result = await createOrderAction(values);
     if (!result.ok) {
@@ -159,6 +201,7 @@ export function OrderForm() {
                     className="mb-1.5 block text-[13px] font-medium text-brand-label"
                   >
                     {field.label}
+                    {field.required && <span className="text-danger"> *</span>}
                   </label>
                   {field.type === "select" ? (
                     <select

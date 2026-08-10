@@ -60,9 +60,7 @@ export default async function EscalationsPage() {
               <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
                 <th className="px-4 py-3">Sl.</th>
                 <th className="px-4 py-3">SO No.</th>
-                <th className="px-4 py-3">EC No.</th>
                 <th className="px-4 py-3">Party</th>
-                <th className="px-4 py-3">Item</th>
                 <th className="px-4 py-3">Hold Reason</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
                 <th className="px-4 py-3"></th>
@@ -77,11 +75,7 @@ export default async function EscalationsPage() {
                   <td className="px-4 py-3 whitespace-nowrap">
                     {hold.so_no ?? "—"}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    {hold.ec_no ?? "—"}
-                  </td>
                   <td className="px-4 py-3">{hold.party ?? "—"}</td>
-                  <td className="px-4 py-3">{hold.item ?? "—"}</td>
                   <td className="px-4 py-3 text-muted">
                     {hold.hold_reason ?? "—"}
                   </td>

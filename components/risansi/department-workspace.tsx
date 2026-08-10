@@ -49,7 +49,7 @@ function formatValue(field: OrderField, value: unknown): string {
 }
 
 function rowSearchText(o: Row): string {
-  return [o.sl_no, o.so_no, o.ec_no, o.party, o.item]
+  return [o.sl_no, o.so_no, o.ec_no, o.party, o.item_type]
     .map((v) => (v == null ? "" : String(v)))
     .join(" ");
 }

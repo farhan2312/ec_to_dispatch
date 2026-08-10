@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { CalendarClock } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
-import { listOrdersForSection } from "@/lib/orders";
+import { listItemsForSection } from "@/lib/orders";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import { PLANNING_CONTEXT_FIELDS, SECTION_BY_TABLE } from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
@@ -29,9 +29,13 @@ export default async function PlanningWorkspacePage({
   const { edit } = await searchParams;
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const [orders, reminders] = await Promise.all([
-    listOrdersForSection(
+    listItemsForSection(
       TABLE,
-      PLANNING_CONTEXT_FIELDS.map((f) => ({ column: f.column, type: f.type }))
+      PLANNING_CONTEXT_FIELDS.map((f) => ({
+        column: f.column,
+        type: f.type,
+        from: "order_items" as const,
+      }))
     ),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);

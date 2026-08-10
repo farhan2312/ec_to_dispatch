@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { PenTool } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditSection, reminderDeptForTable } from "@/lib/roles";
-import { listOrdersForSection } from "@/lib/orders";
+import { listItemsForSection } from "@/lib/orders";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import {
   DRAWING_CONTEXT_FIELDS,
@@ -32,9 +32,13 @@ export default async function DrawingWorkspacePage({
   const { edit } = await searchParams;
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const [orders, reminders] = await Promise.all([
-    listOrdersForSection(
+    listItemsForSection(
       TABLE,
-      DRAWING_CONTEXT_FIELDS.map((f) => ({ column: f.column, type: f.type }))
+      DRAWING_CONTEXT_FIELDS.map((f) => ({
+        column: f.column,
+        type: f.type,
+        from: "order_items" as const,
+      }))
     ),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);

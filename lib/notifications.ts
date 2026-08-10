@@ -15,6 +15,7 @@ export type NotificationType =
 export type NotificationRow = {
   id: string;
   order_id: string | null;
+  item_id: string | null;
   type: NotificationType;
   message: string;
   created_at: string;
@@ -44,7 +45,7 @@ export async function listNotifications(
 ): Promise<NotificationRow[]> {
   if (roles.length === 0) return [];
   const result = await query<NotificationRow>(
-    `SELECT id, order_id, type, message,
+    `SELECT id, order_id, item_id, type, message,
             to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
        FROM notifications
       WHERE recipient_role = ANY($1)
@@ -77,18 +78,24 @@ export async function countUnread(
 /** Insert one notification row per recipient role. */
 async function emit(
   roles: string[],
-  input: { orderId: string; type: NotificationType; message: string }
+  input: {
+    orderId: string;
+    itemId?: string | null;
+    type: NotificationType;
+    message: string;
+  }
 ): Promise<void> {
   const unique = [...new Set(roles)];
   if (unique.length === 0) return;
-  // One INSERT with a row per role.
+  const n = unique.length;
+  // One INSERT with a row per role; the shared columns are the last 4 params.
   const values = unique
-    .map((_, i) => `($${i + 1}, $${unique.length + 1}, $${unique.length + 2}, $${unique.length + 3})`)
+    .map((_, i) => `($${i + 1}, $${n + 1}, $${n + 2}, $${n + 3}, $${n + 4})`)
     .join(", ");
   await query(
-    `INSERT INTO notifications (recipient_role, order_id, type, message)
+    `INSERT INTO notifications (recipient_role, order_id, item_id, type, message)
      VALUES ${values}`,
-    [...unique, input.orderId, input.type, input.message]
+    [...unique, input.orderId, input.itemId ?? null, input.type, input.message]
   );
 }
 
@@ -103,13 +110,15 @@ function sectionChanged(table: OrderTable, before: Row, after: Row): boolean {
 }
 
 // A target-date column → the departments that should be told it's now set.
+// The per-EC target dates live on order_items (set on the Add-On form);
+// purchase and dispatch-team targets are on their own department tables.
 const TARGET_DATE_RECIPIENTS: Partial<
   Record<OrderTable, { column: string; label: string; roles: string[] }[]>
 > = {
-  orders: [
-    { column: "drg_target_date", label: "DRG target date", roles: ["drawing"] },
-    // Order-level dispatch target is what Planning works to; the dispatch team
-    // has its own target date (below, in order_assembly_dispatch).
+  order_items: [
+    { column: "drg_target_date", label: "Drawing target date", roles: ["drawing"] },
+    // Dispatch target is what Planning works to; the dispatch team has its own
+    // target date (below, on order_assembly_dispatch).
     {
       column: "dispatch_target_date",
       label: "Dispatch target date",
@@ -121,19 +130,17 @@ const TARGET_DATE_RECIPIENTS: Partial<
       label: "Revised dispatch target date",
       roles: ["planning"],
     },
+    {
+      column: "qc_doc_target_date",
+      label: "QC target date",
+      roles: ["qc"],
+    },
   ],
   order_planning: [
     {
       column: "purchase_target_date",
       label: "Purchase target date",
       roles: ["purchase"],
-    },
-  ],
-  order_qc: [
-    {
-      column: "qc_doc_target_date",
-      label: "QC document target date",
-      roles: ["qc"],
     },
   ],
   order_assembly_dispatch: [
@@ -159,13 +166,15 @@ const TARGET_DATE_RECIPIENTS: Partial<
  */
 export async function notifySectionSaved(params: {
   orderId: string;
+  itemId?: string | null;
   orderLabel: string;
   table: OrderTable;
   actorRole: string;
   before: Row;
   after: Row;
 }): Promise<void> {
-  const { orderId, orderLabel, table, actorRole, before, after } = params;
+  const { orderId, itemId = null, orderLabel, table, actorRole, before, after } =
+    params;
   try {
     const val = (row: Row, col: string) => {
       const v = row?.[col];
@@ -180,7 +189,7 @@ export async function notifySectionSaved(params: {
       return now !== "" && now !== val(before, col);
     };
 
-    // Payment terms → Billing & Operations + Accounts.
+    // Payment terms → Billing & Operations + Accounts (SO-level).
     if (table === "orders" && setOrChanged("payment_terms")) {
       await emit(["operations", "accounts"], {
         orderId,
@@ -189,11 +198,12 @@ export async function notifySectionSaved(params: {
       });
     }
 
-    // Target dates → the departments that work to them.
+    // Target dates → the departments that work to them (per EC).
     for (const t of TARGET_DATE_RECIPIENTS[table] ?? []) {
       if (setOrChanged(t.column)) {
         await emit(t.roles, {
           orderId,
+          itemId,
           type: "target_date",
           message: `${t.label} set for ${orderLabel}`,
         });
@@ -206,6 +216,7 @@ export async function notifySectionSaved(params: {
       const dept = SECTION_BY_TABLE.get(table)?.title ?? "A department";
       await emit(["central_visibility"], {
         orderId,
+        itemId,
         type: "dept_update",
         message: `${dept} updated ${orderLabel}`,
       });

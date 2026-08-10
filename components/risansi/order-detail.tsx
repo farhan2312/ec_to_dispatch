@@ -3,244 +3,30 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Paperclip, Pencil } from "lucide-react";
-import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
-import {
-  ORDER_SECTIONS,
-  LOT_FIELDS,
-  canonicalSelectValue,
-  selectOptionsFor,
-  type OrderField,
-  type OrderSection,
-} from "@/lib/order-schema";
-import {
-  canAccessDepartment,
-  canEditChild,
-  canEditQcDocuments,
-  canEditQcRequirementDocs,
-  canEditSection,
-  isCentral,
-} from "@/lib/roles";
-import type { OrderDetail as OrderDetailData, QcDocTable } from "@/lib/orders";
-import { OrderChildList } from "./order-children";
-import { QcDocumentsModal } from "./qc-documents-modal";
-
-type DocumentsConfig = {
-  table: QcDocTable;
-  label: string;
-  canEdit: boolean;
-};
+import { ArrowLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
+import { deleteItemAction } from "@/app/risansi/orders/actions";
+import { SO_SECTIONS } from "@/lib/order-schema";
+import { canAccessDepartment, canCreateOrders, isCentral } from "@/lib/roles";
+import type { OrderDetail as OrderDetailData } from "@/lib/orders";
+import { EditableSection } from "./editable-section";
+import { AddOnForm } from "./add-on-form";
 
 type Row = Record<string, unknown>;
 
-function toInput(value: unknown): string {
-  if (value === null || value === undefined) return "";
-  return String(value);
+function str(value: unknown): string {
+  return value === null || value === undefined ? "" : String(value);
 }
 
-function formatDisplay(field: OrderField, value: unknown): string {
-  if (value === null || value === undefined || value === "") return "—";
-  if (field.type === "date") {
-    const d = new Date(String(value));
-    if (!Number.isNaN(d.getTime())) {
-      return d.toLocaleDateString("en-GB", {
-        day: "2-digit",
-        month: "short",
-        year: "numeric",
-      });
-    }
-  }
-  if (field.type === "number") {
-    const n = Number(value);
-    if (Number.isFinite(n)) return new Intl.NumberFormat("en-IN").format(n);
-  }
-  if (field.type === "select") return canonicalSelectValue(field, String(value));
-  return String(value);
-}
-
-// Seed the form value for a field, normalizing select casing so a stored
-// value like "yes" resolves to its option "Yes".
-function seedValue(field: OrderField, data: Row | null): string {
-  return canonicalSelectValue(field, toInput(data?.[field.column]));
-}
-
-function dependsSatisfied(field: OrderField, values: Record<string, string>): boolean {
-  if (!field.dependsOn) return true;
-  return field.dependsOn.every((d) => (values[d.column] ?? "") === d.value);
-}
-
-function EditableSection({
-  orderId,
-  section,
-  data,
-  canEdit,
-  canEditCentral,
-  documents = [],
-}: {
-  orderId: string;
-  section: OrderSection;
-  data: Row | null;
-  canEdit: boolean;
-  canEditCentral: boolean;
-  // QC document attachments — only passed for the QC section.
-  documents?: DocumentsConfig[];
-}) {
-  const router = useRouter();
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [openDocs, setOpenDocs] = useState<DocumentsConfig | null>(null);
-  const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(section.fields.map((f) => [f.column, seedValue(f, data)]))
-  );
-
-  function startEdit() {
-    setValues(
-      Object.fromEntries(section.fields.map((f) => [f.column, seedValue(f, data)]))
-    );
-    setError(null);
-    setEditing(true);
-  }
-
-  async function save() {
-    setSaving(true);
-    setError(null);
-    const result = await updateOrderSectionAction(orderId, section.table, values);
-    setSaving(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    setEditing(false);
-    router.refresh();
-  }
-
-  return (
-    <section className="rounded-xl border border-card-border bg-surface p-6 shadow-sm">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="font-display text-base font-semibold text-foreground">
-          {section.title}
-        </h2>
-        <div className="flex items-center gap-2">
-          {documents.map((doc) => (
-            <button
-              key={doc.table}
-              type="button"
-              onClick={() => setOpenDocs(doc)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-input-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
-            >
-              <Paperclip className="h-3.5 w-3.5" />
-              {doc.label}
-            </button>
-          ))}
-          {!editing && canEdit && (
-            <button
-              type="button"
-              onClick={startEdit}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-input-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              Edit
-            </button>
-          )}
-        </div>
-      </div>
-
-      {openDocs && (
-        <QcDocumentsModal
-          table={openDocs.table}
-          title={openDocs.label}
-          orderId={orderId}
-          label={section.title}
-          canEdit={openDocs.canEdit}
-          onClose={() => setOpenDocs(null)}
-        />
-      )}
-
-      {error && (
-        <div
-          role="alert"
-          className="mb-4 rounded-[10px] border border-danger-border bg-danger-bg px-4 py-2.5 text-sm text-danger"
-        >
-          {error}
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {section.fields.map((field) => {
-          // centralOnly fields stay read-only for non-central editors.
-          const fieldEditable = editing && (!field.centralOnly || canEditCentral);
-          return (
-          <div key={field.column}>
-            <div className="mb-1 flex items-center gap-1.5 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
-              {field.label}
-              {field.centralOnly && !canEditCentral && (
-                <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500">
-                  read-only
-                </span>
-              )}
-            </div>
-            {fieldEditable ? (
-              field.type === "select" ? (
-                <select
-                  value={values[field.column] ?? ""}
-                  onChange={(e) =>
-                    setValues((prev) => ({ ...prev, [field.column]: e.target.value }))
-                  }
-                  disabled={!dependsSatisfied(field, values)}
-                  className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <option value="">—</option>
-                  {selectOptionsFor(field, values[field.column] ?? "").map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <input
-                  type={field.type === "date" ? "date" : field.type === "text" ? "text" : "number"}
-                  step={field.type === "number" ? "any" : undefined}
-                  value={values[field.column] ?? ""}
-                  onChange={(e) =>
-                    setValues((prev) => ({ ...prev, [field.column]: e.target.value }))
-                  }
-                  disabled={!dependsSatisfied(field, values)}
-                  className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
-                />
-              )
-            ) : (
-              <div className="text-[14px] text-foreground">
-                {formatDisplay(field, data?.[field.column])}
-              </div>
-            )}
-          </div>
-          );
-        })}
-      </div>
-
-      {editing && (
-        <div className="mt-5 flex gap-3">
-          <button
-            type="button"
-            onClick={save}
-            disabled={saving}
-            className="flex h-10 items-center justify-center gap-2 rounded-[10px] bg-primary px-5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-70"
-          >
-            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-            {saving ? "Saving..." : "Save"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setEditing(false)}
-            className="h-10 rounded-[10px] border border-input-border bg-surface px-5 text-sm font-medium text-foreground transition-colors hover:bg-background"
-          >
-            Cancel
-          </button>
-        </div>
-      )}
-    </section>
-  );
+function formatDate(value: unknown): string {
+  const s = str(value);
+  if (s === "") return "—";
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s;
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
 }
 
 export function OrderDetail({
@@ -252,19 +38,34 @@ export function OrderDetail({
   orderId: string;
   role: string;
 }) {
+  const router = useRouter();
   const order = detail.order;
   const central = isCentral(role);
-  // When QC Needed = No, the QC department isn't involved, so its section is
-  // hidden from the order entirely.
-  const qcNeeded =
-    String(order.qc_required ?? "").trim().toLowerCase() !== "no";
-  // Department roles see only their own section; central/admin see everything.
-  const visibleSections = ORDER_SECTIONS.filter(
-    (s) =>
-      canAccessDepartment(role, s.table) &&
-      (s.table !== "order_qc" || qcNeeded)
+  const canManageItems = canCreateOrders(role);
+  const [addOpen, setAddOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const soLabel = str(order.so_no) || `#${str(order.sl_no) || "—"}`;
+
+  // SO-scope sections the current role can see (Central sees all; Billing sees
+  // Billing & Operations; Accounts sees Accounts).
+  const visibleSections = SO_SECTIONS.filter((s) =>
+    canAccessDepartment(role, s.table)
   );
-  const canSeeLots = canEditChild(role, "order_lots");
+
+  const items = (detail.items ?? []) as Row[];
+
+  async function removeItem(item: Row) {
+    const ec = str(item.ec_no) || "this EC";
+    if (!confirm(`Delete ${ec}? This removes the EC and all its department data.`)) {
+      return;
+    }
+    setDeletingId(str(item.id));
+    const res = await deleteItemAction(str(item.id));
+    setDeletingId(null);
+    if (!res.ok) alert(res.error);
+    else router.refresh();
+  }
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
@@ -279,63 +80,131 @@ export function OrderDetail({
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600">
-            Order · {String(order.so_no ?? order.ec_no ?? `#${order.sl_no ?? "—"}`)}
+            SO · {soLabel}
           </span>
           <h1 className="font-display text-xl font-bold tracking-tight text-foreground">
-            {order.item ? String(order.item) : "Order"}
-            {order.model_no ? ` — ${String(order.model_no)}` : ""}
+            {str(order.party) || "Order"}
           </h1>
         </div>
       </div>
 
       <div className="max-w-6xl space-y-6">
         {visibleSections.map((section) => {
-          // Core section's data lives under `order`; detail tables under their
-          // own table name.
           const data =
             section.table === "orders"
               ? detail.order
-              : (detail[section.table] as Row | null);
-
+              : (detail[section.table as "order_billing" | "order_accounts"] as Row | null);
           return (
             <EditableSection
               key={section.key}
-              orderId={orderId}
+              targetId={orderId}
               section={section}
               data={data ?? null}
-              canEdit={canEditSection(role, section.table)}
+              canEdit={canAccessDepartment(role, section.table)}
               canEditCentral={central}
-              documents={
-                section.table === "order_qc"
-                  ? [
-                      {
-                        table: "order_qc_documents",
-                        label: "Attach Docs",
-                        canEdit: canEditQcDocuments(role),
-                      },
-                      {
-                        table: "order_qc_requirement_documents",
-                        label: "Requirement Docs",
-                        canEdit: canEditQcRequirementDocs(role),
-                      },
-                    ]
-                  : undefined
-              }
             />
           );
         })}
 
-        {canSeeLots && (
-          <OrderChildList
-            orderId={orderId}
-            table="order_lots"
-            title="Dispatch Lots"
-            fields={LOT_FIELDS}
-            rows={detail.order_lots}
-            canEdit={canEditChild(role, "order_lots")}
-          />
-        )}
+        {/* EC / pump orders */}
+        <section className="rounded-xl border border-card-border bg-surface p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="font-display text-base font-semibold text-foreground">
+                EC / Pump orders
+              </h2>
+              <p className="text-sm text-muted">
+                {items.length} {items.length === 1 ? "item" : "items"} under this SO.
+              </p>
+            </div>
+            {canManageItems && (
+              <button
+                type="button"
+                onClick={() => setAddOpen(true)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add-On
+              </button>
+            )}
+          </div>
+
+          {items.length === 0 ? (
+            <p className="text-sm text-muted">
+              No EC items yet.{canManageItems ? " Use Add-On to add a pump or spare." : ""}
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead>
+                  <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
+                    <th className="px-3 py-2">EC No.</th>
+                    <th className="px-3 py-2">Type</th>
+                    <th className="px-3 py-2">Model</th>
+                    <th className="px-3 py-2">Qty</th>
+                    <th className="px-3 py-2">Dispatch Target</th>
+                    <th className="px-3 py-2">Dispatch Status</th>
+                    <th className="px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-card-border">
+                  {items.map((item) => {
+                    const id = str(item.id);
+                    return (
+                      <tr key={id} className="text-foreground">
+                        <td className="px-3 py-2 whitespace-nowrap font-medium">
+                          {str(item.ec_no) || "—"}
+                        </td>
+                        <td className="px-3 py-2">{str(item.item_type) || "—"}</td>
+                        <td className="px-3 py-2">{str(item.model_no) || "—"}</td>
+                        <td className="px-3 py-2 tabular-nums">{str(item.quantity) || "—"}</td>
+                        <td className="px-3 py-2 whitespace-nowrap text-muted">
+                          {formatDate(item.dispatch_target_date)}
+                        </td>
+                        <td className="px-3 py-2">
+                          {str(item.dispatch_status) || (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Link
+                              href={`/risansi/orders/${orderId}/items/${id}`}
+                              className="inline-flex h-8 items-center gap-1 rounded-lg border border-input-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                            >
+                              Open
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            </Link>
+                            {canManageItems && (
+                              <button
+                                type="button"
+                                onClick={() => removeItem(item)}
+                                disabled={deletingId === id}
+                                aria-label="Delete EC"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                              >
+                                {deletingId === id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       </div>
+
+      {addOpen && (
+        <AddOnForm orderId={orderId} soLabel={soLabel} onClose={() => setAddOpen(false)} />
+      )}
     </div>
   );
 }

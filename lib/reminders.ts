@@ -6,10 +6,10 @@ import { isCentral, reminderDeptForRole, type ReminderDept } from "@/lib/roles";
 // one — otherwise the day boundary is off by up to 5.5 hours.
 const TODAY_IST = "(now() AT TIME ZONE 'Asia/Kolkata')::date";
 
-// Planning works to the order's dispatch target — but once Central Visibility
+// Planning works to the EC's dispatch target — but once Central Visibility
 // revises that date, the revised one is the deadline that counts.
 const PLANNING_DUE =
-  "COALESCE(o.dispatch_target_revised_date, o.dispatch_target_date)";
+  "COALESCE(it.dispatch_target_revised_date, it.dispatch_target_date)";
 
 // A reminder fires while a department's target date is still ahead (not yet
 // overdue — that's alerts.ts) but within a week, and the completing step hasn't
@@ -33,66 +33,72 @@ export type ReminderRow = {
 // Same four department deadlines as the overdue engine, shifted to the
 // upcoming window. Each branch tags its dept key + label.
 const REMINDERS_SQL = `
-  -- Drawing due to be sent to the client. The target date is on the order
-  -- (set by Central Visibility), while the "sent" date lives on order_drawing,
-  -- which may not exist yet — so LEFT JOIN, or a fresh order would be missed.
-  SELECT o.id, o.sl_no::int AS sl_no, o.so_no, o.ec_no, o.party,
+  -- Drawing due to be sent to the client (per EC). The target date is on the
+  -- EC item; the "sent" date lives on order_drawing, which may not exist yet —
+  -- so LEFT JOIN, or a fresh EC would be missed.
+  SELECT o.id, o.sl_no::int AS sl_no, o.so_no, it.ec_no, o.party,
          'drawing'::text AS dept, 'Drawing'::text AS department,
-         to_char(o.drg_target_date, 'YYYY-MM-DD') AS due_date,
-         (o.drg_target_date - ${TODAY_IST})::int AS days_left
-    FROM orders o LEFT JOIN order_drawing dr ON dr.order_id = o.id
-   WHERE o.drg_target_date >= ${TODAY_IST}
-     AND o.drg_target_date <= ${TODAY_IST} + 7
+         to_char(it.drg_target_date, 'YYYY-MM-DD') AS due_date,
+         (it.drg_target_date - ${TODAY_IST})::int AS days_left
+    FROM order_items it
+    JOIN orders o ON o.id = it.order_id
+    LEFT JOIN order_drawing dr ON dr.item_id = it.id
+   WHERE it.drg_target_date >= ${TODAY_IST}
+     AND it.drg_target_date <= ${TODAY_IST} + 7
      AND dr.drg_sent_to_client_date IS NULL
 
   UNION ALL
-  -- Purchase (BOI) due to be received
-  SELECT o.id, o.sl_no::int, o.so_no, o.ec_no, o.party,
+  -- Purchase (BOI) due to be received (per EC)
+  SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
          'purchase'::text, 'Purchase'::text,
          to_char(pl.purchase_target_date, 'YYYY-MM-DD'),
          (pl.purchase_target_date - ${TODAY_IST})::int
-    FROM orders o
-    JOIN order_planning pl ON pl.order_id = o.id
-    LEFT JOIN order_purchase pu ON pu.order_id = o.id
+    FROM order_items it
+    JOIN orders o ON o.id = it.order_id
+    JOIN order_planning pl ON pl.item_id = it.id
+    LEFT JOIN order_purchase pu ON pu.item_id = it.id
    WHERE pl.purchase_target_date >= ${TODAY_IST}
      AND pl.purchase_target_date <= ${TODAY_IST} + 7
      AND pu.boi_receipt_date IS NULL
 
   UNION ALL
-  -- QC docs due to be submitted
-  SELECT o.id, o.sl_no::int, o.so_no, o.ec_no, o.party,
+  -- QC docs due to be submitted (per EC)
+  SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
          'qc'::text, 'QC'::text,
-         to_char(qc.qc_doc_target_date, 'YYYY-MM-DD'),
-         (qc.qc_doc_target_date - ${TODAY_IST})::int
-    FROM orders o JOIN order_qc qc ON qc.order_id = o.id
-   WHERE qc.qc_doc_target_date >= ${TODAY_IST}
-     AND qc.qc_doc_target_date <= ${TODAY_IST} + 7
+         to_char(it.qc_doc_target_date, 'YYYY-MM-DD'),
+         (it.qc_doc_target_date - ${TODAY_IST})::int
+    FROM order_items it
+    JOIN orders o ON o.id = it.order_id
+    LEFT JOIN order_qc qc ON qc.item_id = it.id
+   WHERE it.qc_doc_target_date >= ${TODAY_IST}
+     AND it.qc_doc_target_date <= ${TODAY_IST} + 7
      AND qc.qc_doc_actual_date IS NULL
      AND (o.qc_required IS NULL OR o.qc_required <> 'No')
 
   UNION ALL
-  -- Planning readiness due before dispatch (Planning has no target date of its
-  -- own, so it borrows the order's dispatch target — the revised one if set)
-  SELECT o.id, o.sl_no::int, o.so_no, o.ec_no, o.party,
+  -- Planning readiness due before dispatch (per EC). Planning has no target
+  -- date of its own, so it borrows the EC's dispatch target — revised if set.
+  SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
          'planning'::text, 'Planning'::text,
          to_char(${PLANNING_DUE}, 'YYYY-MM-DD'),
          (${PLANNING_DUE} - ${TODAY_IST})::int
-    FROM orders o
-    LEFT JOIN order_planning pl ON pl.order_id = o.id
+    FROM order_items it
+    JOIN orders o ON o.id = it.order_id
+    LEFT JOIN order_planning pl ON pl.item_id = it.id
    WHERE ${PLANNING_DUE} >= ${TODAY_IST}
      AND ${PLANNING_DUE} <= ${TODAY_IST} + 7
      AND pl.planning_readiness_date IS NULL
 
   UNION ALL
   -- Assembly & Dispatch due to complete, against the dispatch team's own
-  -- target date (set by Central Visibility) — not the order-level dispatch
-  -- target, which Planning works to.
-  SELECT o.id, o.sl_no::int, o.so_no, o.ec_no, o.party,
+  -- target date (per EC).
+  SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
          'dispatch'::text, 'Assembly & Dispatch'::text,
          to_char(ad.dispatch_team_target_date, 'YYYY-MM-DD'),
          (ad.dispatch_team_target_date - ${TODAY_IST})::int
-    FROM orders o
-    JOIN order_assembly_dispatch ad ON ad.order_id = o.id
+    FROM order_items it
+    JOIN orders o ON o.id = it.order_id
+    JOIN order_assembly_dispatch ad ON ad.item_id = it.id
    WHERE ad.dispatch_team_target_date >= ${TODAY_IST}
      AND ad.dispatch_team_target_date <= ${TODAY_IST} + 7
      AND (ad.dispatch_status IS NULL OR btrim(ad.dispatch_status) = '')
@@ -110,18 +116,28 @@ export async function listReminders(
   depts?: ReminderDept[]
 ): Promise<ReminderRow[]> {
   const filter = depts && depts.length > 0 ? depts : null;
-  const result = await query<Omit<ReminderRow, "tier"> & { days_left: number }>(
-    `SELECT * FROM (${REMINDERS_SQL}) r
-      WHERE ($1::text[] IS NULL OR r.dept = ANY($1))
-      ORDER BY r.days_left ASC, r.sl_no ASC`,
-    [filter]
-  );
-  return result.rows.map((r) => ({
-    ...r,
-    sl_no: Number(r.sl_no),
-    days_left: Number(r.days_left),
-    tier: tierOf(Number(r.days_left)),
-  }));
+  try {
+    const result = await query<Omit<ReminderRow, "tier"> & { days_left: number }>(
+      `SELECT * FROM (${REMINDERS_SQL}) r
+        WHERE ($1::text[] IS NULL OR r.dept = ANY($1))
+        ORDER BY r.days_left ASC, r.sl_no ASC`,
+      [filter]
+    );
+    return result.rows.map((r) => ({
+      ...r,
+      sl_no: Number(r.sl_no),
+      days_left: Number(r.days_left),
+      tier: tierOf(Number(r.days_left)),
+    }));
+  } catch (error) {
+    // The orders table is mid-restructure and some columns this query relies
+    // on (target dates, QC Needed) are temporarily gone — degrade to "no
+    // reminders" rather than taking down every page that calls this
+    // (app/risansi/layout.tsx counts it on every request, for every role).
+    // Remove this guard once those columns are back.
+    console.error("listReminders failed (orders columns may be missing):", error);
+    return [];
+  }
 }
 
 /** Reminders for one department (used on that department's workspace page). */

@@ -18,55 +18,63 @@ export type AlertRow = {
 };
 
 // Every branch surfaces one kind of delay/escalation. A department is "overdue"
-// when its target date has passed but the completing step hasn't happened.
+// when its target date has passed but the completing step hasn't happened. The
+// department steps are now per EC (order_items); the row `id` is the parent SO
+// so "Open" lands on the SO detail. Payment holds stay SO-level.
 const ALERTS_SQL = `
-  -- Drawing not sent by its target date
-  SELECT o.id, o.sl_no::int AS sl_no, o.so_no, o.ec_no, o.party,
+  -- Drawing not sent by its target date (per EC)
+  SELECT o.id, o.sl_no::int AS sl_no, o.so_no, it.ec_no, o.party,
          'Drawing'::text AS department, 'overdue'::text AS type,
-         to_char(o.drg_target_date, 'YYYY-MM-DD') AS due_date,
-         (${TODAY_IST} - o.drg_target_date)::int AS days_overdue
-    FROM orders o LEFT JOIN order_drawing dr ON dr.order_id = o.id
-   WHERE o.drg_target_date < ${TODAY_IST}
+         to_char(it.drg_target_date, 'YYYY-MM-DD') AS due_date,
+         (${TODAY_IST} - it.drg_target_date)::int AS days_overdue
+    FROM order_items it
+    JOIN orders o ON o.id = it.order_id
+    LEFT JOIN order_drawing dr ON dr.item_id = it.id
+   WHERE it.drg_target_date < ${TODAY_IST}
      AND dr.drg_sent_to_client_date IS NULL
 
   UNION ALL
-  -- Purchase (BOI) not received by its target date
-  SELECT o.id, o.sl_no::int, o.so_no, o.ec_no, o.party,
+  -- Purchase (BOI) not received by its target date (per EC)
+  SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
          'Purchase'::text, 'overdue'::text,
          to_char(pl.purchase_target_date, 'YYYY-MM-DD'),
          (${TODAY_IST} - pl.purchase_target_date)::int
-    FROM orders o
-    JOIN order_planning pl ON pl.order_id = o.id
-    LEFT JOIN order_purchase pu ON pu.order_id = o.id
+    FROM order_items it
+    JOIN orders o ON o.id = it.order_id
+    JOIN order_planning pl ON pl.item_id = it.id
+    LEFT JOIN order_purchase pu ON pu.item_id = it.id
    WHERE pl.purchase_target_date < ${TODAY_IST}
      AND pu.boi_receipt_date IS NULL
 
   UNION ALL
-  -- QC docs not submitted by target date (LD risk)
-  SELECT o.id, o.sl_no::int, o.so_no, o.ec_no, o.party,
+  -- QC docs not submitted by target date (LD risk, per EC)
+  SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
          'QC'::text, 'ld_risk'::text,
-         to_char(qc.qc_doc_target_date, 'YYYY-MM-DD'),
-         (${TODAY_IST} - qc.qc_doc_target_date)::int
-    FROM orders o JOIN order_qc qc ON qc.order_id = o.id
-   WHERE qc.qc_doc_target_date < ${TODAY_IST}
+         to_char(it.qc_doc_target_date, 'YYYY-MM-DD'),
+         (${TODAY_IST} - it.qc_doc_target_date)::int
+    FROM order_items it
+    JOIN orders o ON o.id = it.order_id
+    LEFT JOIN order_qc qc ON qc.item_id = it.id
+   WHERE it.qc_doc_target_date < ${TODAY_IST}
      AND qc.qc_doc_actual_date IS NULL
+     AND (o.qc_required IS NULL OR o.qc_required <> 'No')
 
   UNION ALL
-  -- Dispatch not done by the dispatch team's own target date (set by Central
-  -- Visibility) — not the order-level dispatch target, which Planning works to.
-  SELECT o.id, o.sl_no::int, o.so_no, o.ec_no, o.party,
+  -- Dispatch not done by the dispatch team's own target date (per EC)
+  SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
          'Assembly & Dispatch'::text, 'overdue'::text,
          to_char(ad.dispatch_team_target_date, 'YYYY-MM-DD'),
          (${TODAY_IST} - ad.dispatch_team_target_date)::int
-    FROM orders o
-    JOIN order_assembly_dispatch ad ON ad.order_id = o.id
+    FROM order_items it
+    JOIN orders o ON o.id = it.order_id
+    JOIN order_assembly_dispatch ad ON ad.item_id = it.id
    WHERE ad.dispatch_team_target_date < ${TODAY_IST}
      AND (ad.dispatch_status IS NULL OR btrim(ad.dispatch_status) = '')
      AND ad.actual_packing_date IS NULL
 
   UNION ALL
-  -- Payment on hold (escalated to Central Visibility)
-  SELECT o.id, o.sl_no::int, o.so_no, o.ec_no, o.party,
+  -- Payment on hold (escalated to Central Visibility, SO-level)
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
          'Accounts'::text, 'hold'::text,
          NULL::text, NULL::int
     FROM orders o JOIN order_accounts a ON a.order_id = o.id
@@ -75,17 +83,31 @@ const ALERTS_SQL = `
 
 /** All active alerts, escalations first, then most overdue. */
 export async function listAlerts(): Promise<AlertRow[]> {
-  const result = await query<AlertRow>(
-    `SELECT * FROM (${ALERTS_SQL}) a
-      ORDER BY days_overdue DESC NULLS FIRST, sl_no ASC`
-  );
-  return result.rows;
+  try {
+    const result = await query<AlertRow>(
+      `SELECT * FROM (${ALERTS_SQL}) a
+        ORDER BY days_overdue DESC NULLS FIRST, sl_no ASC`
+    );
+    return result.rows;
+  } catch (error) {
+    // The orders table is mid-restructure and some columns this query relies
+    // on (target dates) are temporarily gone — degrade to "no alerts" rather
+    // than taking down every page that calls this (layout.tsx counts it on
+    // every request). Remove this guard once those columns are back.
+    console.error("listAlerts failed (orders columns may be missing):", error);
+    return [];
+  }
 }
 
 /** Count of active alerts (for the sidebar badge). */
 export async function countAlerts(): Promise<number> {
-  const result = await query<{ count: number }>(
-    `SELECT count(*)::int AS count FROM (${ALERTS_SQL}) a`
-  );
-  return Number(result.rows[0]?.count ?? 0);
+  try {
+    const result = await query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM (${ALERTS_SQL}) a`
+    );
+    return Number(result.rows[0]?.count ?? 0);
+  } catch (error) {
+    console.error("countAlerts failed (orders columns may be missing):", error);
+    return 0;
+  }
 }

@@ -1,9 +1,9 @@
-// Column headers for the Excel import, matching the importer's recognized
-// headers. Two templates: the system-generated core columns (A–V) and the full
-// "bulk" set (all departments). Sl. No. is auto-generated and omitted.
+// Column headers matching the export mapping's recognized headers (the full
+// "bulk" set across all departments). Sl. No. is auto-generated and omitted.
 
-export const SYSTEM_GENERATED_HEADERS: string[] = [
+export const BULK_HEADERS: string[] = [
   "SO NO.",
+  "Sales Order Date",
   "EC No.",
   "EC Generated Date",
   "EC RCVD In OPERATIONS",
@@ -25,10 +25,6 @@ export const SYSTEM_GENERATED_HEADERS: string[] = [
   "ORIENTATION",
   "LIQUID/ APPLICATION",
   "VERSION",
-];
-
-export const BULK_HEADERS: string[] = [
-  ...SYSTEM_GENERATED_HEADERS,
   "Payment Terms",
   "Freight Terms",
   "Packing Requirement",
@@ -75,4 +71,5 @@ export const BULK_HEADERS: string[] = [
   "Lot Wise Disp. Dt.",
   "Invoice Date",
   "Order Value",
+  "Currency",
 ];

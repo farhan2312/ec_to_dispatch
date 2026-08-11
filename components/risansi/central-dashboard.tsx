@@ -378,9 +378,6 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
           <BarList items={dispatchBreakdown} total={total} />
         </ChartCard>
 
-        <ChartCard title="Orders by industry">
-          <BarList items={industryBreakdown} total={total} />
-        </ChartCard>
       </div>
 
       {/* pipeline */}

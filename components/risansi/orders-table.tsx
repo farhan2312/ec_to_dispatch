@@ -265,7 +265,7 @@ export function OrdersTable({
                           {isOpen ? (
                             <ChevronDown className="h-3.5 w-3.5" />
                           ) : (
-                            <Plus className="h-3.5 w-3.5" />
+                            <ChevronRight className="h-3.5 w-3.5" />
                           )}
                         </button>
                       </td>

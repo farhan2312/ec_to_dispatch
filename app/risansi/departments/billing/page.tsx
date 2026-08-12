@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { canEditSection } from "@/lib/roles";
 import { listOrdersForSection } from "@/lib/orders";
 import {
-  PAYMENT_TERMS_CONTEXT_FIELDS,
+  BILLING_CONTEXT_FIELDS,
   SECTION_BY_TABLE,
 } from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
@@ -31,7 +31,7 @@ export default async function BillingWorkspacePage({
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const orders = await listOrdersForSection(
     TABLE,
-    PAYMENT_TERMS_CONTEXT_FIELDS.map((f) => ({ column: f.column, type: f.type }))
+    BILLING_CONTEXT_FIELDS.map((f) => ({ column: f.column, type: f.type }))
   );
 
   return (
@@ -45,8 +45,8 @@ export default async function BillingWorkspacePage({
             Billing &amp; Operations
           </h1>
           <p className="text-sm text-muted">
-            Update PI, freight and packing. Payment Terms is set by Central
-            Visibility.
+            Update PI and amount received. Payment Terms, Freight Terms and
+            Packing Requirement are set by Central Visibility.
           </p>
         </div>
       </div>
@@ -55,7 +55,7 @@ export default async function BillingWorkspacePage({
         table={TABLE}
         fields={section.fields}
         orders={orders}
-        readonlyFields={PAYMENT_TERMS_CONTEXT_FIELDS}
+        readonlyFields={BILLING_CONTEXT_FIELDS}
         openOrderId={edit}
       />
     </div>

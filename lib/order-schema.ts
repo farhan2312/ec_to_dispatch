@@ -33,6 +33,9 @@ export type OrderField = {
   // When true, only Central Visibility / Admin may edit this field; the owning
   // department sees it read-only (e.g. LD in the Planning section).
   centralOnly?: boolean;
+  // When true, the field is never editable — it's derived and displayed only
+  // (e.g. Balance of Payment = order value − amount received, set server-side).
+  computed?: boolean;
 };
 
 /** Turn a list of strings into { value, label } option objects. */
@@ -108,6 +111,20 @@ export const ORDER_SECTIONS: OrderSection[] = [
       },
       { column: "so_no", label: "Sales Order Number", type: "text" },
       { column: "so_date", label: "Sales Order Date", type: "date" },
+
+      // Operations — freight & packing (visible read-only to Billing).
+      {
+        column: "freight_terms",
+        label: "Freight Terms",
+        type: "select",
+        options: opts(["Paid", "To Pay"]),
+      },
+      {
+        column: "packing_requirement",
+        label: "Packing Requirement",
+        type: "select",
+        options: opts(["Wooden Box", "Loose"]),
+      },
 
       // 'No' means the QC department isn't involved for this order — its ECs
       // are skipped by the QC workspace and QC reminders.
@@ -201,21 +218,21 @@ export const ORDER_SECTIONS: OrderSection[] = [
     table: "order_billing",
     scope: "so",
     fields: [
-      {
-        column: "freight_terms",
-        label: "Freight Terms",
-        type: "select",
-        options: opts(["Paid", "To Pay"]),
-      },
-      {
-        column: "packing_requirement",
-        label: "Packing Requirement",
-        type: "select",
-        options: opts(["Wooden Box", "Loose"]),
-      },
       { column: "pi_no", label: "PI No.", type: "text" },
       { column: "pi_date", label: "PI Date", type: "date" },
       { column: "pi_value", label: "PI Value", type: "number" },
+      {
+        column: "amount_received",
+        label: "Amount Received (without GST)",
+        type: "number",
+      },
+      // Derived: order value − amount received. Set server-side on save.
+      {
+        column: "balance_of_payment",
+        label: "Balance of Payment",
+        type: "number",
+        computed: true,
+      },
     ],
   },
   {
@@ -455,6 +472,24 @@ export const CHILD_FIELDS: Record<ChildTable, OrderField[]> = {
 // Operations and Accounts workspaces.
 export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
   { column: "payment_terms", label: "Payment Terms", type: "text" },
+];
+
+// Billing also sees Freight Terms & Packing Requirement (SO-level) read-only,
+// alongside Payment Terms.
+export const BILLING_CONTEXT_FIELDS: OrderField[] = [
+  { column: "payment_terms", label: "Payment Terms", type: "text" },
+  {
+    column: "freight_terms",
+    label: "Freight Terms",
+    type: "select",
+    options: opts(["Paid", "To Pay"]),
+  },
+  {
+    column: "packing_requirement",
+    label: "Packing Requirement",
+    type: "select",
+    options: opts(["Wooden Box", "Loose"]),
+  },
 ];
 
 // Target Date for Drawing — an EC attribute (order_items) shown read-only in

@@ -60,6 +60,24 @@ const SECTIONS: Section[] = [
       },
       { name: "so_no", label: "Sales Order Number", type: "text" },
       { name: "so_date", label: "Sales Order Date", type: "date" },
+      {
+        name: "freight_terms",
+        label: "Freight Terms",
+        type: "select",
+        options: [
+          { value: "Paid", label: "Paid" },
+          { value: "To Pay", label: "To Pay" },
+        ],
+      },
+      {
+        name: "packing_requirement",
+        label: "Packing Requirement",
+        type: "select",
+        options: [
+          { value: "Wooden Box", label: "Wooden Box" },
+          { value: "Loose", label: "Loose" },
+        ],
+      },
       { name: "qc_required", label: "QC Req", type: "select", options: YES_NO_OPTIONS },
       { name: "payment_terms", label: "Payment Terms", type: "text" },
       { name: "ld", label: "LD", type: "select", options: YES_NO_OPTIONS },

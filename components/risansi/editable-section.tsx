@@ -159,7 +159,8 @@ export function EditableSection({
 
       <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {section.fields.map((field) => {
-          const fieldEditable = editing && (!field.centralOnly || canEditCentral);
+          const fieldEditable =
+            editing && !field.computed && (!field.centralOnly || canEditCentral);
           return (
             <div key={field.column}>
               <div className="mb-1 flex items-center gap-1.5 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -167,6 +168,11 @@ export function EditableSection({
                 {field.centralOnly && !canEditCentral && (
                   <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500">
                     read-only
+                  </span>
+                )}
+                {field.computed && (
+                  <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500">
+                    auto
                   </span>
                 )}
               </div>

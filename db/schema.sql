@@ -877,3 +877,27 @@ ALTER TABLE orders DROP COLUMN IF EXISTS item;
 -- Notifications can target a specific EC (for per-EC target-date events); the
 -- SO-level events (payment terms) keep using order_id only.
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS item_id UUID REFERENCES order_items(id) ON DELETE CASCADE;
+
+-- Freight Terms & Packing Requirement move to the SO (orders) — Central sets
+-- them in Order details; Billing sees them read-only. Billing also gains
+-- Amount Received and a stored Balance of Payment (order value − amount
+-- received, recomputed by the app on every billing/order-value save).
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS freight_terms TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS packing_requirement TEXT;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_billing' AND column_name = 'freight_terms'
+    ) THEN
+        UPDATE orders o
+           SET freight_terms = COALESCE(o.freight_terms, b.freight_terms),
+               packing_requirement = COALESCE(o.packing_requirement, b.packing_requirement)
+          FROM order_billing b
+         WHERE b.order_id = o.id;
+        ALTER TABLE order_billing DROP COLUMN freight_terms;
+        ALTER TABLE order_billing DROP COLUMN packing_requirement;
+    END IF;
+END $$;
+ALTER TABLE order_billing ADD COLUMN IF NOT EXISTS amount_received NUMERIC(14,2);
+ALTER TABLE order_billing ADD COLUMN IF NOT EXISTS balance_of_payment NUMERIC(14,2);

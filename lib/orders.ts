@@ -84,6 +84,8 @@ export type NewOrderInput = {
   qc_required?: string;
   po_no?: string;
   customer_po_date?: string;
+  freight_terms?: string;
+  packing_requirement?: string;
   payment_terms?: string;
   ld?: string;
   ld_date?: string;
@@ -136,9 +138,10 @@ export async function createOrder(
     `INSERT INTO orders (
         so_no, so_date, client_code, client_type, party, agent,
         nature_of_supply, industry_type, po_no, customer_po_date,
-        order_value, order_currency, qc_required, payment_terms, ld, ld_date
+        order_value, order_currency, qc_required, payment_terms, ld, ld_date,
+        freight_terms, packing_requirement
      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
      )
      RETURNING id, sl_no::int AS sl_no`,
     [
@@ -158,6 +161,8 @@ export async function createOrder(
       nullify(input.payment_terms),
       nullify(input.ld),
       nullify(input.ld_date),
+      nullify(input.freight_terms),
+      nullify(input.packing_requirement),
     ]
   );
   return result.rows[0];
@@ -353,34 +358,56 @@ export async function updateOrderSection(
   const section = SECTION_BY_TABLE.get(table);
   if (!section) throw new Error(`Unknown section table: ${table}`);
 
+  // Computed fields (e.g. Balance of Payment) are never written from input —
+  // they're derived server-side below.
   const fieldByColumn = new Map(section.fields.map((f) => [f.column, f]));
-  const columns = Object.keys(values).filter((c) => fieldByColumn.has(c));
-  if (columns.length === 0) return;
-
-  const coerced = columns.map((c) =>
-    coerceField(fieldByColumn.get(c)!.type, values[c])
+  const columns = Object.keys(values).filter(
+    (c) => fieldByColumn.has(c) && !fieldByColumn.get(c)!.computed
   );
 
-  // Base identity tables update by their own id.
-  if (table === "orders" || table === "order_items") {
-    const setClause = columns.map((c, i) => `${c} = $${i + 2}`).join(", ");
-    await query(`UPDATE ${table} SET ${setClause} WHERE id = $1`, [
-      id,
-      ...coerced,
-    ]);
-    return;
+  if (columns.length > 0) {
+    const coerced = columns.map((c) =>
+      coerceField(fieldByColumn.get(c)!.type, values[c])
+    );
+
+    if (table === "orders" || table === "order_items") {
+      // Base identity tables update by their own id.
+      const setClause = columns.map((c, i) => `${c} = $${i + 2}`).join(", ");
+      await query(`UPDATE ${table} SET ${setClause} WHERE id = $1`, [
+        id,
+        ...coerced,
+      ]);
+    } else {
+      // 1:1 detail tables upsert on their key column: order_id for SO-scope
+      // (billing/accounts), item_id for item-scope (drawing/purchase/qc/…).
+      const keyCol = section.scope === "so" ? "order_id" : "item_id";
+      const insertCols = [keyCol, ...columns];
+      const placeholders = insertCols.map((_, i) => `$${i + 1}`).join(", ");
+      const updateClause = columns.map((c) => `${c} = EXCLUDED.${c}`).join(", ");
+      await query(
+        `INSERT INTO ${table} (${insertCols.join(", ")}) VALUES (${placeholders})
+         ON CONFLICT (${keyCol}) DO UPDATE SET ${updateClause}`,
+        [id, ...coerced]
+      );
+    }
   }
 
-  // 1:1 detail tables upsert on their key column: order_id for SO-scope
-  // (billing/accounts), item_id for item-scope (drawing/purchase/qc/…).
-  const keyCol = section.scope === "so" ? "order_id" : "item_id";
-  const insertCols = [keyCol, ...columns];
-  const placeholders = insertCols.map((_, i) => `$${i + 1}`).join(", ");
-  const updateClause = columns.map((c) => `${c} = EXCLUDED.${c}`).join(", ");
+  // Balance of Payment = order value − amount received. Recompute whenever the
+  // billing row or the SO's order value changes (both `id` values are the SO).
+  if (table === "order_billing" || table === "orders") {
+    await recomputeBillingBalance(id);
+  }
+}
+
+/** Recompute a SO's billing balance from its order value and amount received. */
+async function recomputeBillingBalance(orderId: string): Promise<void> {
+  if (!UUID_RE.test(orderId)) return;
   await query(
-    `INSERT INTO ${table} (${insertCols.join(", ")}) VALUES (${placeholders})
-     ON CONFLICT (${keyCol}) DO UPDATE SET ${updateClause}`,
-    [id, ...coerced]
+    `UPDATE order_billing b
+        SET balance_of_payment = o.order_value - COALESCE(b.amount_received, 0)
+       FROM orders o
+      WHERE b.order_id = o.id AND o.id = $1`,
+    [orderId]
   );
 }
 

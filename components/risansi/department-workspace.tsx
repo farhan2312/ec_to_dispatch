@@ -360,14 +360,15 @@ function EditSectionModal({
 
           <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
             {fields.map((field) => {
-              // centralOnly fields are read-only unless the user is Central.
-              if (field.centralOnly && !canEditCentral) {
+              // Computed and (for non-central users) centralOnly fields are
+              // shown read-only rather than as inputs.
+              if (field.computed || (field.centralOnly && !canEditCentral)) {
                 return (
                   <div key={field.column}>
                     <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium text-brand-label">
                       {field.label}
                       <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500">
-                        read-only
+                        {field.computed ? "auto" : "read-only"}
                       </span>
                     </label>
                     <div className="flex h-10 items-center px-1 text-[14px] text-muted">

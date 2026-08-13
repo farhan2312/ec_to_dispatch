@@ -80,7 +80,7 @@ export default async function DispatchedPage() {
               <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
                 <th className="px-4 py-3">Sl.</th>
                 <th className="px-4 py-3">SO / EC</th>
-                <th className="px-4 py-3">Party</th>
+                <th className="px-4 py-3">Client Name</th>
                 <th className="px-4 py-3">Lot No.</th>
                 <th className="px-4 py-3">Dispatch Date</th>
                 <th className="px-4 py-3">Invoice Date</th>

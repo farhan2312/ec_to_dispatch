@@ -51,9 +51,18 @@ function seedValue(field: OrderField, data: Row | null): string {
   return canonicalSelectValue(field, toInput(data?.[field.column]));
 }
 
-function dependsSatisfied(field: OrderField, values: Record<string, string>): boolean {
+// A field's dependsOn may reference a column outside this section (e.g. the
+// order's bill_type gating a billing field). Resolve from the edit values
+// first, then fall back to the row data.
+function dependsSatisfied(
+  field: OrderField,
+  values: Record<string, string>,
+  data: Row | null
+): boolean {
   if (!field.dependsOn) return true;
-  return field.dependsOn.every((d) => (values[d.column] ?? "") === d.value);
+  return field.dependsOn.every(
+    (d) => (values[d.column] ?? toInput(data?.[d.column])) === d.value
+  );
 }
 
 /**
@@ -159,6 +168,9 @@ export function EditableSection({
 
       <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {section.fields.map((field) => {
+          // Cascade: a field gated by dependsOn (e.g. billing docs gated on the
+          // order's bill_type) is hidden entirely when its condition isn't met.
+          if (!dependsSatisfied(field, values, data)) return null;
           const fieldEditable =
             editing && !field.computed && (!field.centralOnly || canEditCentral);
           return (
@@ -183,7 +195,7 @@ export function EditableSection({
                     onChange={(e) =>
                       setValues((prev) => ({ ...prev, [field.column]: e.target.value }))
                     }
-                    disabled={!dependsSatisfied(field, values)}
+                    disabled={!dependsSatisfied(field, values, data)}
                     className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <option value="">—</option>
@@ -201,7 +213,7 @@ export function EditableSection({
                     onChange={(e) =>
                       setValues((prev) => ({ ...prev, [field.column]: e.target.value }))
                     }
-                    disabled={!dependsSatisfied(field, values)}
+                    disabled={!dependsSatisfied(field, values, data)}
                     className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
                   />
                 )

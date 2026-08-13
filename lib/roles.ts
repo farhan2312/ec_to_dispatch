@@ -86,9 +86,17 @@ export function canSeeDispatched(role: string): boolean {
   return role === "admin" || role === "central_visibility";
 }
 
-/** Who may edit an order's dispatch lots — Assembly & Dispatch (+ oversight). */
-export function canEditChild(role: string, _table: "order_lots"): boolean {
-  return canEditSection(role, "order_assembly_dispatch");
+/**
+ * Who may edit an EC's child lists: dispatch lots → Assembly & Dispatch;
+ * BOI items → Purchase (both plus Central/Admin oversight).
+ */
+export function canEditChild(
+  role: string,
+  table: "order_lots" | "order_boi_items"
+): boolean {
+  const owner: OrderTable =
+    table === "order_boi_items" ? "order_purchase" : "order_assembly_dispatch";
+  return canEditSection(role, owner);
 }
 
 /**

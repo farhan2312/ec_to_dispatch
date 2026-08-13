@@ -34,7 +34,9 @@ const ALERTS_SQL = `
      AND dr.drg_sent_to_client_date IS NULL
 
   UNION ALL
-  -- Purchase (BOI) not received by its target date (per EC)
+  -- Purchase (BOI items) not all received by the target date (per EC). Applies
+  -- only when the SO needs BOI; pending if any item lacks a receipt date, or no
+  -- items have been added yet.
   SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
          'Purchase'::text, 'overdue'::text,
          to_char(pl.purchase_target_date, 'YYYY-MM-DD'),
@@ -42,9 +44,10 @@ const ALERTS_SQL = `
     FROM order_items it
     JOIN orders o ON o.id = it.order_id
     JOIN order_planning pl ON pl.item_id = it.id
-    LEFT JOIN order_purchase pu ON pu.item_id = it.id
-   WHERE pl.purchase_target_date < ${TODAY_IST}
-     AND pu.boi_receipt_date IS NULL
+   WHERE o.boi = 'Yes'
+     AND pl.purchase_target_date < ${TODAY_IST}
+     AND (NOT EXISTS (SELECT 1 FROM order_boi_items b WHERE b.item_id = it.id)
+          OR EXISTS (SELECT 1 FROM order_boi_items b WHERE b.item_id = it.id AND b.receipt_date IS NULL))
 
   UNION ALL
   -- QC docs not submitted by target date (LD risk, per EC)

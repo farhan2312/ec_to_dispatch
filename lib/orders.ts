@@ -65,6 +65,7 @@ export type OrderListRow = {
   client_code: string | null;
   agent: string | null;
   po_no: string | null;
+  order_type: string | null;
   order_value: string | null;
   payment_status: string | null;
   ec_count: number;
@@ -81,6 +82,9 @@ export type NewOrderInput = {
   agent?: string;
   nature_of_supply?: string;
   industry_type?: string;
+  order_type?: string;
+  bill_type?: string;
+  boi?: string;
   qc_required?: string;
   po_no?: string;
   customer_po_date?: string;
@@ -139,9 +143,9 @@ export async function createOrder(
         so_no, so_date, client_code, client_type, party, agent,
         nature_of_supply, industry_type, po_no, customer_po_date,
         order_value, order_currency, qc_required, payment_terms, ld, ld_date,
-        freight_terms, packing_requirement
+        freight_terms, packing_requirement, order_type, bill_type, boi
      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21
      )
      RETURNING id, sl_no::int AS sl_no`,
     [
@@ -163,6 +167,9 @@ export async function createOrder(
       nullify(input.ld_date),
       nullify(input.freight_terms),
       nullify(input.packing_requirement),
+      nullify(input.order_type),
+      nullify(input.bill_type),
+      nullify(input.boi),
     ]
   );
   return result.rows[0];
@@ -290,6 +297,7 @@ export type ItemDetail = {
   order_planning: Row | null;
   order_assembly_dispatch: Row | null;
   order_lots: Row[];
+  order_boi_items: Row[];
 };
 
 const ITEM_DETAIL_SELECT = `
@@ -303,7 +311,9 @@ const ITEM_DETAIL_SELECT = `
     to_jsonb(pl) AS order_planning,
     to_jsonb(ad) AS order_assembly_dispatch,
     COALESCE((SELECT jsonb_agg(to_jsonb(l) ORDER BY l.created_at)
-              FROM order_lots l WHERE l.item_id = it.id), '[]'::jsonb) AS order_lots
+              FROM order_lots l WHERE l.item_id = it.id), '[]'::jsonb) AS order_lots,
+    COALESCE((SELECT jsonb_agg(to_jsonb(bi) ORDER BY bi.created_at)
+              FROM order_boi_items bi WHERE bi.item_id = it.id), '[]'::jsonb) AS order_boi_items
    FROM order_items it
    JOIN orders o                        ON o.id  = it.order_id
    LEFT JOIN order_billing b            ON b.order_id  = o.id
@@ -392,21 +402,21 @@ export async function updateOrderSection(
     }
   }
 
-  // Balance of Payment = order value − amount received. Recompute whenever the
-  // billing row or the SO's order value changes (both `id` values are the SO).
-  if (table === "order_billing" || table === "orders") {
-    await recomputeBillingBalance(id);
+  // Balance of Payment = order value − amount received (both on the accounts
+  // row / SO). Recompute whenever the accounts row or order value changes.
+  if (table === "order_accounts" || table === "orders") {
+    await recomputeAccountsBalance(id);
   }
 }
 
-/** Recompute a SO's billing balance from its order value and amount received. */
-async function recomputeBillingBalance(orderId: string): Promise<void> {
+/** Recompute a SO's accounts balance from its order value and amount received. */
+async function recomputeAccountsBalance(orderId: string): Promise<void> {
   if (!UUID_RE.test(orderId)) return;
   await query(
-    `UPDATE order_billing b
-        SET balance_of_payment = o.order_value - COALESCE(b.amount_received, 0)
+    `UPDATE order_accounts a
+        SET balance_of_payment = o.order_value - COALESCE(a.amount_received, 0)
        FROM orders o
-      WHERE b.order_id = o.id AND o.id = $1`,
+      WHERE a.order_id = o.id AND o.id = $1`,
     [orderId]
   );
 }
@@ -602,8 +612,8 @@ export type OrderOverviewRow = {
   pi_no: string | null;
   payment_status: string | null;
   drg_status: string | null;
-  gb_status: string | null;
-  motor_status: string | null;
+  boi: string | null;
+  purchase_done: boolean;
   qc_submitted: boolean;
   qc_required: string | null;
   planning_status: string | null;
@@ -632,8 +642,13 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             b.pi_no,
             a.payment_status,
             dr.drg_status,
-            pu.gb_status,
-            pu.motor_status,
+            o.boi,
+            (CASE
+               WHEN COALESCE(o.boi, '') <> 'Yes' THEN true
+               WHEN NOT EXISTS (SELECT 1 FROM order_boi_items bi WHERE bi.item_id = it.id) THEN false
+               WHEN EXISTS (SELECT 1 FROM order_boi_items bi WHERE bi.item_id = it.id AND bi.receipt_date IS NULL) THEN false
+               ELSE true
+             END) AS purchase_done,
             (qc.qc_doc_actual_date IS NOT NULL) AS qc_submitted,
             o.qc_required,
             pl.planning_status,
@@ -644,7 +659,6 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
        LEFT JOIN order_billing b            ON b.order_id  = o.id
        LEFT JOIN order_accounts a           ON a.order_id  = o.id
        LEFT JOIN order_drawing dr           ON dr.item_id = it.id
-       LEFT JOIN order_purchase pu          ON pu.item_id = it.id
        LEFT JOIN order_qc qc                ON qc.item_id = it.id
        LEFT JOIN order_planning pl          ON pl.item_id = it.id
        LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
@@ -808,6 +822,42 @@ export async function listItemsForSection(
   return result.rows;
 }
 
+export type PurchaseQueueRow = {
+  id: string;
+  sl_no: number;
+  so_no: string | null;
+  ec_no: string | null;
+  boi: string | null;
+  ld: string | null;
+  ld_date: string | null;
+  purchase_target_date: string | null;
+  boi_items: Row[];
+};
+
+/**
+ * Purchase workspace queue: one row per EC with the SO's BOI flag, the purchase
+ * target date, and that EC's BOI items (for the manage-items list).
+ */
+export async function listItemsForPurchase(): Promise<PurchaseQueueRow[]> {
+  const result = await query<PurchaseQueueRow>(
+    `SELECT it.id,
+            o.sl_no::int AS sl_no,
+            o.so_no,
+            it.ec_no,
+            o.boi,
+            o.ld,
+            to_char(o.ld_date, 'YYYY-MM-DD') AS ld_date,
+            to_char(pl.purchase_target_date, 'YYYY-MM-DD') AS purchase_target_date,
+            COALESCE((SELECT jsonb_agg(to_jsonb(bi) ORDER BY bi.created_at)
+                      FROM order_boi_items bi WHERE bi.item_id = it.id), '[]'::jsonb) AS boi_items
+       FROM order_items it
+       JOIN orders o ON o.id = it.order_id
+       LEFT JOIN order_planning pl ON pl.item_id = it.id
+      ORDER BY o.sl_no ASC, it.seq ASC`
+  );
+  return result.rows;
+}
+
 function detailSelect(alias: string, f: { column: string; type: string }): string {
   if (f.type === "date") {
     return `to_char(${alias}.${f.column}, 'YYYY-MM-DD') AS ${f.column}`;
@@ -833,6 +883,7 @@ export async function listOrders(): Promise<OrderListRow[]> {
             o.client_code,
             o.agent,
             o.po_no,
+            o.order_type,
             o.order_value::text AS order_value,
             a.payment_status,
             COALESCE(ic.cnt, 0)::int AS ec_count,

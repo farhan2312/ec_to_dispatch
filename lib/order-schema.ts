@@ -45,11 +45,41 @@ function opts(values: string[]): { value: string; label: string }[] {
 
 const YES_NO = opts(["Yes", "No"]);
 export const YES_NO_OPTIONS = YES_NO;
-const PART_STATUS = opts(["PENDING", "RECEIVED", "AVAILABLE STOCK"]);
 
 export const INDUSTRY_TYPE_OPTIONS = opts(["Sugar", "Non Sugar"]);
 export const CURRENCY_OPTIONS = opts(["INR", "USD"]);
 export const ITEM_OPTIONS = opts(["Pump", "Spare", "ROLB"]);
+// SO-level Order Type; each EC/Add-On inherits it as its item_type.
+export const ORDER_TYPE_OPTIONS = opts(["Pump", "Spare"]);
+// Bill Type (SO-level) — decides which billing document fields apply.
+export const BILL_TYPE_OPTIONS = opts(["Performa", "Tax", "Challan"]);
+// FR (financial reconciliation) reason for a Challan.
+export const FR_REASON_OPTIONS = opts([
+  "Wrong supply",
+  "Short supply",
+  "Damage",
+  "FOC",
+]);
+export const PAYMENT_TERMS_OPTIONS = opts([
+  "10% adv",
+  "30% adv",
+  "50% adv",
+  "90% adv",
+  "100% adv",
+  "After receipt",
+]);
+// Bought-out items Purchase can add under an EC when the SO's BOI = Yes.
+export const BOI_ITEM_OPTIONS = opts([
+  "Gear Box",
+  "Motor",
+  "VFD",
+  "Panel",
+  "Strainers",
+  "Mechanical seal",
+  "Gland Packing",
+  "Pully",
+  "Others",
+]);
 export const DISPATCH_STATUS_OPTIONS = opts([
   "Pending",
   "LOT dispatch",
@@ -73,6 +103,11 @@ export type OrderSection = {
   table: OrderTable;
   scope: SectionScope;
   fields: OrderField[];
+  // A section may render a 1:many child list instead of / alongside flat
+  // fields (e.g. Purchase → BOI items). Shown only when childGate is satisfied
+  // by the parent SO/EC data (e.g. the SO's boi = Yes).
+  childTable?: ChildTable;
+  childGate?: { column: string; value: string };
 };
 
 export const ORDER_SECTIONS: OrderSection[] = [
@@ -85,17 +120,28 @@ export const ORDER_SECTIONS: OrderSection[] = [
       // Client — client_code and client_type are compulsory at creation.
       { column: "client_code", label: "Client Code", type: "text" },
       { column: "party", label: "Client Name", type: "text" },
-      {
-        column: "industry_type",
-        label: "Industry",
-        type: "select",
-        options: INDUSTRY_TYPE_OPTIONS,
-      },
+      { column: "industry_type", label: "Industry", type: "text" },
       { column: "client_type", label: "Client Type", type: "text" },
       { column: "nature_of_supply", label: "Market Type", type: "text" },
       { column: "agent", label: "Rep(s)", type: "text" },
 
       // Purchase Order Details.
+      // SO Order Type — every EC added under this SO inherits it.
+      {
+        column: "order_type",
+        label: "Order Type",
+        type: "select",
+        options: ORDER_TYPE_OPTIONS,
+      },
+      {
+        column: "bill_type",
+        label: "Bill Type",
+        type: "select",
+        options: BILL_TYPE_OPTIONS,
+      },
+      // BOI (bought-out items) flag — Purchase sees it read-only and, when Yes,
+      // adds the individual BOI items per EC.
+      { column: "boi", label: "BOI", type: "select", options: YES_NO },
       { column: "po_no", label: "Purchase Order Number", type: "text" },
       { column: "customer_po_date", label: "Purchase Order Date", type: "date" },
       {
@@ -135,9 +181,13 @@ export const ORDER_SECTIONS: OrderSection[] = [
         options: YES_NO,
       },
 
-      // Commercial. Order Type (Pump/Spare) is per-EC now — see the item
-      // section below.
-      { column: "payment_terms", label: "Payment Terms", type: "text" },
+      // Commercial.
+      {
+        column: "payment_terms",
+        label: "Payment Terms",
+        type: "select",
+        options: PAYMENT_TERMS_OPTIONS,
+      },
       { column: "ld", label: "LD", type: "select", options: YES_NO },
       {
         column: "ld_date",
@@ -201,7 +251,6 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "pump_sno", label: "Pump Serial No.", type: "text" },
       { column: "application", label: "Application", type: "text" },
       { column: "version", label: "Series Version", type: "text" },
-      { column: "boi", label: "BOI", type: "select", options: YES_NO },
       { column: "dispatch_target_date", label: "Dispatch Date", type: "date" },
       {
         column: "dispatch_target_revised_date",
@@ -217,21 +266,24 @@ export const ORDER_SECTIONS: OrderSection[] = [
     title: "Billing & Operations",
     table: "order_billing",
     scope: "so",
+    // Which document fields apply is driven by the SO's Bill Type. dependsOn
+    // resolves bill_type from the order row (a read-only context column here).
     fields: [
-      { column: "pi_no", label: "PI No.", type: "text" },
-      { column: "pi_date", label: "PI Date", type: "date" },
-      { column: "pi_value", label: "PI Value", type: "number" },
+      { column: "pi_no", label: "PI No.", type: "text", dependsOn: [{ column: "bill_type", value: "Performa" }] },
+      { column: "pi_date", label: "PI Date", type: "date", dependsOn: [{ column: "bill_type", value: "Performa" }] },
+      { column: "pi_value", label: "PI Value", type: "number", dependsOn: [{ column: "bill_type", value: "Performa" }] },
+      { column: "tax_no", label: "Tax No.", type: "text", dependsOn: [{ column: "bill_type", value: "Tax" }] },
+      { column: "tax_date", label: "Tax Date", type: "date", dependsOn: [{ column: "bill_type", value: "Tax" }] },
+      { column: "tax_value", label: "Tax Value", type: "number", dependsOn: [{ column: "bill_type", value: "Tax" }] },
+      { column: "challan_no", label: "Challan No.", type: "text", dependsOn: [{ column: "bill_type", value: "Challan" }] },
+      { column: "challan_date", label: "Challan Date", type: "date", dependsOn: [{ column: "bill_type", value: "Challan" }] },
+      { column: "challan_value", label: "Challan Value", type: "number", dependsOn: [{ column: "bill_type", value: "Challan" }] },
       {
-        column: "amount_received",
-        label: "Amount Received (without GST)",
-        type: "number",
-      },
-      // Derived: order value − amount received. Set server-side on save.
-      {
-        column: "balance_of_payment",
-        label: "Balance of Payment",
-        type: "number",
-        computed: true,
+        column: "fr_reason",
+        label: "FR Reason",
+        type: "select",
+        options: FR_REASON_OPTIONS,
+        dependsOn: [{ column: "bill_type", value: "Challan" }],
       },
     ],
   },
@@ -251,6 +303,18 @@ export const ORDER_SECTIONS: OrderSection[] = [
         column: "payment_confirmed_date",
         label: "Payment Confirmed Date",
         type: "date",
+      },
+      {
+        column: "amount_received",
+        label: "Amount Received (without GST)",
+        type: "number",
+      },
+      // Derived: order value − amount received. Set server-side on save.
+      {
+        column: "balance_of_payment",
+        label: "Balance of Payment",
+        type: "number",
+        computed: true,
       },
       { column: "hold_reason", label: "Hold Reason (escalation)", type: "text" },
     ],
@@ -272,60 +336,15 @@ export const ORDER_SECTIONS: OrderSection[] = [
     ],
   },
   {
+    // Purchase is now a per-EC list of bought-out items (order_boi_items),
+    // shown only when the SO's BOI = Yes. No flat fields of its own.
     key: "purchase",
     title: "Purchase",
     table: "order_purchase",
     scope: "item",
-    fields: [
-      { column: "boi", label: "BOI", type: "select", options: YES_NO },
-      {
-        column: "gear_box",
-        label: "Gear Box",
-        type: "select",
-        options: YES_NO,
-        dependsOn: [{ column: "boi", value: "Yes" }],
-      },
-      {
-        column: "gb_status",
-        label: "GB Status",
-        type: "select",
-        options: PART_STATUS,
-        dependsOn: [
-          { column: "boi", value: "Yes" },
-          { column: "gear_box", value: "Yes" },
-        ],
-      },
-      {
-        column: "motor",
-        label: "Motor",
-        type: "select",
-        options: YES_NO,
-        dependsOn: [{ column: "boi", value: "Yes" }],
-      },
-      {
-        column: "motor_status",
-        label: "Motor Status",
-        type: "select",
-        options: PART_STATUS,
-        dependsOn: [
-          { column: "boi", value: "Yes" },
-          { column: "motor", value: "Yes" },
-        ],
-      },
-      {
-        column: "pending_parts",
-        label: "Pending Parts / BOI Others",
-        type: "text",
-        dependsOn: [{ column: "boi", value: "Yes" }],
-      },
-      {
-        column: "boi_receipt_date",
-        label: "BOI Receipt Date",
-        type: "date",
-        dependsOn: [{ column: "boi", value: "Yes" }],
-      },
-      { column: "remarks", label: "Remarks", type: "text" },
-    ],
+    fields: [],
+    childTable: "order_boi_items",
+    childGate: { column: "boi", value: "Yes" },
   },
   {
     key: "qc",
@@ -454,8 +473,8 @@ export function selectOptionsFor(
   return opts;
 }
 
-// Dispatch lots are the one remaining 1:many child (an order can have many).
-export type ChildTable = "order_lots";
+// 1:many children of an EC: dispatch lots (Dispatch) and BOI items (Purchase).
+export type ChildTable = "order_lots" | "order_boi_items";
 
 export const LOT_FIELDS: OrderField[] = [
   { column: "lot_no", label: "Lot No.", type: "text" },
@@ -464,20 +483,50 @@ export const LOT_FIELDS: OrderField[] = [
   { column: "invoice_date", label: "Invoice Date", type: "date" },
 ];
 
-export const CHILD_FIELDS: Record<ChildTable, OrderField[]> = {
-  order_lots: LOT_FIELDS,
-};
-
-// Payment Terms (owned by Central Visibility) shown read-only in the Billing &
-// Operations and Accounts workspaces.
-export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
-  { column: "payment_terms", label: "Payment Terms", type: "text" },
+export const BOI_ITEM_FIELDS: OrderField[] = [
+  { column: "boi_item", label: "Item", type: "select", options: BOI_ITEM_OPTIONS },
+  {
+    column: "boi_item_other",
+    label: "Item (Others)",
+    type: "text",
+    dependsOn: [{ column: "boi_item", value: "Others" }],
+  },
+  { column: "receipt_date", label: "Receipt Date", type: "date" },
+  { column: "remarks", label: "Remarks", type: "text" },
 ];
 
-// Billing also sees Freight Terms & Packing Requirement (SO-level) read-only,
-// alongside Payment Terms.
+export const CHILD_FIELDS: Record<ChildTable, OrderField[]> = {
+  order_lots: LOT_FIELDS,
+  order_boi_items: BOI_ITEM_FIELDS,
+};
+
+// Payment Terms (owned by Central Visibility) shown read-only in the Accounts
+// workspace.
+export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
+  {
+    column: "payment_terms",
+    label: "Payment Terms",
+    type: "select",
+    options: PAYMENT_TERMS_OPTIONS,
+  },
+];
+
+// Billing's read-only context: Payment Terms / Freight / Packing / Bill Type
+// (SO-level), plus Amount Received & Balance of Payment (owned by Accounts).
+// bill_type is also what the billing document fields' dependsOn resolves.
 export const BILLING_CONTEXT_FIELDS: OrderField[] = [
-  { column: "payment_terms", label: "Payment Terms", type: "text" },
+  {
+    column: "payment_terms",
+    label: "Payment Terms",
+    type: "select",
+    options: PAYMENT_TERMS_OPTIONS,
+  },
+  {
+    column: "bill_type",
+    label: "Bill Type",
+    type: "select",
+    options: BILL_TYPE_OPTIONS,
+  },
   {
     column: "freight_terms",
     label: "Freight Terms",
@@ -490,7 +539,16 @@ export const BILLING_CONTEXT_FIELDS: OrderField[] = [
     type: "select",
     options: opts(["Wooden Box", "Loose"]),
   },
+  { column: "amount_received", label: "Amount Received", type: "number" },
+  { column: "balance_of_payment", label: "Balance of Payment", type: "number" },
 ];
+
+// The two BILLING_CONTEXT_FIELDS columns that live on order_accounts, not
+// orders (the billing page joins them with the right `from`).
+export const BILLING_CONTEXT_FROM_ACCOUNTS = new Set([
+  "amount_received",
+  "balance_of_payment",
+]);
 
 // Target Date for Drawing — an EC attribute (order_items) shown read-only in
 // the Drawing workspace.
@@ -504,9 +562,10 @@ export const QC_CONTEXT_FIELDS: OrderField[] = [
   { column: "qc_doc_target_date", label: "QC Target Date", type: "date" },
 ];
 
-// Target Date for Purchase (owned by Planning, on order_planning) plus LD / LD
-// Date (SO-level, on orders), shown read-only in Purchase.
+// BOI (SO-level, on orders), Target Date for Purchase (on order_planning) and
+// LD / LD Date (SO-level) shown read-only in the Purchase workspace.
 export const PURCHASE_CONTEXT_FIELDS: OrderField[] = [
+  { column: "boi", label: "BOI", type: "select", options: YES_NO },
   { column: "purchase_target_date", label: "Target Date for Purchase", type: "date" },
   { column: "ld", label: "LD", type: "select", options: YES_NO },
   { column: "ld_date", label: "LD Date", type: "date" },

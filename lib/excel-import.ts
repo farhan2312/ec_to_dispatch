@@ -54,13 +54,9 @@ const MAPPINGS: Mapping[] = [
   { header: "DRG SENT TO CLIENT Dt.", table: "order_drawing", column: "drg_sent_to_client_date", type: "date" },
   { header: "DRG. Approval Date", table: "order_drawing", column: "drg_approval_date", type: "date" },
   { header: "Target Dt. For Drg", table: "order_items", column: "drg_target_date", type: "date" },
-  { header: "BOI", table: "order_purchase", column: "boi", type: "text" },
-  { header: "Gear BOX", table: "order_purchase", column: "gear_box", type: "text" },
-  { header: "GB STATUS", table: "order_purchase", column: "gb_status", type: "text" },
-  { header: "Motor", table: "order_purchase", column: "motor", type: "text" },
-  { header: "MOTOR STATUS", table: "order_purchase", column: "motor_status", type: "text" },
-  { header: "PENDING PARTS / BOI Others", table: "order_purchase", column: "pending_parts", type: "text" },
-  { header: "BOI DATE RECEIPT DATE", table: "order_purchase", column: "boi_receipt_date", type: "date" },
+  { header: "BOI", table: "orders", column: "boi", type: "text" },
+  // Gear Box / Motor / status / pending / receipt columns are replaced by the
+  // per-EC order_boi_items list; they no longer map to a single column.
   { header: "Target Dt. For Purchase", table: "order_planning", column: "purchase_target_date", type: "date" },
   { header: "Required QC Documents", table: "order_qc", column: "required_qc_documents", type: "text" },
   { header: "Target Dt. For Doc. Submission", table: "order_items", column: "qc_doc_target_date", type: "date" },

@@ -6,6 +6,7 @@ import { canEditSection } from "@/lib/roles";
 import { listOrdersForSection } from "@/lib/orders";
 import {
   BILLING_CONTEXT_FIELDS,
+  BILLING_CONTEXT_FROM_ACCOUNTS,
   SECTION_BY_TABLE,
 } from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
@@ -31,7 +32,13 @@ export default async function BillingWorkspacePage({
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const orders = await listOrdersForSection(
     TABLE,
-    BILLING_CONTEXT_FIELDS.map((f) => ({ column: f.column, type: f.type }))
+    BILLING_CONTEXT_FIELDS.map((f) => ({
+      column: f.column,
+      type: f.type,
+      from: BILLING_CONTEXT_FROM_ACCOUNTS.has(f.column)
+        ? ("order_accounts" as const)
+        : ("orders" as const),
+    }))
   );
 
   return (

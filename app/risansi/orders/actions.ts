@@ -91,6 +91,17 @@ export async function createOrderAction(
   }
 }
 
+/** The SO's core "Order details" row, for a read-only popup. Any signed-in
+ *  user with a workspace can view it (billing/accounts "View order details"). */
+export async function getOrderCoreAction(
+  orderId: string
+): Promise<Record<string, unknown> | null> {
+  const user = await getCurrentUser();
+  if (!user) return null;
+  const detail = await getOrderDetail(orderId);
+  return detail?.order ?? null;
+}
+
 export type CreateItemResult =
   | { ok: true; itemId: string }
   | { ok: false; error: string };
@@ -109,8 +120,15 @@ export async function createItemAction(
   const order = await getOrderDetail(orderId);
   if (!order) return { ok: false, error: "Order not found." };
 
+  // Every EC inherits the SO's Order Type (Pump/Spare) — the Add-On is of that
+  // type, not re-selected per EC.
+  const itemInput: NewItemInput = {
+    ...input,
+    item_type: (order.order.order_type as string | null) ?? input.item_type,
+  };
+
   try {
-    const { id: itemId } = await createItem(orderId, input);
+    const { id: itemId } = await createItem(orderId, itemInput);
     const soLabel = String(order.order.so_no ?? `#${order.order.sl_no}`);
     const ecLabel = (input.ec_no ?? "").trim();
     const label = ecLabel ? `${soLabel} · ${ecLabel}` : soLabel;
@@ -131,7 +149,7 @@ export async function createItemAction(
       table: "order_items",
       actorRole: user.role,
       before: null,
-      after: input as Record<string, unknown>,
+      after: itemInput as Record<string, unknown>,
     });
 
     revalidatePath("/risansi/orders");
@@ -322,10 +340,16 @@ export async function updateOrderSectionAction(
 
 export type ChildActionResult = { ok: true } | { ok: false; error: string };
 
+const CHILD_TABLES: readonly ChildTable[] = ["order_lots", "order_boi_items"];
+
+function isChildTable(table: string): table is ChildTable {
+  return (CHILD_TABLES as readonly string[]).includes(table);
+}
+
 async function guardChild(table: string): Promise<ChildActionResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
-  if (table !== "order_lots") {
+  if (!isChildTable(table)) {
     return { ok: false, error: "Unknown list." };
   }
   if (!canEditChild(user.role, table)) {

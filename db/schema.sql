@@ -188,7 +188,8 @@ CREATE TABLE IF NOT EXISTS order_purchase (
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-ALTER TABLE order_purchase ADD COLUMN IF NOT EXISTS remarks TEXT;
+-- (order_purchase's flat fields are dropped in the BOI restructure below — the
+-- old `remarks` ADD was removed so it doesn't resurrect that column.)
 
 -- QC — cols AP–AS.
 CREATE TABLE IF NOT EXISTS order_qc (
@@ -901,3 +902,92 @@ BEGIN
 END $$;
 ALTER TABLE order_billing ADD COLUMN IF NOT EXISTS amount_received NUMERIC(14,2);
 ALTER TABLE order_billing ADD COLUMN IF NOT EXISTS balance_of_payment NUMERIC(14,2);
+
+-- Order Type (Pump/Spare) is an SO-level classifier; every EC added under the
+-- SO (Add-On) inherits it as its item_type.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_type TEXT;
+
+-- BOI (Yes/No) moves to the SO's Purchase Order Details (Central sets it,
+-- Purchase sees it read-only). Migrate any per-EC order_purchase.boi up to the
+-- SO, then Purchase manages bought-out items as a per-EC list (order_boi_items)
+-- and the old flat Purchase columns are dropped.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS boi TEXT;
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_purchase' AND column_name = 'boi'
+    ) THEN
+        UPDATE orders o
+           SET boi = COALESCE(o.boi, sub.boi)
+          FROM (
+            SELECT it.order_id, MAX(pu.boi) AS boi
+              FROM order_purchase pu
+              JOIN order_items it ON it.id = pu.item_id
+             WHERE pu.boi IS NOT NULL
+             GROUP BY it.order_id
+          ) sub
+         WHERE sub.order_id = o.id;
+    END IF;
+END $$;
+-- Drop the old flat Purchase columns unconditionally (they're replaced by the
+-- per-EC order_boi_items list) so none can linger or resurrect.
+ALTER TABLE order_purchase DROP COLUMN IF EXISTS boi;
+ALTER TABLE order_purchase DROP COLUMN IF EXISTS gear_box;
+ALTER TABLE order_purchase DROP COLUMN IF EXISTS gb_status;
+ALTER TABLE order_purchase DROP COLUMN IF EXISTS motor;
+ALTER TABLE order_purchase DROP COLUMN IF EXISTS motor_status;
+ALTER TABLE order_purchase DROP COLUMN IF EXISTS pending_parts;
+ALTER TABLE order_purchase DROP COLUMN IF EXISTS boi_receipt_date;
+ALTER TABLE order_purchase DROP COLUMN IF EXISTS remarks;
+
+-- Per-EC bought-out items, managed by Purchase (Item + receipt date + remarks;
+-- a free-text name when Item = Others).
+CREATE TABLE IF NOT EXISTS order_boi_items (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    item_id        UUID NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+    boi_item       TEXT,   -- Gear Box / Motor / VFD / … / Others
+    boi_item_other TEXT,   -- free text when boi_item = Others
+    receipt_date   DATE,
+    remarks        TEXT,
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS order_boi_items_item_id_idx ON order_boi_items (item_id);
+
+-- Amount Received & Balance of Payment move from Billing to Accounts (Accounts
+-- fills them; Billing sees them read-only). Migrate any existing values across.
+ALTER TABLE order_accounts ADD COLUMN IF NOT EXISTS amount_received NUMERIC(14,2);
+ALTER TABLE order_accounts ADD COLUMN IF NOT EXISTS balance_of_payment NUMERIC(14,2);
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'order_billing' AND column_name = 'amount_received'
+    ) THEN
+        INSERT INTO order_accounts (order_id)
+            SELECT b.order_id FROM order_billing b
+             WHERE (b.amount_received IS NOT NULL OR b.balance_of_payment IS NOT NULL)
+               AND NOT EXISTS (SELECT 1 FROM order_accounts a WHERE a.order_id = b.order_id);
+        UPDATE order_accounts a
+           SET amount_received = COALESCE(a.amount_received, b.amount_received),
+               balance_of_payment = COALESCE(a.balance_of_payment, b.balance_of_payment)
+          FROM order_billing b
+         WHERE b.order_id = a.order_id;
+        ALTER TABLE order_billing DROP COLUMN amount_received;
+        ALTER TABLE order_billing DROP COLUMN balance_of_payment;
+    END IF;
+END $$;
+
+-- Bill Type (Performa/Tax/Challan) on the SO (in Purchase Order Details); the
+-- billing document fields shown depend on it.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS bill_type TEXT;
+
+-- Billing document fields for Tax and Challan, alongside the existing PI
+-- (Performa) fields. FR Reason applies to Challan.
+ALTER TABLE order_billing ADD COLUMN IF NOT EXISTS tax_no TEXT;
+ALTER TABLE order_billing ADD COLUMN IF NOT EXISTS tax_date DATE;
+ALTER TABLE order_billing ADD COLUMN IF NOT EXISTS tax_value NUMERIC(14,2);
+ALTER TABLE order_billing ADD COLUMN IF NOT EXISTS challan_no TEXT;
+ALTER TABLE order_billing ADD COLUMN IF NOT EXISTS challan_date DATE;
+ALTER TABLE order_billing ADD COLUMN IF NOT EXISTS challan_value NUMERIC(14,2);
+ALTER TABLE order_billing ADD COLUMN IF NOT EXISTS fr_reason TEXT;

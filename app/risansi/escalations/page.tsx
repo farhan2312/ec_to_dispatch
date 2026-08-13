@@ -60,7 +60,7 @@ export default async function EscalationsPage() {
               <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
                 <th className="px-4 py-3">Sl.</th>
                 <th className="px-4 py-3">SO No.</th>
-                <th className="px-4 py-3">Party</th>
+                <th className="px-4 py-3">Client Name</th>
                 <th className="px-4 py-3">Hold Reason</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
                 <th className="px-4 py-3"></th>

@@ -7,8 +7,10 @@ import { Loader2 } from "lucide-react";
 import { createOrderAction } from "@/app/risansi/orders/actions";
 import type { NewOrderInput } from "@/lib/orders";
 import {
+  BILL_TYPE_OPTIONS,
   CURRENCY_OPTIONS,
-  INDUSTRY_TYPE_OPTIONS,
+  ORDER_TYPE_OPTIONS,
+  PAYMENT_TERMS_OPTIONS,
   YES_NO_OPTIONS,
 } from "@/lib/order-schema";
 
@@ -31,12 +33,7 @@ const SECTIONS: Section[] = [
     fields: [
       { name: "client_code", label: "Client Code", type: "text", required: true },
       { name: "party", label: "Client Name", type: "text" },
-      {
-        name: "industry_type",
-        label: "Industry",
-        type: "select",
-        options: INDUSTRY_TYPE_OPTIONS,
-      },
+      { name: "industry_type", label: "Industry", type: "text" },
       { name: "client_type", label: "Client Type", type: "text", required: true },
       { name: "nature_of_supply", label: "Market Type", type: "text" },
       { name: "agent", label: "Rep(s)", type: "text" },
@@ -45,6 +42,19 @@ const SECTIONS: Section[] = [
   {
     title: "Purchase Order Details",
     fields: [
+      {
+        name: "order_type",
+        label: "Order Type",
+        type: "select",
+        options: ORDER_TYPE_OPTIONS,
+      },
+      {
+        name: "bill_type",
+        label: "Bill Type",
+        type: "select",
+        options: BILL_TYPE_OPTIONS,
+      },
+      { name: "boi", label: "BOI", type: "select", options: YES_NO_OPTIONS },
       { name: "po_no", label: "Purchase Order Number", type: "text" },
       { name: "customer_po_date", label: "Purchase Order Date", type: "date" },
       {
@@ -79,7 +89,12 @@ const SECTIONS: Section[] = [
         ],
       },
       { name: "qc_required", label: "QC Req", type: "select", options: YES_NO_OPTIONS },
-      { name: "payment_terms", label: "Payment Terms", type: "text" },
+      {
+        name: "payment_terms",
+        label: "Payment Terms",
+        type: "select",
+        options: PAYMENT_TERMS_OPTIONS,
+      },
       { name: "ld", label: "LD", type: "select", options: YES_NO_OPTIONS },
       {
         name: "ld_date",

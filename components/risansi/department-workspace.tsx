@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Paperclip, Pencil, X } from "lucide-react";
+import { ClipboardList, Loader2, Paperclip, Pencil, X } from "lucide-react";
 import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
 import {
   SECTION_BY_TABLE,
@@ -13,6 +13,7 @@ import {
 } from "@/lib/order-schema";
 import { Pagination, SearchInput, useTableSearch } from "./table-tools";
 import { QcDocumentsModal } from "./qc-documents-modal";
+import { OrderDetailsModal } from "./order-details-modal";
 import type { QcDocTable } from "@/lib/orders";
 
 // Only the QC workspace passes this today; kept generic (a list, so more than
@@ -52,6 +53,13 @@ function rowSearchText(o: Row): string {
   return [o.sl_no, o.so_no, o.ec_no, o.party, o.item_type]
     .map((v) => (v == null ? "" : String(v)))
     .join(" ");
+}
+
+// A dependsOn'd field (e.g. a billing document field gated on the order's
+// bill_type) only applies to a row whose data satisfies the condition.
+function fieldApplies(field: OrderField, row: Row): boolean {
+  if (!field.dependsOn) return true;
+  return field.dependsOn.every((d) => toInput(row[d.column]) === d.value);
 }
 
 export function DepartmentWorkspace({
@@ -106,11 +114,18 @@ export function DepartmentWorkspace({
   // Accounts need it for their day-to-day work.
   const showParty = table === "order_billing" || table === "order_accounts";
 
+  // Cascade: only show a conditional field's column when at least one order in
+  // the queue actually matches its condition (e.g. Tax columns appear only if
+  // some SO's bill_type is Tax).
+  const visibleFields = fields.filter(
+    (f) => !f.dependsOn || orders.some((o) => fieldApplies(f, o))
+  );
+
   const colCount =
     3 +
     (showParty ? 1 : 0) +
     readonlyFields.length +
-    fields.length +
+    visibleFields.length +
     (canEdit ? 1 : 0) +
     documents.length;
   const title = SECTION_BY_TABLE.get(table)?.title ?? "Details";
@@ -133,7 +148,7 @@ export function DepartmentWorkspace({
                 <th className="px-4 py-3">Sl.</th>
                 <th className="px-4 py-3">SO No.</th>
                 <th className="px-4 py-3">EC No.</th>
-                {showParty && <th className="px-4 py-3">Party</th>}
+                {showParty && <th className="px-4 py-3">Client Name</th>}
                 {readonlyFields.map((f) => (
                   <th
                     key={f.column}
@@ -142,7 +157,7 @@ export function DepartmentWorkspace({
                     {f.label}
                   </th>
                 ))}
-                {fields.map((f) => (
+                {visibleFields.map((f) => (
                   <th key={f.column} className="px-3 py-3 whitespace-nowrap">
                     {f.label}
                   </th>
@@ -188,9 +203,9 @@ export function DepartmentWorkspace({
                       {formatValue(f, order[f.column])}
                     </td>
                   ))}
-                  {fields.map((f) => (
+                  {visibleFields.map((f) => (
                     <td key={f.column} className="px-3 py-3 whitespace-nowrap">
-                      {formatValue(f, order[f.column])}
+                      {fieldApplies(f, order) ? formatValue(f, order[f.column]) : "—"}
                     </td>
                   ))}
                   {documents.map((doc) => (
@@ -294,6 +309,7 @@ function EditSectionModal({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showOrder, setShowOrder] = useState(false);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -327,9 +343,23 @@ function EditSectionModal({
           <X className="h-5 w-5" />
         </button>
 
-        <h2 className="font-display text-lg font-semibold text-foreground">
-          {title}
-        </h2>
+        <div className="flex items-center justify-between gap-3 pr-8">
+          <h2 className="font-display text-lg font-semibold text-foreground">
+            {title}
+          </h2>
+          {/* orderId is the SO's order_id only for SO-scope sections
+              (Billing & Operations, Accounts) — the rest are keyed by item_id. */}
+          {(table === "order_billing" || table === "order_accounts") && (
+            <button
+              type="button"
+              onClick={() => setShowOrder(true)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-input-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+            >
+              <ClipboardList className="h-3.5 w-3.5" />
+              View order details
+            </button>
+          )}
+        </div>
         <p className="mb-5 text-sm text-muted">
           Order #{String(data.sl_no ?? "—")}
           {identity ? ` · ${identity}` : ""}
@@ -360,6 +390,18 @@ function EditSectionModal({
 
           <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
             {fields.map((field) => {
+              // Cascade: a dependsOn'd field (e.g. billing docs gated on the
+              // order's bill_type) is hidden entirely when its condition, read
+              // from the edit values then the row data, isn't met.
+              if (
+                field.dependsOn &&
+                !field.dependsOn.every(
+                  (d) =>
+                    (values[d.column] ?? toInput(data[d.column])) === d.value
+                )
+              ) {
+                return null;
+              }
               // Computed and (for non-central users) centralOnly fields are
               // shown read-only rather than as inputs.
               if (field.computed || (field.centralOnly && !canEditCentral)) {
@@ -377,11 +419,6 @@ function EditSectionModal({
                   </div>
                 );
               }
-              const disabled = field.dependsOn
-                ? !field.dependsOn.every(
-                    (d) => (values[d.column] ?? "") === d.value
-                  )
-                : false;
               return (
                 <div key={field.column}>
                   <label className="mb-1.5 block text-[13px] font-medium text-brand-label">
@@ -393,7 +430,6 @@ function EditSectionModal({
                       onChange={(e) =>
                         setValues((v) => ({ ...v, [field.column]: e.target.value }))
                       }
-                      disabled={disabled}
                       className={`${inputClass} cursor-pointer`}
                     >
                       <option value="">—</option>
@@ -417,7 +453,6 @@ function EditSectionModal({
                       onChange={(e) =>
                         setValues((v) => ({ ...v, [field.column]: e.target.value }))
                       }
-                      disabled={disabled}
                       className={inputClass}
                     />
                   )}
@@ -445,6 +480,10 @@ function EditSectionModal({
           </div>
         </form>
       </div>
+
+      {showOrder && (
+        <OrderDetailsModal orderId={orderId} onClose={() => setShowOrder(false)} />
+      )}
     </div>
   );
 }

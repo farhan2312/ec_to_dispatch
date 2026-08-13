@@ -90,10 +90,15 @@ export function OrderDetail({
 
       <div className="max-w-6xl space-y-6">
         {visibleSections.map((section) => {
-          const data =
+          let data: Row | null =
             section.table === "orders"
               ? detail.order
               : (detail[section.table as "order_billing" | "order_accounts"] as Row | null);
+          // The billing document fields gate on the SO's bill_type, so make it
+          // available to that section's dependsOn resolution.
+          if (section.table === "order_billing") {
+            data = { ...(data ?? {}), bill_type: order.bill_type };
+          }
           return (
             <EditableSection
               key={section.key}
@@ -203,7 +208,12 @@ export function OrderDetail({
       </div>
 
       {addOpen && (
-        <AddOnForm orderId={orderId} soLabel={soLabel} onClose={() => setAddOpen(false)} />
+        <AddOnForm
+          orderId={orderId}
+          soLabel={soLabel}
+          orderType={str(order.order_type) || null}
+          onClose={() => setAddOpen(false)}
+        />
       )}
     </div>
   );

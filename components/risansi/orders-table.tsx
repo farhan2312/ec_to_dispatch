@@ -231,7 +231,7 @@ export function OrdersTable({
                 <th className="px-4 py-3">Sl. No.</th>
                 <th className="px-4 py-3">SO No.</th>
                 <th className="px-4 py-3">SO Date</th>
-                <th className="px-4 py-3">Party</th>
+                <th className="px-4 py-3">Client Name</th>
                 <th className="px-4 py-3">Client Code</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
                 <th className="px-4 py-3">Payment Status</th>

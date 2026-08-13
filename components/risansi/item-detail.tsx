@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { ITEM_SECTIONS, LOT_FIELDS } from "@/lib/order-schema";
+import { CHILD_FIELDS, ITEM_SECTIONS, LOT_FIELDS } from "@/lib/order-schema";
 import {
   canAccessDepartment,
   canEditChild,
@@ -71,13 +71,46 @@ export function ItemDetail({
 
       <div className="max-w-6xl space-y-6">
         {visibleSections.map((section) => {
+          // A section backed by a child list (Purchase → BOI items) renders the
+          // list, gated by its childGate against the SO (e.g. boi = Yes).
+          if (section.childTable) {
+            const gateOk =
+              !section.childGate ||
+              str(order[section.childGate.column]) === section.childGate.value;
+            if (!gateOk) {
+              return (
+                <section
+                  key={section.key}
+                  className="rounded-xl border border-card-border bg-surface p-6 shadow-sm"
+                >
+                  <h2 className="font-display text-base font-semibold text-foreground">
+                    {section.title}
+                  </h2>
+                  <p className="mt-1 text-sm text-muted">
+                    No BOI for this order (BOI = No).
+                  </p>
+                </section>
+              );
+            }
+            return (
+              <OrderChildList
+                key={section.key}
+                orderId={itemId}
+                table={section.childTable}
+                title={`${section.title} — BOI Items`}
+                fields={CHILD_FIELDS[section.childTable]}
+                rows={detail[section.childTable] as Row[]}
+                canEdit={canEditChild(role, section.childTable)}
+              />
+            );
+          }
+
           const data =
             section.table === "order_items"
               ? detail.item
               : (detail[
                   section.table as
                     | "order_drawing"
-                    | "order_purchase"
                     | "order_qc"
                     | "order_planning"
                     | "order_assembly_dispatch"

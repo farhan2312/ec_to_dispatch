@@ -2,14 +2,10 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Package } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canEditSection, reminderDeptForTable } from "@/lib/roles";
-import { listItemsForSection } from "@/lib/orders";
+import { canEditChild, canEditSection, reminderDeptForTable } from "@/lib/roles";
+import { listItemsForPurchase } from "@/lib/orders";
 import { listRemindersForDepartment } from "@/lib/reminders";
-import {
-  PURCHASE_CONTEXT_FIELDS,
-  SECTION_BY_TABLE,
-} from "@/lib/order-schema";
-import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
+import { PurchaseWorkspace } from "@/components/risansi/purchase-workspace";
 import { RemindersPanel } from "@/components/risansi/reminders-panel";
 
 export const metadata: Metadata = {
@@ -30,21 +26,8 @@ export default async function PurchaseWorkspacePage({
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
   const { edit } = await searchParams;
-  const section = SECTION_BY_TABLE.get(TABLE)!;
-  const [orders, reminders] = await Promise.all([
-    listItemsForSection(
-      TABLE,
-      PURCHASE_CONTEXT_FIELDS.map((f) => ({
-        column: f.column,
-        type: f.type,
-        // Target Date for Purchase lives on order_planning (per EC); LD/LD Date
-        // are SO-level on orders.
-        from:
-          f.column === "purchase_target_date"
-            ? ("order_planning" as const)
-            : ("orders" as const),
-      }))
-    ),
+  const [items, reminders] = await Promise.all([
+    listItemsForPurchase(),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);
 
@@ -59,20 +42,19 @@ export default async function PurchaseWorkspacePage({
             Purchase
           </h1>
           <p className="text-sm text-muted">
-            Track BOI, gear box &amp; motor status, and readiness. Target Date for
-            Purchase is set by Planning.
+            Add bought-out (BOI) items per EC when the order&apos;s BOI = Yes.
+            BOI and the purchase target date are set by Central Visibility /
+            Planning.
           </p>
         </div>
       </div>
 
       <RemindersPanel reminders={reminders} />
 
-      <DepartmentWorkspace
-        table={TABLE}
-        fields={section.fields}
-        orders={orders}
-        readonlyFields={PURCHASE_CONTEXT_FIELDS}
-        openOrderId={edit}
+      <PurchaseWorkspace
+        rows={items}
+        canEdit={canEditChild(user.role, "order_boi_items")}
+        openItemId={edit}
       />
     </div>
   );

@@ -194,14 +194,8 @@ const done = {
   },
   drawing: (r: OrderOverviewRow) =>
     (r.drg_status ?? "").trim().toLowerCase() === "drg approved",
-  purchase: (r: OrderOverviewRow) => {
-    // BOI parts received when any part-status column shows RECEIVED / stock.
-    const ok = (v: string | null) => {
-      const s = (v ?? "").trim().toUpperCase();
-      return s === "RECEIVED" || s === "AVAILABLE STOCK";
-    };
-    return ok(r.gb_status) || ok(r.motor_status);
-  },
+  // BOI items all received (or the SO doesn't need BOI).
+  purchase: (r: OrderOverviewRow) => r.purchase_done,
   qc: (r: OrderOverviewRow) => r.qc_submitted,
   planning: (r: OrderOverviewRow) =>
     (r.planning_status ?? "").trim().toLowerCase() === "completed",
@@ -400,7 +394,7 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
               <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
                 <th className="px-4 py-3">Sl.</th>
                 <th className="px-4 py-3">SO / EC</th>
-                <th className="px-4 py-3">Party</th>
+                <th className="px-4 py-3">Client Name</th>
                 <th className="px-3 py-3">Billing</th>
                 <th className="px-3 py-3">Accounts</th>
                 <th className="px-3 py-3">Drawing</th>
@@ -414,10 +408,13 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
             <tbody className="divide-y divide-card-border">
               {pipelineRows.map((row) => {
                 const overdueRow = isOverdue(row);
+                // Purchase chip: BOI not needed, or items received / pending.
                 const purchase =
-                  [row.gb_status, row.motor_status]
-                    .filter((s) => s && s.trim() !== "")
-                    .join(" / ") || null;
+                  (row.boi ?? "") !== "Yes"
+                    ? "No BOI"
+                    : row.purchase_done
+                      ? "BOI received"
+                      : "BOI pending";
                 return (
                   <tr key={row.id} className="text-foreground">
                     <td className="px-4 py-3 font-medium tabular-nums">

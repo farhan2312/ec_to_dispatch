@@ -8,7 +8,11 @@ import {
   deleteOrderChildAction,
   updateOrderChildAction,
 } from "@/app/risansi/orders/actions";
-import type { ChildTable, OrderField } from "@/lib/order-schema";
+import {
+  selectOptionsFor,
+  type ChildTable,
+  type OrderField,
+} from "@/lib/order-schema";
 
 type Row = Record<string, unknown>;
 
@@ -46,6 +50,19 @@ export function OrderChildList({
     const id = String(row.id);
     return edits[id]?.[column] ?? toInput(row[column]);
   }
+
+  // A dependsOn'd field (e.g. the Others free-text) applies to a row only when
+  // its condition is satisfied by that row's current value.
+  function applies(field: OrderField, row: Row): boolean {
+    if (!field.dependsOn) return true;
+    return field.dependsOn.every((d) => valueFor(row, d.column) === d.value);
+  }
+
+  // Hide a conditional column entirely until some row actually qualifies (e.g.
+  // "Item (Others)" only appears once a row's Item = Others).
+  const visibleFields = fields.filter(
+    (f) => !f.dependsOn || rows.some((r) => applies(f, r))
+  );
 
   function update(row: Row, column: string, value: string) {
     const id = String(row.id);
@@ -117,7 +134,7 @@ export function OrderChildList({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
-                {fields.map((f) => (
+                {visibleFields.map((f) => (
                   <th key={f.column} className="px-3 py-2 whitespace-nowrap">
                     {f.label}
                   </th>
@@ -128,19 +145,36 @@ export function OrderChildList({
             <tbody className="divide-y divide-card-border">
               {rows.map((row) => {
                 const id = String(row.id);
+                const inputClass =
+                  "h-9 w-full min-w-[120px] rounded-lg border border-input-border bg-surface px-2.5 text-[13px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
                 return (
                   <tr key={id} className="text-foreground">
-                    {fields.map((f) => (
+                    {visibleFields.map((f) => (
                       <td key={f.column} className="px-3 py-2">
-                        {canEdit ? (
+                        {!applies(f, row) ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : !canEdit ? (
+                          <span>{valueFor(row, f.column) || "—"}</span>
+                        ) : f.type === "select" ? (
+                          <select
+                            value={valueFor(row, f.column)}
+                            onChange={(e) => update(row, f.column, e.target.value)}
+                            className={`${inputClass} cursor-pointer`}
+                          >
+                            <option value="">—</option>
+                            {selectOptionsFor(f, valueFor(row, f.column)).map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
                           <input
                             type={f.type === "date" ? "date" : "text"}
                             value={valueFor(row, f.column)}
                             onChange={(e) => update(row, f.column, e.target.value)}
-                            className="h-9 w-full min-w-[120px] rounded-lg border border-input-border bg-surface px-2.5 text-[13px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
+                            className={inputClass}
                           />
-                        ) : (
-                          <span>{valueFor(row, f.column) || "—"}</span>
                         )}
                       </td>
                     ))}

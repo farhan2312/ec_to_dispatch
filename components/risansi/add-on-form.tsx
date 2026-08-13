@@ -17,16 +17,23 @@ const inputClass =
 export function AddOnForm({
   orderId,
   soLabel,
+  orderType,
   onClose,
 }: {
   orderId: string;
   soLabel: string;
+  // The SO's Order Type (Pump/Spare); the EC inherits it, so the manual
+  // "Pump Type" field is hidden and this is shown instead.
+  orderType?: string | null;
   onClose: () => void;
 }) {
   const router = useRouter();
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // item_type is inherited from the SO, so don't offer it as an input.
+  const fields = ITEM_SECTION.fields.filter((f) => f.column !== "item_type");
 
   function set(column: string, value: string) {
     setValues((prev) => ({ ...prev, [column]: value }));
@@ -60,9 +67,12 @@ export function AddOnForm({
         </button>
 
         <h2 className="font-display text-lg font-semibold text-foreground">
-          Add pump / spare order
+          Add {orderType ? orderType.toLowerCase() : "pump / spare"} order
         </h2>
-        <p className="mb-5 text-sm text-muted">EC under {soLabel}</p>
+        <p className="mb-5 text-sm text-muted">
+          EC under {soLabel}
+          {orderType ? ` · Type: ${orderType}` : ""}
+        </p>
 
         <form onSubmit={submit}>
           {error && (
@@ -72,7 +82,7 @@ export function AddOnForm({
           )}
 
           <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
-            {ITEM_SECTION.fields.map((field) => (
+            {fields.map((field) => (
               <div key={field.column}>
                 <label className="mb-1.5 block text-[13px] font-medium text-brand-label">
                   {field.label}

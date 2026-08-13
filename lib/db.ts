@@ -14,7 +14,6 @@ declare global {
 
 function createPool(): Pool {
   const connectionString = process.env.DATABASE_URL;
-  console.log(process.env.DATABASE_URL);
 
   if (!connectionString) {
     throw new Error(
@@ -22,7 +21,7 @@ function createPool(): Pool {
     );
   }
 
-  return new Pool({
+  const pool = new Pool({
     connectionString,
     // Azure PostgreSQL requires TLS. `sslmode=require` in the connection string
     // enables it; this ensures the driver negotiates SSL even if the mode flag
@@ -31,7 +30,19 @@ function createPool(): Pool {
     max: 10,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
+    // Keep the TCP connection alive so Azure/network idle timeouts are less
+    // likely to silently drop a pooled connection between requests.
+    keepAlive: true,
   });
+
+  // Azure can drop an idle connection at any time; pg surfaces that as an
+  // 'error' event on the idle client. Without a listener it would crash the
+  // process — log it and let the pool evict the broken client instead.
+  pool.on("error", (err) => {
+    console.error("Idle PostgreSQL client error (connection will be recycled):", err.message);
+  });
+
+  return pool;
 }
 
 export const pool: Pool = global.__pgPool ?? createPool();
@@ -40,13 +51,28 @@ if (process.env.NODE_ENV !== "production") {
   global.__pgPool = pool;
 }
 
+// A broken/stale pooled connection typically fails with one of these before
+// any work is done; the query is safe to retry once on a fresh connection.
+const RETRYABLE =
+  /Connection terminated|terminated unexpectedly|ECONNRESET|connection error|server closed the connection|Client has encountered/i;
+
 /**
  * Run a parameterized query against the pool.
  * Always pass user input via `params` ($1, $2, …) — never string-interpolate.
+ *
+ * Retries once when a pooled connection was dropped by the server (a transient
+ * "Connection terminated unexpectedly" from Azure), which discards the broken
+ * client and grabs a fresh one.
  */
-export function query<T extends Record<string, unknown> = Record<string, unknown>>(
-  text: string,
-  params?: unknown[]
-) {
-  return pool.query<T>(text, params);
+export async function query<
+  T extends Record<string, unknown> = Record<string, unknown>,
+>(text: string, params?: unknown[]) {
+  try {
+    return await pool.query<T>(text, params);
+  } catch (err) {
+    if (err instanceof Error && RETRYABLE.test(err.message)) {
+      return await pool.query<T>(text, params);
+    }
+    throw err;
+  }
 }

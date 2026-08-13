@@ -2,7 +2,7 @@
 
 import { cookies } from "next/headers";
 import { verifyCredentials } from "@/lib/users";
-import { SESSION_COOKIE } from "@/lib/session";
+import { SESSION_COOKIE, SESSION_MAX_AGE, signSession } from "@/lib/session";
 import { logAudit } from "@/lib/audit";
 
 export type LoginInput = { email: string; password: string };
@@ -43,14 +43,16 @@ export async function login(input: LoginInput): Promise<LoginResult> {
     return { ok: false, error: STATUS_MESSAGES[result.reason] };
   }
 
-  // Minimal session: store the user id in an httpOnly cookie.
+  // Signed session: store a JWT (HS256) carrying the user id in an httpOnly
+  // cookie. The signature prevents a forged/tampered cookie from being accepted.
+  const token = await signSession(result.user.id);
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, result.user.id, {
+  cookieStore.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: 60 * 60 * 24 * 7, // 7 days
+    maxAge: SESSION_MAX_AGE,
   });
 
   await logAudit({

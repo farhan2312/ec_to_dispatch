@@ -46,10 +46,8 @@ const MAPPINGS: Mapping[] = [
   { header: "Payment Terms", table: "orders", column: "payment_terms", type: "text" },
   { header: "Freight Terms", table: "orders", column: "freight_terms", type: "text" },
   { header: "Packing Requirement", table: "orders", column: "packing_requirement", type: "text" },
-  { header: "PI No.", table: "order_billing", column: "pi_no", type: "text" },
-  { header: "PI Date", table: "order_billing", column: "pi_date", type: "date" },
-  { header: "PI Value", table: "order_billing", column: "pi_value", type: "numeric" },
-  { header: "Payment Status", table: "order_accounts", column: "payment_status", type: "text" },
+  // PI No./Date/Value and Payment Status are now per-PI (order_billing_docs),
+  // 1:many under an SO — no longer flat mappings on a single billing row.
   { header: "DRG. Status", table: "order_drawing", column: "drg_status", type: "text" },
   { header: "DRG SENT TO CLIENT Dt.", table: "order_drawing", column: "drg_sent_to_client_date", type: "date" },
   { header: "DRG. Approval Date", table: "order_drawing", column: "drg_approval_date", type: "date" },

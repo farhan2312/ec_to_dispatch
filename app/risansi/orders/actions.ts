@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { query } from "@/lib/db";
 import { getCurrentUser } from "@/lib/session";
 import {
   addChildRow,
@@ -37,7 +38,7 @@ import {
   isCentral,
 } from "@/lib/roles";
 import { logAudit } from "@/lib/audit";
-import { notifySectionSaved } from "@/lib/notifications";
+import { emitNotification, notifySectionSaved } from "@/lib/notifications";
 
 export type CreateOrderResult =
   | { ok: true; slNo: number }
@@ -89,6 +90,28 @@ export async function createOrderAction(
     console.error("createOrder failed:", error);
     return { ok: false, error: "Could not create the order. Please try again." };
   }
+}
+
+export type ViewPisPayload = {
+  bill_type: string | null;
+  // For Tax Invoice: the PI list. For Challan: a single flat row (or null).
+  pis: Record<string, unknown>[];
+  challan: Record<string, unknown> | null;
+};
+
+/** Read-only PI (or Challan) view for the Accounts workspace. */
+export async function getOrderPisAction(
+  orderId: string
+): Promise<ViewPisPayload> {
+  const user = await getCurrentUser();
+  if (!user) return { bill_type: null, pis: [], challan: null };
+  const detail = await getOrderDetail(orderId);
+  if (!detail) return { bill_type: null, pis: [], challan: null };
+  return {
+    bill_type: (detail.order.bill_type as string | null) ?? null,
+    pis: detail.order_billing_docs ?? [],
+    challan: (detail.order_billing as Record<string, unknown> | null) ?? null,
+  };
 }
 
 /** The SO's core "Order details" row, for a read-only popup. Any signed-in
@@ -340,7 +363,11 @@ export async function updateOrderSectionAction(
 
 export type ChildActionResult = { ok: true } | { ok: false; error: string };
 
-const CHILD_TABLES: readonly ChildTable[] = ["order_lots", "order_boi_items"];
+const CHILD_TABLES: readonly ChildTable[] = [
+  "order_lots",
+  "order_boi_items",
+  "order_billing_docs",
+];
 
 function isChildTable(table: string): table is ChildTable {
   return (CHILD_TABLES as readonly string[]).includes(table);
@@ -382,19 +409,69 @@ export async function updateOrderChildAction(
 ): Promise<ChildActionResult> {
   const guard = await guardChild(table);
   if (!guard.ok) return guard;
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  const tbl = table as ChildTable;
   // Ignore any keys not in the child schema.
-  const allowed = new Set(CHILD_FIELDS[table as ChildTable].map((f) => f.column));
+  const allowed = new Set(CHILD_FIELDS[tbl].map((f) => f.column));
   const clean = Object.fromEntries(
     Object.entries(values).filter(([k]) => allowed.has(k))
   );
   try {
-    await updateChildRow(table as ChildTable, id, clean);
+    // For PIs: capture pre-save pi_no so we can notify Accounts only when it
+    // becomes newly filled (empty → set), not on every subsequent edit.
+    let piNoBefore: string | null = null;
+    if (tbl === "order_billing_docs") {
+      const before = await query<{ pi_no: string | null }>(
+        `SELECT pi_no FROM order_billing_docs WHERE id = $1`,
+        [id]
+      );
+      piNoBefore = before.rows[0]?.pi_no ?? null;
+    }
+
+    await updateChildRow(tbl, id, clean);
+
+    if (tbl === "order_billing_docs") {
+      const piNoAfter = (clean.pi_no ?? "").trim();
+      const wasEmpty = !(piNoBefore ?? "").trim();
+      if (wasEmpty && piNoAfter) {
+        // Newly-filled PI number → tell Accounts + Central (skip Central if
+        // Central is the one who saved — they already know).
+        await notifyPiCreated(orderId, id, piNoAfter, user.role);
+      }
+    }
     revalidatePath(`/risansi/orders/${orderId}`);
     return { ok: true };
   } catch (error) {
     console.error("updateOrderChild failed:", error);
     return { ok: false, error: "Could not save the row." };
   }
+}
+
+/** Notify Accounts (and Central for oversight) when Billing files a new PI. */
+async function notifyPiCreated(
+  orderId: string,
+  _piId: string,
+  piNo: string,
+  actorRole: string
+): Promise<void> {
+  const detail = await getOrderDetail(orderId);
+  const soLabel = detail
+    ? String(detail.order.so_no ?? `#${detail.order.sl_no}`)
+    : orderId;
+  // Always tell Accounts; also tell Central Visibility (and by extension Admin,
+  // via recipientRolesForUser) unless Central themselves saved the PI.
+  const roles = ["accounts"];
+  if (!isCentral(actorRole)) roles.push("central_visibility");
+  // itemId is intentionally null here: notifications.item_id is a FK to
+  // order_items(id), and a PI id (order_billing_docs.id) would fail that
+  // constraint. Deep-link is by order_id — Accounts opens the SO detail.
+  await emitNotification({
+    roles,
+    orderId,
+    type: "dept_update",
+    message: `PI ${piNo} created for ${soLabel}`,
+  });
 }
 
 export async function deleteOrderChildAction(

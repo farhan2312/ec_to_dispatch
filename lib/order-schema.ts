@@ -51,22 +51,15 @@ export const CURRENCY_OPTIONS = opts(["INR", "USD"]);
 export const ITEM_OPTIONS = opts(["Pump", "Spare", "ROLB"]);
 // SO-level Order Type; each EC/Add-On inherits it as its item_type.
 export const ORDER_TYPE_OPTIONS = opts(["Pump", "Spare"]);
-// Bill Type (SO-level) — decides which billing document fields apply.
-export const BILL_TYPE_OPTIONS = opts(["Performa", "Tax", "Challan"]);
+// Bill Type (SO-level) — decides which billing document fields apply to each
+// PI: Tax Invoice → PI No./Date/Value; Challan → Challan No./Date/Value + FR.
+export const BILL_TYPE_OPTIONS = opts(["Tax Invoice", "Challan"]);
 // FR (financial reconciliation) reason for a Challan.
 export const FR_REASON_OPTIONS = opts([
   "Wrong supply",
   "Short supply",
   "Damage",
   "FOC",
-]);
-export const PAYMENT_TERMS_OPTIONS = opts([
-  "10% adv",
-  "30% adv",
-  "50% adv",
-  "90% adv",
-  "100% adv",
-  "After receipt",
 ]);
 // Bought-out items Purchase can add under an EC when the SO's BOI = Yes.
 export const BOI_ITEM_OPTIONS = opts([
@@ -181,13 +174,8 @@ export const ORDER_SECTIONS: OrderSection[] = [
         options: YES_NO,
       },
 
-      // Commercial.
-      {
-        column: "payment_terms",
-        label: "Payment Terms",
-        type: "select",
-        options: PAYMENT_TERMS_OPTIONS,
-      },
+      // Commercial. Payment Terms is free text (varies per order).
+      { column: "payment_terms", label: "Payment Terms", type: "text" },
       { column: "ld", label: "LD", type: "select", options: YES_NO },
       {
         column: "ld_date",
@@ -262,19 +250,14 @@ export const ORDER_SECTIONS: OrderSection[] = [
     ],
   },
   {
+    // Billing shape depends on the SO's Bill Type:
+    //  • Tax Invoice → PI list (order_billing_docs, add-on to create more).
+    //  • Challan     → one flat set of challan fields on order_billing.
     key: "billing",
     title: "Billing & Operations",
     table: "order_billing",
     scope: "so",
-    // Which document fields apply is driven by the SO's Bill Type. dependsOn
-    // resolves bill_type from the order row (a read-only context column here).
     fields: [
-      { column: "pi_no", label: "PI No.", type: "text", dependsOn: [{ column: "bill_type", value: "Performa" }] },
-      { column: "pi_date", label: "PI Date", type: "date", dependsOn: [{ column: "bill_type", value: "Performa" }] },
-      { column: "pi_value", label: "PI Value", type: "number", dependsOn: [{ column: "bill_type", value: "Performa" }] },
-      { column: "tax_no", label: "Tax No.", type: "text", dependsOn: [{ column: "bill_type", value: "Tax" }] },
-      { column: "tax_date", label: "Tax Date", type: "date", dependsOn: [{ column: "bill_type", value: "Tax" }] },
-      { column: "tax_value", label: "Tax Value", type: "number", dependsOn: [{ column: "bill_type", value: "Tax" }] },
       { column: "challan_no", label: "Challan No.", type: "text", dependsOn: [{ column: "bill_type", value: "Challan" }] },
       { column: "challan_date", label: "Challan Date", type: "date", dependsOn: [{ column: "bill_type", value: "Challan" }] },
       { column: "challan_value", label: "Challan Value", type: "number", dependsOn: [{ column: "bill_type", value: "Challan" }] },
@@ -286,8 +269,13 @@ export const ORDER_SECTIONS: OrderSection[] = [
         dependsOn: [{ column: "bill_type", value: "Challan" }],
       },
     ],
+    childTable: "order_billing_docs",
+    childGate: { column: "bill_type", value: "Tax Invoice" },
   },
   {
+    // Accounts is per-SO. The PI list is view-only here (a "View PIs" button
+    // on the edit form opens Billing's PI list). Balance of Payment auto =
+    // order value − amount received, recomputed on save.
     key: "accounts",
     title: "Accounts",
     table: "order_accounts",
@@ -299,17 +287,8 @@ export const ORDER_SECTIONS: OrderSection[] = [
         type: "select",
         options: PAYMENT_STATUS_OPTIONS,
       },
-      {
-        column: "payment_confirmed_date",
-        label: "Payment Confirmed Date",
-        type: "date",
-      },
-      {
-        column: "amount_received",
-        label: "Amount Received (without GST)",
-        type: "number",
-      },
-      // Derived: order value − amount received. Set server-side on save.
+      { column: "payment_confirmed_date", label: "Payment Confirmed Date", type: "date" },
+      { column: "amount_received", label: "Amount Received (without GST)", type: "number" },
       {
         column: "balance_of_payment",
         label: "Balance of Payment",
@@ -473,8 +452,16 @@ export function selectOptionsFor(
   return opts;
 }
 
-// 1:many children of an EC: dispatch lots (Dispatch) and BOI items (Purchase).
-export type ChildTable = "order_lots" | "order_boi_items";
+// 1:many children: dispatch lots + BOI items (per EC), PIs (per SO).
+export type ChildTable = "order_lots" | "order_boi_items" | "order_billing_docs";
+
+// A PI under an SO (Tax Invoice bill type only). Billing owns these fields;
+// each save fires a "PI created" notification to Accounts (see actions.ts).
+export const BILLING_DOC_FIELDS: OrderField[] = [
+  { column: "pi_no", label: "PI No.", type: "text" },
+  { column: "pi_date", label: "PI Date", type: "date" },
+  { column: "pi_value", label: "PI Value", type: "number" },
+];
 
 export const LOT_FIELDS: OrderField[] = [
   { column: "lot_no", label: "Lot No.", type: "text" },
@@ -498,29 +485,20 @@ export const BOI_ITEM_FIELDS: OrderField[] = [
 export const CHILD_FIELDS: Record<ChildTable, OrderField[]> = {
   order_lots: LOT_FIELDS,
   order_boi_items: BOI_ITEM_FIELDS,
+  order_billing_docs: BILLING_DOC_FIELDS,
 };
 
 // Payment Terms (owned by Central Visibility) shown read-only in the Accounts
 // workspace.
 export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
-  {
-    column: "payment_terms",
-    label: "Payment Terms",
-    type: "select",
-    options: PAYMENT_TERMS_OPTIONS,
-  },
+  { column: "payment_terms", label: "Payment Terms", type: "text" },
 ];
 
-// Billing's read-only context: Payment Terms / Freight / Packing / Bill Type
-// (SO-level), plus Amount Received & Balance of Payment (owned by Accounts).
-// bill_type is also what the billing document fields' dependsOn resolves.
+// Billing's read-only SO context: Payment Terms / Bill Type / Freight /
+// Packing. bill_type is what each PI's document fields gate on. (Amount
+// Received / Balance are per-PI now — see BILLING_DOC_FIELDS.)
 export const BILLING_CONTEXT_FIELDS: OrderField[] = [
-  {
-    column: "payment_terms",
-    label: "Payment Terms",
-    type: "select",
-    options: PAYMENT_TERMS_OPTIONS,
-  },
+  { column: "payment_terms", label: "Payment Terms", type: "text" },
   {
     column: "bill_type",
     label: "Bill Type",
@@ -539,16 +517,7 @@ export const BILLING_CONTEXT_FIELDS: OrderField[] = [
     type: "select",
     options: opts(["Wooden Box", "Loose"]),
   },
-  { column: "amount_received", label: "Amount Received", type: "number" },
-  { column: "balance_of_payment", label: "Balance of Payment", type: "number" },
 ];
-
-// The two BILLING_CONTEXT_FIELDS columns that live on order_accounts, not
-// orders (the billing page joins them with the right `from`).
-export const BILLING_CONTEXT_FROM_ACCOUNTS = new Set([
-  "amount_received",
-  "balance_of_payment",
-]);
 
 // Target Date for Drawing — an EC attribute (order_items) shown read-only in
 // the Drawing workspace.

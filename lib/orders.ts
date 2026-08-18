@@ -254,10 +254,11 @@ export type OrderDetail = {
   order: Row;
   order_billing: Row | null;
   order_accounts: Row | null;
+  order_billing_docs: Row[];
   items: Row[];
 };
 
-/** SO detail: core + billing + accounts + its EC items. */
+/** SO detail: core + billing + accounts + its PI list + EC items. */
 export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
   if (!UUID_RE.test(id)) return null;
   const result = await query<OrderDetail>(
@@ -265,6 +266,9 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
         to_jsonb(o)  AS order,
         to_jsonb(b)  AS order_billing,
         to_jsonb(ac) AS order_accounts,
+        COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
+                  FROM order_billing_docs d WHERE d.order_id = o.id),
+                 '[]'::jsonb) AS order_billing_docs,
         COALESCE((
           SELECT jsonb_agg(to_jsonb(x) ORDER BY x.seq)
             FROM (
@@ -298,6 +302,7 @@ export type ItemDetail = {
   order_assembly_dispatch: Row | null;
   order_lots: Row[];
   order_boi_items: Row[];
+  order_billing_docs: Row[];
 };
 
 const ITEM_DETAIL_SELECT = `
@@ -313,7 +318,9 @@ const ITEM_DETAIL_SELECT = `
     COALESCE((SELECT jsonb_agg(to_jsonb(l) ORDER BY l.created_at)
               FROM order_lots l WHERE l.item_id = it.id), '[]'::jsonb) AS order_lots,
     COALESCE((SELECT jsonb_agg(to_jsonb(bi) ORDER BY bi.created_at)
-              FROM order_boi_items bi WHERE bi.item_id = it.id), '[]'::jsonb) AS order_boi_items
+              FROM order_boi_items bi WHERE bi.item_id = it.id), '[]'::jsonb) AS order_boi_items,
+    COALESCE((SELECT jsonb_agg(to_jsonb(bd) ORDER BY bd.seq)
+              FROM order_billing_docs bd WHERE bd.order_id = o.id), '[]'::jsonb) AS order_billing_docs
    FROM order_items it
    JOIN orders o                        ON o.id  = it.order_id
    LEFT JOIN order_billing b            ON b.order_id  = o.id
@@ -402,14 +409,14 @@ export async function updateOrderSection(
     }
   }
 
-  // Balance of Payment = order value − amount received (both on the accounts
-  // row / SO). Recompute whenever the accounts row or order value changes.
+  // Balance of Payment = order value − amount received. Recompute whenever
+  // the accounts row or the SO's order value changes (both keyed by SO id).
   if (table === "order_accounts" || table === "orders") {
     await recomputeAccountsBalance(id);
   }
 }
 
-/** Recompute a SO's accounts balance from its order value and amount received. */
+/** Recompute the SO's accounts balance from order value and amount received. */
 async function recomputeAccountsBalance(orderId: string): Promise<void> {
   if (!UUID_RE.test(orderId)) return;
   await query(
@@ -421,15 +428,23 @@ async function recomputeAccountsBalance(orderId: string): Promise<void> {
   );
 }
 
-/** Add a blank lot to an EC item. */
+/**
+ * Add a blank child row. Dispatch lots and BOI items are keyed by item_id
+ * (per-EC); PIs (order_billing_docs) are keyed by order_id (per-SO).
+ */
 export async function addChildRow(
   table: ChildTable,
-  itemId: string
-): Promise<void> {
-  await query(`INSERT INTO ${table} (item_id) VALUES ($1)`, [itemId]);
+  parentId: string
+): Promise<{ id: string } | null> {
+  const keyCol = table === "order_billing_docs" ? "order_id" : "item_id";
+  const result = await query<{ id: string }>(
+    `INSERT INTO ${table} (${keyCol}) VALUES ($1) RETURNING id`,
+    [parentId]
+  );
+  return result.rows[0] ?? null;
 }
 
-/** Update a child (lot) row's fields, validated against the child schema. */
+/** Update a child row's fields, validated against the child schema. */
 export async function updateChildRow(
   table: ChildTable,
   id: string,
@@ -437,7 +452,9 @@ export async function updateChildRow(
 ): Promise<void> {
   if (!UUID_RE.test(id)) return;
   const byColumn = new Map(CHILD_FIELDS[table].map((f) => [f.column, f]));
-  const columns = Object.keys(values).filter((c) => byColumn.has(c));
+  const columns = Object.keys(values).filter(
+    (c) => byColumn.has(c) && !byColumn.get(c)!.computed
+  );
   if (columns.length === 0) return;
   const coerced = columns.map((c) =>
     coerceField(byColumn.get(c)!.type, values[c])
@@ -609,7 +626,7 @@ export type OrderOverviewRow = {
   industry_type: string | null;
   nature_of_supply: string | null;
   order_value: string | null;
-  pi_no: string | null;
+  has_pi: boolean;
   payment_status: string | null;
   drg_status: string | null;
   boi: string | null;
@@ -639,7 +656,11 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             o.nature_of_supply,
             CASE WHEN it.seq = MIN(it.seq) OVER (PARTITION BY o.id)
                  THEN o.order_value::text END AS order_value,
-            b.pi_no,
+            -- Any PI exists? (Billing progress in the pipeline: Tax Invoice
+            -- SOs are "done" once at least one PI is added; Challan SOs are
+            -- done once a challan number is filled on order_billing.)
+            (EXISTS (SELECT 1 FROM order_billing_docs d WHERE d.order_id = o.id)
+             OR b.challan_no IS NOT NULL) AS has_pi,
             a.payment_status,
             dr.drg_status,
             o.boi,
@@ -656,8 +677,8 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             ad.dispatch_status
        FROM order_items it
        JOIN orders o ON o.id = it.order_id
-       LEFT JOIN order_billing b            ON b.order_id  = o.id
-       LEFT JOIN order_accounts a           ON a.order_id  = o.id
+       LEFT JOIN order_billing b            ON b.order_id = o.id
+       LEFT JOIN order_accounts a           ON a.order_id = o.id
        LEFT JOIN order_drawing dr           ON dr.item_id = it.id
        LEFT JOIN order_qc qc                ON qc.item_id = it.id
        LEFT JOIN order_planning pl          ON pl.item_id = it.id
@@ -818,6 +839,55 @@ export async function listItemsForSection(
        ${extraJoinSql}
       ${whereSql}
       ORDER BY o.sl_no ASC, it.seq ASC`
+  );
+  return result.rows;
+}
+
+export type BillingQueueRow = {
+  id: string;
+  sl_no: number;
+  so_no: string | null;
+  party: string | null;
+  bill_type: string | null;
+  payment_terms: string | null;
+  freight_terms: string | null;
+  packing_requirement: string | null;
+  order_value: string | null;
+  order_currency: string | null;
+  // Challan-only, when bill_type = Challan (used by the flat edit modal).
+  challan_no: string | null;
+  challan_date: string | null;
+  challan_value: string | null;
+  fr_reason: string | null;
+  pi_docs: Row[];
+};
+
+/**
+ * Billing/Accounts queue: one row per SO, with the read-only SO context and
+ * that SO's list of PIs (order_billing_docs) for inline management.
+ */
+export async function listOrdersForBilling(): Promise<BillingQueueRow[]> {
+  const result = await query<BillingQueueRow>(
+    `SELECT o.id,
+            o.sl_no::int AS sl_no,
+            o.so_no,
+            o.party,
+            o.bill_type,
+            o.payment_terms,
+            o.freight_terms,
+            o.packing_requirement,
+            o.order_value::text AS order_value,
+            o.order_currency,
+            b.challan_no,
+            to_char(b.challan_date, 'YYYY-MM-DD') AS challan_date,
+            b.challan_value::text AS challan_value,
+            b.fr_reason,
+            COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
+                      FROM order_billing_docs d WHERE d.order_id = o.id),
+                     '[]'::jsonb) AS pi_docs
+       FROM orders o
+       LEFT JOIN order_billing b ON b.order_id = o.id
+      ORDER BY o.sl_no ASC`
   );
   return result.rows;
 }

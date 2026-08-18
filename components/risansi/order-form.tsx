@@ -10,7 +10,6 @@ import {
   BILL_TYPE_OPTIONS,
   CURRENCY_OPTIONS,
   ORDER_TYPE_OPTIONS,
-  PAYMENT_TERMS_OPTIONS,
   YES_NO_OPTIONS,
 } from "@/lib/order-schema";
 
@@ -89,12 +88,7 @@ const SECTIONS: Section[] = [
         ],
       },
       { name: "qc_required", label: "QC Req", type: "select", options: YES_NO_OPTIONS },
-      {
-        name: "payment_terms",
-        label: "Payment Terms",
-        type: "select",
-        options: PAYMENT_TERMS_OPTIONS,
-      },
+      { name: "payment_terms", label: "Payment Terms", type: "text" },
       { name: "ld", label: "LD", type: "select", options: YES_NO_OPTIONS },
       {
         name: "ld_date",

@@ -14,6 +14,7 @@ import {
 import { Pagination, SearchInput, useTableSearch } from "./table-tools";
 import { QcDocumentsModal } from "./qc-documents-modal";
 import { OrderDetailsModal } from "./order-details-modal";
+import { ViewPisModal } from "./view-pis-modal";
 import type { QcDocTable } from "@/lib/orders";
 
 // Only the QC workspace passes this today; kept generic (a list, so more than
@@ -114,6 +115,11 @@ export function DepartmentWorkspace({
   // Accounts need it for their day-to-day work.
   const showParty = table === "order_billing" || table === "order_accounts";
 
+  // SO-scope sections (Billing/Accounts) have no per-EC breakdown, so EC No.
+  // would always be blank — hide the column entirely.
+  const scope = SECTION_BY_TABLE.get(table)?.scope;
+  const showEcNo = scope !== "so";
+
   // Cascade: only show a conditional field's column when at least one order in
   // the queue actually matches its condition (e.g. Tax columns appear only if
   // some SO's bill_type is Tax).
@@ -122,7 +128,8 @@ export function DepartmentWorkspace({
   );
 
   const colCount =
-    3 +
+    2 +
+    (showEcNo ? 1 : 0) +
     (showParty ? 1 : 0) +
     readonlyFields.length +
     visibleFields.length +
@@ -147,7 +154,7 @@ export function DepartmentWorkspace({
               <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
                 <th className="px-4 py-3">Sl.</th>
                 <th className="px-4 py-3">SO No.</th>
-                <th className="px-4 py-3">EC No.</th>
+                {showEcNo && <th className="px-4 py-3">EC No.</th>}
                 {showParty && <th className="px-4 py-3">Client Name</th>}
                 {readonlyFields.map((f) => (
                   <th
@@ -189,9 +196,11 @@ export function DepartmentWorkspace({
                   <td className="px-4 py-3 whitespace-nowrap">
                     {toInput(order.so_no) || "—"}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    {toInput(order.ec_no) || "—"}
-                  </td>
+                  {showEcNo && (
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {toInput(order.ec_no) || "—"}
+                    </td>
+                  )}
                   {showParty && (
                     <td className="px-4 py-3">{toInput(order.party) || "—"}</td>
                   )}
@@ -310,6 +319,7 @@ function EditSectionModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showOrder, setShowOrder] = useState(false);
+  const [showPis, setShowPis] = useState(false);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -350,14 +360,26 @@ function EditSectionModal({
           {/* orderId is the SO's order_id only for SO-scope sections
               (Billing & Operations, Accounts) — the rest are keyed by item_id. */}
           {(table === "order_billing" || table === "order_accounts") && (
-            <button
-              type="button"
-              onClick={() => setShowOrder(true)}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-input-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
-            >
-              <ClipboardList className="h-3.5 w-3.5" />
-              View order details
-            </button>
+            <div className="flex shrink-0 items-center gap-2">
+              {table === "order_accounts" && (
+                <button
+                  type="button"
+                  onClick={() => setShowPis(true)}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-input-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                >
+                  <ClipboardList className="h-3.5 w-3.5" />
+                  View billing
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowOrder(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-input-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+              >
+                <ClipboardList className="h-3.5 w-3.5" />
+                View order details
+              </button>
+            </div>
           )}
         </div>
         <p className="mb-5 text-sm text-muted">
@@ -483,6 +505,9 @@ function EditSectionModal({
 
       {showOrder && (
         <OrderDetailsModal orderId={orderId} onClose={() => setShowOrder(false)} />
+      )}
+      {showPis && (
+        <ViewPisModal orderId={orderId} onClose={() => setShowPis(false)} />
       )}
     </div>
   );

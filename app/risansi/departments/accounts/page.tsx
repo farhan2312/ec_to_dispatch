@@ -45,7 +45,9 @@ export default async function AccountsWorkspacePage({
             Accounts
           </h1>
           <p className="text-sm text-muted">
-            Update payment status. Payment Terms is set by Central Visibility.
+            Update payment status and amount received. Payment Terms is set by
+            Central Visibility. Use &ldquo;View PIs&rdquo; on any order to see
+            the PIs Billing has created.
           </p>
         </div>
       </div>

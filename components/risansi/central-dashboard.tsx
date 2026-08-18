@@ -187,7 +187,7 @@ function BarList({ items, total }: { items: BarItem[]; total: number }) {
 // Same completion condition each department uses in the pipeline/notification
 // logic. Kept local (and small) to avoid a dependency on lib/notifications.
 const done = {
-  billing: (r: OrderOverviewRow) => !!r.pi_no,
+  billing: (r: OrderOverviewRow) => r.has_pi,
   accounts: (r: OrderOverviewRow) => {
     const p = (r.payment_status ?? "").trim().toLowerCase();
     return p === "payment rcvd" || p === "after receipt";
@@ -434,8 +434,8 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
                     <td className="px-4 py-3">{row.party ?? "—"}</td>
                     <td className="px-3 py-3">
                       <Chip
-                        value={row.pi_no ? "PI done" : null}
-                        tone={row.pi_no ? "green" : "neutral"}
+                        value={row.has_pi ? "PI done" : null}
+                        tone={row.has_pi ? "green" : "neutral"}
                       />
                     </td>
                     <td className="px-3 py-3">

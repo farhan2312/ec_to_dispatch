@@ -2,14 +2,9 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Receipt } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canEditSection } from "@/lib/roles";
-import { listOrdersForSection } from "@/lib/orders";
-import {
-  BILLING_CONTEXT_FIELDS,
-  BILLING_CONTEXT_FROM_ACCOUNTS,
-  SECTION_BY_TABLE,
-} from "@/lib/order-schema";
-import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
+import { canEditChild, canEditSection } from "@/lib/roles";
+import { listOrdersForBilling } from "@/lib/orders";
+import { BillingWorkspace } from "@/components/risansi/billing-workspace";
 
 export const metadata: Metadata = {
   title: "Billing & Operations | Risansi",
@@ -29,17 +24,7 @@ export default async function BillingWorkspacePage({
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
   const { edit } = await searchParams;
-  const section = SECTION_BY_TABLE.get(TABLE)!;
-  const orders = await listOrdersForSection(
-    TABLE,
-    BILLING_CONTEXT_FIELDS.map((f) => ({
-      column: f.column,
-      type: f.type,
-      from: BILLING_CONTEXT_FROM_ACCOUNTS.has(f.column)
-        ? ("order_accounts" as const)
-        : ("orders" as const),
-    }))
-  );
+  const orders = await listOrdersForBilling();
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
@@ -52,17 +37,16 @@ export default async function BillingWorkspacePage({
             Billing &amp; Operations
           </h1>
           <p className="text-sm text-muted">
-            Update PI and amount received. Payment Terms, Freight Terms and
-            Packing Requirement are set by Central Visibility.
+            Add one or more PIs per SO and fill their document fields
+            (PI No./Date/Value for Tax Invoice, or Challan No./Date/Value + FR
+            Reason for Challan). Payment fields are filled by Accounts.
           </p>
         </div>
       </div>
 
-      <DepartmentWorkspace
-        table={TABLE}
-        fields={section.fields}
-        orders={orders}
-        readonlyFields={BILLING_CONTEXT_FIELDS}
+      <BillingWorkspace
+        rows={orders}
+        canEdit={canEditChild(user.role, "order_billing_docs")}
         openOrderId={edit}
       />
     </div>

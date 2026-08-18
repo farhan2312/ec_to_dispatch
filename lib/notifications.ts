@@ -75,6 +75,36 @@ export async function countUnread(
 // Emitting
 // ---------------------------------------------------------------------------
 
+/**
+ * Emit an ad-hoc notification (for events outside notifySectionSaved's
+ * section-save flow, e.g. Billing creating a PI). Never throws.
+ */
+export async function emitNotification(input: {
+  roles: string[];
+  orderId: string;
+  itemId?: string | null;
+  type: NotificationType;
+  message: string;
+}): Promise<void> {
+  try {
+    await emit(input.roles, {
+      orderId: input.orderId,
+      itemId: input.itemId ?? null,
+      type: input.type,
+      message: input.message,
+    });
+  } catch (error) {
+    // Preserve the original error text so causes (e.g. FK violation on
+    // notifications.item_id, connection lost) show up in the server log
+    // instead of being reduced to "[object Object]".
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(
+      `emitNotification failed (roles=${input.roles.join(",")} type=${input.type}):`,
+      msg
+    );
+  }
+}
+
 /** Insert one notification row per recipient role. */
 async function emit(
   roles: string[],

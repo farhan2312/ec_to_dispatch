@@ -87,16 +87,16 @@ export function canSeeDispatched(role: string): boolean {
 }
 
 /**
- * Who may edit an EC's child lists: dispatch lots → Assembly & Dispatch;
- * BOI items → Purchase (both plus Central/Admin oversight).
+ * Who may edit each 1:many list. PIs (`order_billing_docs`) are Billing-only
+ * now — Accounts views them read-only.
  */
 export function canEditChild(
   role: string,
-  table: "order_lots" | "order_boi_items"
+  table: "order_lots" | "order_boi_items" | "order_billing_docs"
 ): boolean {
-  const owner: OrderTable =
-    table === "order_boi_items" ? "order_purchase" : "order_assembly_dispatch";
-  return canEditSection(role, owner);
+  if (table === "order_boi_items") return canEditSection(role, "order_purchase");
+  if (table === "order_billing_docs") return canEditSection(role, "order_billing");
+  return canEditSection(role, "order_assembly_dispatch");
 }
 
 /**

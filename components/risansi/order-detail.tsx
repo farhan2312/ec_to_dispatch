@@ -5,11 +5,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { deleteItemAction } from "@/app/risansi/orders/actions";
-import { SO_SECTIONS } from "@/lib/order-schema";
-import { canAccessDepartment, canCreateOrders, isCentral } from "@/lib/roles";
+import { BILLING_DOC_FIELDS, SO_SECTIONS } from "@/lib/order-schema";
+import {
+  canAccessDepartment,
+  canCreateOrders,
+  canEditChild,
+  isCentral,
+} from "@/lib/roles";
 import type { OrderDetail as OrderDetailData } from "@/lib/orders";
 import { EditableSection } from "./editable-section";
 import { AddOnForm } from "./add-on-form";
+import { OrderChildList } from "./order-children";
 
 type Row = Record<string, unknown>;
 
@@ -90,15 +96,43 @@ export function OrderDetail({
 
       <div className="max-w-6xl space-y-6">
         {visibleSections.map((section) => {
-          let data: Row | null =
+          // Billing: flat challan fields (when bill_type = Challan) OR a PI
+          // list (when bill_type = Tax Invoice). Only Billing can edit either.
+          if (section.table === "order_billing") {
+            const isChallan = String(order.bill_type ?? "") === "Challan";
+            if (isChallan) {
+              const data: Row = {
+                ...((detail.order_billing as Row | null) ?? {}),
+                bill_type: order.bill_type,
+              };
+              return (
+                <EditableSection
+                  key={section.key}
+                  targetId={orderId}
+                  section={section}
+                  data={data}
+                  canEdit={canAccessDepartment(role, section.table)}
+                  canEditCentral={central}
+                />
+              );
+            }
+            return (
+              <OrderChildList
+                key={section.key}
+                orderId={orderId}
+                table="order_billing_docs"
+                title={`${section.title} — PIs`}
+                fields={BILLING_DOC_FIELDS}
+                rows={detail.order_billing_docs as Row[]}
+                canEdit={canEditChild(role, "order_billing_docs")}
+              />
+            );
+          }
+
+          const data: Row | null =
             section.table === "orders"
               ? detail.order
               : (detail[section.table as "order_billing" | "order_accounts"] as Row | null);
-          // The billing document fields gate on the SO's bill_type, so make it
-          // available to that section's dependsOn resolution.
-          if (section.table === "order_billing") {
-            data = { ...(data ?? {}), bill_type: order.bill_type };
-          }
           return (
             <EditableSection
               key={section.key}

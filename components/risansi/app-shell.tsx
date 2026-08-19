@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
+import { ReportBugTrigger } from "./report-bug";
 import { Sidebar } from "./sidebar";
 
 type ShellUser = { name: string; email: string; role: string };
@@ -69,6 +70,9 @@ export function AppShell({
 
         <main className="min-w-0 flex-1">{children}</main>
       </div>
+
+      {/* Floating "Report a Bug" button, present on every /risansi page. */}
+      <ReportBugTrigger />
     </div>
   );
 }

@@ -1243,3 +1243,30 @@ BEGIN
         ALTER TABLE order_planning DROP COLUMN purchase_target_date;
     END IF;
 END $$;
+
+-- ===========================================================================
+-- bug_reports — a user-submitted report from the in-app "Report a Bug" widget.
+-- Optional screenshot stored inline as bytea. user_id is nullable so we don't
+-- lose the report if the user is later deleted.
+-- ===========================================================================
+CREATE TABLE IF NOT EXISTS bug_reports (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id        UUID REFERENCES users(id) ON DELETE SET NULL,
+    user_email     TEXT,
+    user_role      TEXT,
+    kind           TEXT NOT NULL CHECK (kind IN ('bug', 'feature')),
+    severity       TEXT,
+    title          TEXT NOT NULL,
+    description    TEXT,
+    page_path      TEXT,
+    screenshot_name      TEXT,
+    screenshot_mime      TEXT,
+    screenshot_size      INT,
+    screenshot_data      BYTEA,
+    status         TEXT NOT NULL DEFAULT 'open'
+                   CHECK (status IN ('open', 'in_progress', 'resolved', 'wont_fix')),
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS bug_reports_created_at_idx
+    ON bug_reports (created_at DESC);
+CREATE INDEX IF NOT EXISTS bug_reports_status_idx ON bug_reports (status);

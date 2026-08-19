@@ -8,6 +8,7 @@ import logo from "@/assets/logo.png";
 import {
   AlertTriangle,
   Bell,
+  Bug,
   CalendarClock,
   ChevronsUpDown,
   ClipboardCheck,
@@ -103,6 +104,11 @@ const ADMIN_NAV: NavItem[] = [
     label: "Audit Log",
     href: "/risansi/audit-log",
     icon: ScrollText,
+  },
+  {
+    label: "Bug Tracker",
+    href: "/risansi/bug-reports",
+    icon: Bug,
   },
 ];
 

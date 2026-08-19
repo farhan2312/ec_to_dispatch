@@ -1,15 +1,44 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, X } from "lucide-react";
-import { createItemAction } from "@/app/risansi/orders/actions";
-import { SECTION_BY_TABLE, selectOptionsFor } from "@/lib/order-schema";
+import { Loader2, Upload, X } from "lucide-react";
+import {
+  createItemAction,
+  createSpareItemAction,
+} from "@/app/risansi/orders/actions";
+import {
+  PUMP_TYPE_OPTIONS,
+  selectOptionsFor,
+  type OrderField,
+} from "@/lib/order-schema";
 import type { NewItemInput } from "@/lib/orders";
 
-// The EC/pump attributes come straight from the order_items section schema, so
-// the form and the stored columns never drift.
-const ITEM_SECTION = SECTION_BY_TABLE.get("order_items")!;
+// Pump Add-On: full EC attribute set (item_type = "Pump" is inherited from SO).
+// Target dates are SO-level now, so they don't appear here.
+const PUMP_FIELDS: OrderField[] = [
+  { column: "ec_no", label: "EC No.", type: "text" },
+  { column: "ec_date", label: "EC Date", type: "date" },
+  {
+    column: "pump_type",
+    label: "Pump Type",
+    type: "select",
+    options: PUMP_TYPE_OPTIONS,
+  },
+  { column: "model_no", label: "Model No.", type: "text" },
+  { column: "quantity", label: "Quantity", type: "int" },
+  { column: "orientation", label: "Pump Orientation", type: "text" },
+  { column: "pump_sno", label: "Pump Serial No.", type: "text" },
+  { column: "application", label: "Application", type: "text" },
+  { column: "version", label: "Series Version", type: "text" },
+];
+
+// Spare Add-On: EC identity + quantity + Order Copy file upload.
+const SPARE_FIELDS: OrderField[] = [
+  { column: "ec_no", label: "EC No.", type: "text" },
+  { column: "ec_date", label: "EC Date", type: "date" },
+  { column: "quantity", label: "Quantity", type: "int" },
+];
 
 const inputClass =
   "h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
@@ -22,36 +51,50 @@ export function AddOnForm({
 }: {
   orderId: string;
   soLabel: string;
-  // The SO's Order Type (Pump/Spare); the EC inherits it, so the manual
-  // "Pump Type" field is hidden and this is shown instead.
+  // The SO's Order Type (Pump/Spare) drives which form is rendered. Falls back
+  // to Pump when the SO hasn't set an Order Type yet.
   orderType?: string | null;
   onClose: () => void;
 }) {
   const router = useRouter();
+  const isSpare = orderType === "Spare";
+  const fields = isSpare ? SPARE_FIELDS : PUMP_FIELDS;
   const [values, setValues] = useState<Record<string, string>>({});
+  const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // item_type is inherited from the SO, so don't offer it as an input.
-  const fields = ITEM_SECTION.fields.filter((f) => f.column !== "item_type");
-
-  function set(column: string, value: string) {
-    setValues((prev) => ({ ...prev, [column]: value }));
-  }
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setSaving(true);
     setError(null);
-    const res = await createItemAction(orderId, values as NewItemInput);
+
+    let ok: boolean;
+    let err: string | undefined;
+    if (isSpare) {
+      const fd = new FormData();
+      for (const f of SPARE_FIELDS) fd.append(f.column, values[f.column] ?? "");
+      if (file) fd.append("order_copy", file);
+      const res = await createSpareItemAction(orderId, fd);
+      ok = res.ok;
+      err = res.ok ? undefined : res.error;
+    } else {
+      const res = await createItemAction(orderId, values as NewItemInput);
+      ok = res.ok;
+      err = res.ok ? undefined : res.error;
+    }
+
     setSaving(false);
-    if (!res.ok) {
-      setError(res.error);
+    if (!ok) {
+      setError(err ?? "Something went wrong.");
       return;
     }
     router.refresh();
     onClose();
   }
+
+  const title = isSpare ? "Add spare order" : "Add pump order";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -66,9 +109,7 @@ export function AddOnForm({
           <X className="h-5 w-5" />
         </button>
 
-        <h2 className="font-display text-lg font-semibold text-foreground">
-          Add {orderType ? orderType.toLowerCase() : "pump / spare"} order
-        </h2>
+        <h2 className="font-display text-lg font-semibold text-foreground">{title}</h2>
         <p className="mb-5 text-sm text-muted">
           EC under {soLabel}
           {orderType ? ` · Type: ${orderType}` : ""}
@@ -90,7 +131,9 @@ export function AddOnForm({
                 {field.type === "select" ? (
                   <select
                     value={values[field.column] ?? ""}
-                    onChange={(e) => set(field.column, e.target.value)}
+                    onChange={(e) =>
+                      setValues((v) => ({ ...v, [field.column]: e.target.value }))
+                    }
                     className={`${inputClass} cursor-pointer`}
                   >
                     <option value="">—</option>
@@ -111,13 +154,51 @@ export function AddOnForm({
                     }
                     step={field.type === "number" ? "any" : undefined}
                     value={values[field.column] ?? ""}
-                    onChange={(e) => set(field.column, e.target.value)}
+                    onChange={(e) =>
+                      setValues((v) => ({ ...v, [field.column]: e.target.value }))
+                    }
                     className={inputClass}
                   />
                 )}
               </div>
             ))}
           </div>
+
+          {isSpare && (
+            // Spare form's Order Copy file upload. Optional — you can create
+            // the EC now and attach later (though attach-later isn't wired yet;
+            // the intent is to upload here).
+            <div className="mt-5">
+              <label className="mb-1.5 block text-[13px] font-medium text-brand-label">
+                Order Copy (file)
+              </label>
+              <label className="flex cursor-pointer items-center gap-3 rounded-[10px] border border-dashed border-input-border bg-surface px-4 py-3 text-sm transition-colors hover:bg-background">
+                <Upload className="h-4 w-4 text-muted-foreground" />
+                <span className="flex-1 truncate">
+                  {file ? file.name : "Choose a file (PDF/image/doc, up to 8MB)"}
+                </span>
+                {file && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setFile(null);
+                      if (fileInputRef.current) fileInputRef.current.value = "";
+                    }}
+                    className="text-xs font-medium text-danger hover:underline"
+                  >
+                    Remove
+                  </button>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                />
+              </label>
+            </div>
+          )}
 
           <div className="mt-6 flex gap-3">
             <button

@@ -9,7 +9,7 @@ const TODAY_IST = "(now() AT TIME ZONE 'Asia/Kolkata')::date";
 // Planning works to the EC's dispatch target — but once Central Visibility
 // revises that date, the revised one is the deadline that counts.
 const PLANNING_DUE =
-  "COALESCE(it.dispatch_target_revised_date, it.dispatch_target_date)";
+  "COALESCE(o.dispatch_target_revised_date, o.dispatch_target_date)";
 
 // A reminder fires while a department's target date is still ahead (not yet
 // overdue — that's alerts.ts) but within a week, and the completing step hasn't
@@ -33,69 +33,79 @@ export type ReminderRow = {
 // Same four department deadlines as the overdue engine, shifted to the
 // upcoming window. Each branch tags its dept key + label.
 const REMINDERS_SQL = `
-  -- Drawing due to be sent to the client (per EC). The target date is on the
-  -- EC item; the "sent" date lives on order_drawing, which may not exist yet —
-  -- so LEFT JOIN, or a fresh EC would be missed.
-  SELECT o.id, o.sl_no::int AS sl_no, o.so_no, it.ec_no, o.party,
+  -- Drawing due to be sent (SO-level target). Fires while any EC hasn't been
+  -- sent yet, and the SO's target is within a week.
+  SELECT o.id, o.sl_no::int AS sl_no, o.so_no, NULL::text AS ec_no, o.party,
          'drawing'::text AS dept, 'Drawing'::text AS department,
-         to_char(it.drg_target_date, 'YYYY-MM-DD') AS due_date,
-         (it.drg_target_date - ${TODAY_IST})::int AS days_left
-    FROM order_items it
-    JOIN orders o ON o.id = it.order_id
-    LEFT JOIN order_drawing dr ON dr.item_id = it.id
-   WHERE it.drg_target_date >= ${TODAY_IST}
-     AND it.drg_target_date <= ${TODAY_IST} + 7
-     AND dr.drg_sent_to_client_date IS NULL
+         to_char(o.drg_target_date, 'YYYY-MM-DD') AS due_date,
+         (o.drg_target_date - ${TODAY_IST})::int AS days_left
+    FROM orders o
+   WHERE o.drg_target_date >= ${TODAY_IST}
+     AND o.drg_target_date <= ${TODAY_IST} + 7
+     AND EXISTS (
+       SELECT 1 FROM order_items it
+        LEFT JOIN order_drawing dr ON dr.item_id = it.id
+        WHERE it.order_id = o.id AND dr.drg_sent_to_client_date IS NULL
+     )
 
   UNION ALL
-  -- Purchase (BOI items) due to be received (per EC). Only when the SO needs
-  -- BOI and some item is still pending (or none added yet).
-  SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
+  -- Purchase (BOI items) due to be received (SO-level target). Only when the
+  -- SO needs BOI and some EC still has pending items.
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
          'purchase'::text, 'Purchase'::text,
-         to_char(pl.purchase_target_date, 'YYYY-MM-DD'),
-         (pl.purchase_target_date - ${TODAY_IST})::int
-    FROM order_items it
-    JOIN orders o ON o.id = it.order_id
-    JOIN order_planning pl ON pl.item_id = it.id
+         to_char(o.purchase_target_date, 'YYYY-MM-DD'),
+         (o.purchase_target_date - ${TODAY_IST})::int
+    FROM orders o
    WHERE o.boi = 'Yes'
-     AND pl.purchase_target_date >= ${TODAY_IST}
-     AND pl.purchase_target_date <= ${TODAY_IST} + 7
-     AND (NOT EXISTS (SELECT 1 FROM order_boi_items b WHERE b.item_id = it.id)
-          OR EXISTS (SELECT 1 FROM order_boi_items b WHERE b.item_id = it.id AND b.receipt_date IS NULL))
+     AND o.purchase_target_date >= ${TODAY_IST}
+     AND o.purchase_target_date <= ${TODAY_IST} + 7
+     AND EXISTS (
+       SELECT 1 FROM order_items it
+        WHERE it.order_id = o.id
+          AND (
+            NOT EXISTS (SELECT 1 FROM order_boi_items b WHERE b.item_id = it.id)
+            OR EXISTS (SELECT 1 FROM order_boi_items b
+                        WHERE b.item_id = it.id AND b.receipt_date IS NULL)
+          )
+     )
 
   UNION ALL
-  -- QC docs due to be submitted (per EC)
-  SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
+  -- QC docs due to be submitted (SO-level target).
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
          'qc'::text, 'QC'::text,
-         to_char(it.qc_doc_target_date, 'YYYY-MM-DD'),
-         (it.qc_doc_target_date - ${TODAY_IST})::int
-    FROM order_items it
-    JOIN orders o ON o.id = it.order_id
-    LEFT JOIN order_qc qc ON qc.item_id = it.id
-   WHERE it.qc_doc_target_date >= ${TODAY_IST}
-     AND it.qc_doc_target_date <= ${TODAY_IST} + 7
-     AND qc.qc_doc_actual_date IS NULL
+         to_char(o.qc_doc_target_date, 'YYYY-MM-DD'),
+         (o.qc_doc_target_date - ${TODAY_IST})::int
+    FROM orders o
+   WHERE o.qc_doc_target_date >= ${TODAY_IST}
+     AND o.qc_doc_target_date <= ${TODAY_IST} + 7
      AND (o.qc_required IS NULL OR o.qc_required <> 'No')
+     AND EXISTS (
+       SELECT 1 FROM order_items it
+        LEFT JOIN order_qc qc ON qc.item_id = it.id
+        WHERE it.order_id = o.id AND qc.qc_doc_actual_date IS NULL
+     )
 
   UNION ALL
-  -- Planning readiness due before dispatch (per EC). Planning has no target
-  -- date of its own, so it borrows the EC's dispatch target — revised if set.
-  SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
+  -- Planning readiness due before dispatch (SO-level target). Planning has no
+  -- target of its own, so it borrows the SO's dispatch target — revised if set.
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
          'planning'::text, 'Planning'::text,
          to_char(${PLANNING_DUE}, 'YYYY-MM-DD'),
          (${PLANNING_DUE} - ${TODAY_IST})::int
-    FROM order_items it
-    JOIN orders o ON o.id = it.order_id
-    LEFT JOIN order_planning pl ON pl.item_id = it.id
+    FROM orders o
    WHERE ${PLANNING_DUE} >= ${TODAY_IST}
      AND ${PLANNING_DUE} <= ${TODAY_IST} + 7
-     AND pl.planning_readiness_date IS NULL
+     AND EXISTS (
+       SELECT 1 FROM order_items it
+        LEFT JOIN order_planning pl ON pl.item_id = it.id
+        WHERE it.order_id = o.id AND pl.planning_readiness_date IS NULL
+     )
 
   UNION ALL
-  -- Assembly & Dispatch due to complete, against the dispatch team's own
+  -- Assembly & Packing due to complete, against the dispatch team's own
   -- target date (per EC).
   SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
-         'dispatch'::text, 'Assembly & Dispatch'::text,
+         'dispatch'::text, 'Assembly & Packing'::text,
          to_char(ad.dispatch_team_target_date, 'YYYY-MM-DD'),
          (ad.dispatch_team_target_date - ${TODAY_IST})::int
     FROM order_items it

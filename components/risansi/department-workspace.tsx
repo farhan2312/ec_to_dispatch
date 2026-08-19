@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ClipboardList, Loader2, Paperclip, Pencil, X } from "lucide-react";
+import {
+  ChevronDown,
+  ClipboardList,
+  Loader2,
+  Paperclip,
+  Pencil,
+  Plus,
+  X,
+} from "lucide-react";
 import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
 import {
   SECTION_BY_TABLE,
@@ -89,6 +97,7 @@ export function DepartmentWorkspace({
   const [docsPanel, setDocsPanel] = useState<{ row: Row; config: DocumentsConfig } | null>(
     null
   );
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
     useTableSearch(orders, rowSearchText);
@@ -96,9 +105,24 @@ export function DepartmentWorkspace({
   useEffect(() => {
     if (!openOrderId || !canEdit) return;
     const row = orders.find((o) => String(o.id) === openOrderId);
-    if (row) setEditRow(row);
+    if (row) {
+      setEditRow(row);
+      // Also expand that row's SO so the queue reveals it when the user closes
+      // the edit modal.
+      const soKey = String(row.so_no ?? row.sl_no ?? "");
+      if (soKey) setExpanded((prev) => new Set(prev).add(soKey));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openOrderId]);
+
+  function toggleSo(key: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   if (orders.length === 0) {
     return (
@@ -119,6 +143,9 @@ export function DepartmentWorkspace({
   // would always be blank — hide the column entirely.
   const scope = SECTION_BY_TABLE.get(table)?.scope;
   const showEcNo = scope !== "so";
+  // Item-scope departments (Drawing/Purchase/QC/Planning/Dispatch) group by SO
+  // with a chevron toggle to reveal each SO's ECs. SO-scope pages stay flat.
+  const groupBySo = scope === "item";
 
   // Cascade: only show a conditional field's column when at least one order in
   // the queue actually matches its condition (e.g. Tax columns appear only if
@@ -127,14 +154,30 @@ export function DepartmentWorkspace({
     (f) => !f.dependsOn || orders.some((o) => fieldApplies(f, o))
   );
 
-  const colCount =
-    2 +
-    (showEcNo ? 1 : 0) +
-    (showParty ? 1 : 0) +
-    readonlyFields.length +
-    visibleFields.length +
-    (canEdit ? 1 : 0) +
-    documents.length;
+  // Item-scope layout: one row per SO (with the SO's readonly context) + a
+  // nested EC subtable for that SO's department fields.
+  type SoGroup = { key: string; head: Row; ecs: Row[] };
+  const soGroups: SoGroup[] = groupBySo
+    ? Array.from(
+        pageRows.reduce((map, r) => {
+          const key = String(r.so_no ?? r.sl_no ?? "");
+          const g = map.get(key);
+          if (g) g.ecs.push(r);
+          else map.set(key, { key, head: r, ecs: [r] });
+          return map;
+        }, new Map<string, SoGroup>())
+      ).map(([, g]) => g)
+    : [];
+
+  const colCount = groupBySo
+    ? 3 + (showParty ? 1 : 0) + readonlyFields.length + 1 // toggle + Sl. + SO + party? + context + ECs count/edit
+    : 2 +
+      (showEcNo ? 1 : 0) +
+      (showParty ? 1 : 0) +
+      readonlyFields.length +
+      visibleFields.length +
+      (canEdit ? 1 : 0) +
+      documents.length;
   const title = SECTION_BY_TABLE.get(table)?.title ?? "Details";
 
   return (
@@ -152,9 +195,10 @@ export function DepartmentWorkspace({
           <table className="w-full min-w-[900px] text-sm">
             <thead>
               <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
+                {groupBySo && <th className="w-8 px-2 py-3" />}
                 <th className="px-4 py-3">Sl.</th>
                 <th className="px-4 py-3">SO No.</th>
-                {showEcNo && <th className="px-4 py-3">EC No.</th>}
+                {!groupBySo && showEcNo && <th className="px-4 py-3">EC No.</th>}
                 {showParty && <th className="px-4 py-3">Client Name</th>}
                 {readonlyFields.map((f) => (
                   <th
@@ -164,17 +208,23 @@ export function DepartmentWorkspace({
                     {f.label}
                   </th>
                 ))}
-                {visibleFields.map((f) => (
-                  <th key={f.column} className="px-3 py-3 whitespace-nowrap">
-                    {f.label}
-                  </th>
-                ))}
-                {documents.map((doc) => (
-                  <th key={doc.table} className="px-3 py-3 whitespace-nowrap">
-                    {doc.label}
-                  </th>
-                ))}
-                {canEdit && <th className="px-4 py-3 text-right">Edit</th>}
+                {groupBySo ? (
+                  <th className="px-4 py-3 text-center normal-case">ECs</th>
+                ) : (
+                  <>
+                    {visibleFields.map((f) => (
+                      <th key={f.column} className="px-3 py-3 whitespace-nowrap">
+                        {f.label}
+                      </th>
+                    ))}
+                    {documents.map((doc) => (
+                      <th key={doc.table} className="px-3 py-3 whitespace-nowrap">
+                        {doc.label}
+                      </th>
+                    ))}
+                    {canEdit && <th className="px-4 py-3 text-right">Edit</th>}
+                  </>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-card-border">
@@ -188,62 +238,196 @@ export function DepartmentWorkspace({
                   </td>
                 </tr>
               )}
-              {pageRows.map((order) => (
-                <tr key={String(order.id)} className="text-foreground">
-                  <td className="px-4 py-3 font-medium tabular-nums">
-                    {String(order.sl_no ?? "—")}
-                  </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
-                    {toInput(order.so_no) || "—"}
-                  </td>
-                  {showEcNo && (
+              {!groupBySo &&
+                pageRows.map((order) => (
+                  <tr key={String(order.id)} className="text-foreground">
+                    <td className="px-4 py-3 font-medium tabular-nums">
+                      {String(order.sl_no ?? "—")}
+                    </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      {toInput(order.ec_no) || "—"}
+                      {toInput(order.so_no) || "—"}
                     </td>
-                  )}
-                  {showParty && (
-                    <td className="px-4 py-3">{toInput(order.party) || "—"}</td>
-                  )}
-                  {readonlyFields.map((f) => (
-                    <td
-                      key={f.column}
-                      className="px-3 py-3 whitespace-nowrap text-muted"
-                    >
-                      {formatValue(f, order[f.column])}
-                    </td>
-                  ))}
-                  {visibleFields.map((f) => (
-                    <td key={f.column} className="px-3 py-3 whitespace-nowrap">
-                      {fieldApplies(f, order) ? formatValue(f, order[f.column]) : "—"}
-                    </td>
-                  ))}
-                  {documents.map((doc) => (
-                    <td key={doc.table} className="px-3 py-3 whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => setDocsPanel({ row: order, config: doc })}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                    {showEcNo && (
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {toInput(order.ec_no) || "—"}
+                      </td>
+                    )}
+                    {showParty && (
+                      <td className="px-4 py-3">{toInput(order.party) || "—"}</td>
+                    )}
+                    {readonlyFields.map((f) => (
+                      <td
+                        key={f.column}
+                        className="px-3 py-3 whitespace-nowrap text-muted"
                       >
-                        <Paperclip className="h-3.5 w-3.5" />
-                        {doc.counts[String(order.id)] ?? 0} file
-                        {(doc.counts[String(order.id)] ?? 0) === 1 ? "" : "s"}
-                      </button>
-                    </td>
-                  ))}
-                  {canEdit && (
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setEditRow(order)}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                        Edit
-                      </button>
-                    </td>
-                  )}
-                </tr>
-              ))}
+                        {formatValue(f, order[f.column])}
+                      </td>
+                    ))}
+                    {visibleFields.map((f) => (
+                      <td key={f.column} className="px-3 py-3 whitespace-nowrap">
+                        {fieldApplies(f, order) ? formatValue(f, order[f.column]) : "—"}
+                      </td>
+                    ))}
+                    {documents.map((doc) => (
+                      <td key={doc.table} className="px-3 py-3 whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => setDocsPanel({ row: order, config: doc })}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                        >
+                          <Paperclip className="h-3.5 w-3.5" />
+                          {doc.counts[String(order.id)] ?? 0} file
+                          {(doc.counts[String(order.id)] ?? 0) === 1 ? "" : "s"}
+                        </button>
+                      </td>
+                    ))}
+                    {canEdit && (
+                      <td className="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setEditRow(order)}
+                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Edit
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+
+              {groupBySo &&
+                soGroups.map((g) => {
+                  const isOpen = expanded.has(g.key);
+                  return (
+                    <Fragment key={g.key}>
+                      <tr className="text-foreground transition-colors hover:bg-background/60">
+                        <td className="px-2 py-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => toggleSo(g.key)}
+                            aria-label={isOpen ? "Collapse" : "Expand"}
+                            aria-expanded={isOpen}
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-input-border text-muted-foreground transition-colors hover:bg-background"
+                          >
+                            {isOpen ? (
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            ) : (
+                              <Plus className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3 font-medium tabular-nums">
+                          {String(g.head.sl_no ?? "—")}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {toInput(g.head.so_no) || "—"}
+                        </td>
+                        {showParty && (
+                          <td className="px-4 py-3">
+                            {toInput(g.head.party) || "—"}
+                          </td>
+                        )}
+                        {readonlyFields.map((f) => (
+                          <td
+                            key={f.column}
+                            className="px-3 py-3 whitespace-nowrap text-muted"
+                          >
+                            {formatValue(f, g.head[f.column])}
+                          </td>
+                        ))}
+                        <td className="px-4 py-3 text-center tabular-nums">
+                          {g.ecs.length}
+                        </td>
+                      </tr>
+                      {isOpen && (
+                        <tr className="bg-background/40">
+                          <td colSpan={colCount} className="p-0">
+                            <div className="overflow-x-auto px-4 py-3">
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    <th className="px-3 py-2">EC No.</th>
+                                    {visibleFields.map((f) => (
+                                      <th
+                                        key={f.column}
+                                        className="px-3 py-2 whitespace-nowrap"
+                                      >
+                                        {f.label}
+                                      </th>
+                                    ))}
+                                    {documents.map((doc) => (
+                                      <th
+                                        key={doc.table}
+                                        className="px-3 py-2 whitespace-nowrap"
+                                      >
+                                        {doc.label}
+                                      </th>
+                                    ))}
+                                    {canEdit && (
+                                      <th className="px-3 py-2 text-right">Edit</th>
+                                    )}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {g.ecs.map((ec) => (
+                                    <tr key={String(ec.id)} className="text-foreground">
+                                      <td className="px-3 py-2 whitespace-nowrap font-medium">
+                                        {toInput(ec.ec_no) || "—"}
+                                      </td>
+                                      {visibleFields.map((f) => (
+                                        <td
+                                          key={f.column}
+                                          className="px-3 py-2 whitespace-nowrap"
+                                        >
+                                          {fieldApplies(f, ec)
+                                            ? formatValue(f, ec[f.column])
+                                            : "—"}
+                                        </td>
+                                      ))}
+                                      {documents.map((doc) => (
+                                        <td
+                                          key={doc.table}
+                                          className="px-3 py-2 whitespace-nowrap"
+                                        >
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setDocsPanel({ row: ec, config: doc })
+                                            }
+                                            className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-input-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                                          >
+                                            <Paperclip className="h-3.5 w-3.5" />
+                                            {doc.counts[String(ec.id)] ?? 0} file
+                                            {(doc.counts[String(ec.id)] ?? 0) === 1
+                                              ? ""
+                                              : "s"}
+                                          </button>
+                                        </td>
+                                      ))}
+                                      {canEdit && (
+                                        <td className="px-3 py-2 text-right">
+                                          <button
+                                            type="button"
+                                            onClick={() => setEditRow(ec)}
+                                            className="inline-flex h-7 items-center gap-1 rounded-lg border border-input-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                                          >
+                                            <Pencil className="h-3.5 w-3.5" />
+                                            Edit
+                                          </button>
+                                        </td>
+                                      )}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
             </tbody>
           </table>
         </div>

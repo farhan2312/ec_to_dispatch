@@ -221,7 +221,7 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
     { label: "Purchase", done: rows.filter(done.purchase).length, of: total },
     { label: "QC", done: rows.filter(done.qc).length, of: qcApplicable },
     { label: "Planning", done: rows.filter(done.planning).length, of: total },
-    { label: "Assembly & Dispatch", done: rows.filter(done.dispatch).length, of: total },
+    { label: "Assembly & Packing", done: rows.filter(done.dispatch).length, of: total },
   ];
 
   // Pipeline pagination.

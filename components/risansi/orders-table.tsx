@@ -86,12 +86,10 @@ function ItemRows({ orderId, items }: { orderId: string; items: ItemSummary[] })
         <thead>
           <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
             <th className="px-3 py-1.5">EC No.</th>
-            <th className="px-3 py-1.5">Type</th>
+            <th className="px-3 py-1.5">EC Date</th>
+            <th className="px-3 py-1.5">Pump Type</th>
             <th className="px-3 py-1.5">Model</th>
             <th className="px-3 py-1.5">Qty</th>
-            <th className="px-3 py-1.5">Dispatch Target</th>
-            <th className="px-3 py-1.5">Drawing Target</th>
-            <th className="px-3 py-1.5">QC Target</th>
             <th className="px-3 py-1.5">Status</th>
             <th className="px-3 py-1.5" />
           </tr>
@@ -100,18 +98,12 @@ function ItemRows({ orderId, items }: { orderId: string; items: ItemSummary[] })
           {items.map((it) => (
             <tr key={it.id} className="text-foreground">
               <td className="px-3 py-1.5 whitespace-nowrap font-medium">{cell(it.ec_no)}</td>
-              <td className="px-3 py-1.5">{cell(it.item_type)}</td>
+              <td className="px-3 py-1.5 whitespace-nowrap text-muted">
+                {formatDate(it.ec_date)}
+              </td>
+              <td className="px-3 py-1.5">{cell(it.pump_type)}</td>
               <td className="px-3 py-1.5">{cell(it.model_no)}</td>
               <td className="px-3 py-1.5 tabular-nums">{cell(it.quantity)}</td>
-              <td className="px-3 py-1.5 whitespace-nowrap text-muted">
-                {formatDate(it.dispatch_target_date)}
-              </td>
-              <td className="px-3 py-1.5 whitespace-nowrap text-muted">
-                {formatDate(it.drg_target_date)}
-              </td>
-              <td className="px-3 py-1.5 whitespace-nowrap text-muted">
-                {formatDate(it.qc_doc_target_date)}
-              </td>
               <td className="px-3 py-1.5">
                 <StatusChip value={it.dispatch_status} />
               </td>
@@ -235,7 +227,7 @@ export function OrdersTable({
                 <th className="px-4 py-3">Client Code</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
                 <th className="px-4 py-3">Payment Status</th>
-                <th className="px-4 py-3 text-center">ECs</th>
+                <th className="px-4 py-3 text-center normal-case">ECs</th>
                 <th className="px-4 py-3" />
                 {canDelete && <th className="px-4 py-3" />}
               </tr>
@@ -298,7 +290,9 @@ export function OrdersTable({
                               className="inline-flex h-8 items-center gap-1 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
                             >
                               <Plus className="h-3.5 w-3.5" />
-                              Add-On
+                              {order.order_type === "Spare"
+                                ? "Spare Add-On"
+                                : "Pump Add-On"}
                             </button>
                           )}
                         </div>

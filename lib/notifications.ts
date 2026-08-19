@@ -140,12 +140,12 @@ function sectionChanged(table: OrderTable, before: Row, after: Row): boolean {
 }
 
 // A target-date column → the departments that should be told it's now set.
-// The per-EC target dates live on order_items (set on the Add-On form);
-// purchase and dispatch-team targets are on their own department tables.
+// Drawing/QC/Dispatch/Planning target dates live on the SO (orders); Purchase
+// target is per-EC (order_planning); Dispatch team target is per-EC too.
 const TARGET_DATE_RECIPIENTS: Partial<
   Record<OrderTable, { column: string; label: string; roles: string[] }[]>
 > = {
-  order_items: [
+  orders: [
     { column: "drg_target_date", label: "Drawing target date", roles: ["drawing"] },
     // Dispatch target is what Planning works to; the dispatch team has its own
     // target date (below, on order_assembly_dispatch).
@@ -165,8 +165,6 @@ const TARGET_DATE_RECIPIENTS: Partial<
       label: "QC target date",
       roles: ["qc"],
     },
-  ],
-  order_planning: [
     {
       column: "purchase_target_date",
       label: "Purchase target date",

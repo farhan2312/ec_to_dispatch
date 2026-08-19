@@ -10,7 +10,7 @@ import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
 import { RemindersPanel } from "@/components/risansi/reminders-panel";
 
 export const metadata: Metadata = {
-  title: "Assembly & Dispatch | Risansi",
+  title: "Assembly & Packing | Risansi",
 };
 
 export const dynamic = "force-dynamic";
@@ -41,7 +41,7 @@ export default async function AssemblyDispatchWorkspacePage({
         </div>
         <div>
           <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-            Assembly &amp; Dispatch
+            Assembly &amp; Packing
           </h1>
           <p className="text-sm text-muted">
             Update assembly, packing and dispatch status for each order.

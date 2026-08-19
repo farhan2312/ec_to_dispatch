@@ -166,66 +166,104 @@ export function EditableSection({
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {section.fields.map((field) => {
-          // Cascade: a field gated by dependsOn (e.g. billing docs gated on the
-          // order's bill_type) is hidden entirely when its condition isn't met.
-          if (!dependsSatisfied(field, values, data)) return null;
-          const fieldEditable =
-            editing && !field.computed && (!field.centralOnly || canEditCentral);
-          return (
-            <div key={field.column}>
-              <div className="mb-1 flex items-center gap-1.5 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
-                {field.label}
-                {field.centralOnly && !canEditCentral && (
-                  <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500">
-                    read-only
-                  </span>
+      {(() => {
+        // Bucket visible fields by their `group` label (consecutive fields
+        // sharing a label are one bucket). Buckets with no label render as
+        // a plain grid — matches the old behavior when no groups are defined.
+        type Bucket = { label: string | null; fields: OrderField[] };
+        const buckets: Bucket[] = [];
+        for (const f of section.fields) {
+          if (!dependsSatisfied(f, values, data)) continue;
+          const label = f.group ?? null;
+          const last = buckets[buckets.length - 1];
+          if (last && last.label === label) last.fields.push(f);
+          else buckets.push({ label, fields: [f] });
+        }
+        const gridClass =
+          "grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
+        return (
+          <div className="space-y-6">
+            {buckets.map((bucket, bi) => (
+              <div key={bi}>
+                {bucket.label && (
+                  <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-wide text-primary">
+                    {bucket.label}
+                  </h3>
                 )}
-                {field.computed && (
-                  <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500">
-                    auto
-                  </span>
-                )}
-              </div>
-              {fieldEditable ? (
-                field.type === "select" ? (
-                  <select
-                    value={values[field.column] ?? ""}
-                    onChange={(e) =>
-                      setValues((prev) => ({ ...prev, [field.column]: e.target.value }))
-                    }
-                    disabled={!dependsSatisfied(field, values, data)}
-                    className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <option value="">—</option>
-                    {selectOptionsFor(field, values[field.column] ?? "").map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type={field.type === "date" ? "date" : field.type === "text" ? "text" : "number"}
-                    step={field.type === "number" ? "any" : undefined}
-                    value={values[field.column] ?? ""}
-                    onChange={(e) =>
-                      setValues((prev) => ({ ...prev, [field.column]: e.target.value }))
-                    }
-                    disabled={!dependsSatisfied(field, values, data)}
-                    className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
-                  />
-                )
-              ) : (
-                <div className="text-[14px] text-foreground">
-                  {formatDisplay(field, data?.[field.column])}
+                <div className={gridClass}>
+                  {bucket.fields.map((field) => {
+                    const fieldEditable =
+                      editing &&
+                      !field.computed &&
+                      (!field.centralOnly || canEditCentral);
+                    return (
+                      <div key={field.column}>
+                        <div className="mb-1 flex items-center gap-1.5 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
+                          {field.label}
+                          {field.centralOnly && !canEditCentral && (
+                            <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500">
+                              read-only
+                            </span>
+                          )}
+                          {field.computed && (
+                            <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500">
+                              auto
+                            </span>
+                          )}
+                        </div>
+                        {fieldEditable ? (
+                          field.type === "select" ? (
+                            <select
+                              value={values[field.column] ?? ""}
+                              onChange={(e) =>
+                                setValues((prev) => ({
+                                  ...prev,
+                                  [field.column]: e.target.value,
+                                }))
+                              }
+                              className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <option value="">—</option>
+                              {selectOptionsFor(field, values[field.column] ?? "").map((o) => (
+                                <option key={o.value} value={o.value}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type={
+                                field.type === "date"
+                                  ? "date"
+                                  : field.type === "text"
+                                    ? "text"
+                                    : "number"
+                              }
+                              step={field.type === "number" ? "any" : undefined}
+                              value={values[field.column] ?? ""}
+                              onChange={(e) =>
+                                setValues((prev) => ({
+                                  ...prev,
+                                  [field.column]: e.target.value,
+                                }))
+                              }
+                              className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
+                            />
+                          )
+                        ) : (
+                          <div className="text-[14px] text-foreground">
+                            {formatDisplay(field, data?.[field.column])}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {editing && (
         <div className="mt-5 flex gap-3">

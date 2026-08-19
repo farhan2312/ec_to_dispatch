@@ -45,7 +45,7 @@ export default async function QcWorkspacePage({
       QC_CONTEXT_FIELDS.map((f) => ({
         column: f.column,
         type: f.type,
-        from: "order_items" as const,
+        from: "orders" as const,
       }))
     ),
     listQcDocumentCounts("order_qc_documents"),

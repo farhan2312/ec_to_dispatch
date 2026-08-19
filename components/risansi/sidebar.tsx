@@ -86,7 +86,7 @@ const DEPARTMENT_NAV: DeptNavItem[] = [
     table: "order_qc",
   },
   {
-    label: "Assembly & Dispatch",
+    label: "Assembly & Packing",
     href: "/risansi/departments/assembly-dispatch",
     icon: Truck,
     table: "order_assembly_dispatch",

@@ -22,50 +22,61 @@ export type AlertRow = {
 // department steps are now per EC (order_items); the row `id` is the parent SO
 // so "Open" lands on the SO detail. Payment holds stay SO-level.
 const ALERTS_SQL = `
-  -- Drawing not sent by its target date (per EC)
-  SELECT o.id, o.sl_no::int AS sl_no, o.so_no, it.ec_no, o.party,
+  -- Drawing not sent by its target date. Target is SO-level; the "sent"
+  -- date lives per EC on order_drawing, so an SO stays overdue while ANY EC
+  -- hasn't been sent yet.
+  SELECT o.id, o.sl_no::int AS sl_no, o.so_no, NULL::text AS ec_no, o.party,
          'Drawing'::text AS department, 'overdue'::text AS type,
-         to_char(it.drg_target_date, 'YYYY-MM-DD') AS due_date,
-         (${TODAY_IST} - it.drg_target_date)::int AS days_overdue
-    FROM order_items it
-    JOIN orders o ON o.id = it.order_id
-    LEFT JOIN order_drawing dr ON dr.item_id = it.id
-   WHERE it.drg_target_date < ${TODAY_IST}
-     AND dr.drg_sent_to_client_date IS NULL
+         to_char(o.drg_target_date, 'YYYY-MM-DD') AS due_date,
+         (${TODAY_IST} - o.drg_target_date)::int AS days_overdue
+    FROM orders o
+   WHERE o.drg_target_date < ${TODAY_IST}
+     AND EXISTS (
+       SELECT 1 FROM order_items it
+        LEFT JOIN order_drawing dr ON dr.item_id = it.id
+        WHERE it.order_id = o.id AND dr.drg_sent_to_client_date IS NULL
+     )
 
   UNION ALL
-  -- Purchase (BOI items) not all received by the target date (per EC). Applies
-  -- only when the SO needs BOI; pending if any item lacks a receipt date, or no
-  -- items have been added yet.
-  SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
+  -- Purchase (BOI items) not all received by the target date. SO-level target
+  -- and BOI flag; SO stays overdue while any EC still has pending items.
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
          'Purchase'::text, 'overdue'::text,
-         to_char(pl.purchase_target_date, 'YYYY-MM-DD'),
-         (${TODAY_IST} - pl.purchase_target_date)::int
-    FROM order_items it
-    JOIN orders o ON o.id = it.order_id
-    JOIN order_planning pl ON pl.item_id = it.id
+         to_char(o.purchase_target_date, 'YYYY-MM-DD'),
+         (${TODAY_IST} - o.purchase_target_date)::int
+    FROM orders o
    WHERE o.boi = 'Yes'
-     AND pl.purchase_target_date < ${TODAY_IST}
-     AND (NOT EXISTS (SELECT 1 FROM order_boi_items b WHERE b.item_id = it.id)
-          OR EXISTS (SELECT 1 FROM order_boi_items b WHERE b.item_id = it.id AND b.receipt_date IS NULL))
+     AND o.purchase_target_date < ${TODAY_IST}
+     AND EXISTS (
+       SELECT 1 FROM order_items it
+        WHERE it.order_id = o.id
+          AND (
+            NOT EXISTS (SELECT 1 FROM order_boi_items b WHERE b.item_id = it.id)
+            OR EXISTS (SELECT 1 FROM order_boi_items b
+                        WHERE b.item_id = it.id AND b.receipt_date IS NULL)
+          )
+     )
 
   UNION ALL
-  -- QC docs not submitted by target date (LD risk, per EC)
-  SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
+  -- QC docs not submitted by target date (LD risk). SO-level target; SO stays
+  -- overdue while ANY EC hasn't submitted its actual date yet.
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
          'QC'::text, 'ld_risk'::text,
-         to_char(it.qc_doc_target_date, 'YYYY-MM-DD'),
-         (${TODAY_IST} - it.qc_doc_target_date)::int
-    FROM order_items it
-    JOIN orders o ON o.id = it.order_id
-    LEFT JOIN order_qc qc ON qc.item_id = it.id
-   WHERE it.qc_doc_target_date < ${TODAY_IST}
-     AND qc.qc_doc_actual_date IS NULL
+         to_char(o.qc_doc_target_date, 'YYYY-MM-DD'),
+         (${TODAY_IST} - o.qc_doc_target_date)::int
+    FROM orders o
+   WHERE o.qc_doc_target_date < ${TODAY_IST}
      AND (o.qc_required IS NULL OR o.qc_required <> 'No')
+     AND EXISTS (
+       SELECT 1 FROM order_items it
+        LEFT JOIN order_qc qc ON qc.item_id = it.id
+        WHERE it.order_id = o.id AND qc.qc_doc_actual_date IS NULL
+     )
 
   UNION ALL
   -- Dispatch not done by the dispatch team's own target date (per EC)
   SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
-         'Assembly & Dispatch'::text, 'overdue'::text,
+         'Assembly & Packing'::text, 'overdue'::text,
          to_char(ad.dispatch_team_target_date, 'YYYY-MM-DD'),
          (${TODAY_IST} - ad.dispatch_team_target_date)::int
     FROM order_items it

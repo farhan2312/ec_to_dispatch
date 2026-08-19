@@ -42,9 +42,9 @@ export default async function PurchaseWorkspacePage({
             Purchase
           </h1>
           <p className="text-sm text-muted">
-            Add bought-out (BOI) items per EC when the order&apos;s BOI = Yes.
-            BOI and the purchase target date are set by Central Visibility /
-            Planning.
+            Add bought-out (BOI) items per EC. Orders with BOI = No are
+            excluded — Purchase has nothing to do for those. BOI and the
+            purchase target date are set by Central Visibility.
           </p>
         </div>
       </div>

@@ -36,6 +36,9 @@ export type OrderField = {
   // When true, the field is never editable — it's derived and displayed only
   // (e.g. Balance of Payment = order value − amount received, set server-side).
   computed?: boolean;
+  // Optional visual grouping inside a section — consecutive fields sharing
+  // the same `group` label are rendered together under one subheading.
+  group?: string;
 };
 
 /** Turn a list of strings into { value, label } option objects. */
@@ -51,6 +54,8 @@ export const CURRENCY_OPTIONS = opts(["INR", "USD"]);
 export const ITEM_OPTIONS = opts(["Pump", "Spare", "ROLB"]);
 // SO-level Order Type; each EC/Add-On inherits it as its item_type.
 export const ORDER_TYPE_OPTIONS = opts(["Pump", "Spare"]);
+// Per-EC pump family, only shown on Pump Add-Ons.
+export const PUMP_TYPE_OPTIONS = opts(["PCP", "MMP", "RBL", "OLB"]);
 // Bill Type (SO-level) — decides which billing document fields apply to each
 // PI: Tax Invoice → PI No./Date/Value; Challan → Challan No./Date/Value + FR.
 export const BILL_TYPE_OPTIONS = opts(["Tax Invoice", "Challan"]);
@@ -111,60 +116,31 @@ export const ORDER_SECTIONS: OrderSection[] = [
     scope: "so",
     fields: [
       // Client — client_code and client_type are compulsory at creation.
-      { column: "client_code", label: "Client Code", type: "text" },
-      { column: "party", label: "Client Name", type: "text" },
-      { column: "industry_type", label: "Industry", type: "text" },
-      { column: "client_type", label: "Client Type", type: "text" },
-      { column: "nature_of_supply", label: "Market Type", type: "text" },
-      { column: "agent", label: "Rep(s)", type: "text" },
+      { column: "client_code", label: "Client Code", type: "text", group: "Client" },
+      { column: "party", label: "Client Name", type: "text", group: "Client" },
+      { column: "industry_type", label: "Industry", type: "text", group: "Client" },
+      { column: "client_type", label: "Client Type", type: "text", group: "Client" },
+      { column: "nature_of_supply", label: "Market Type", type: "text", group: "Client" },
+      { column: "agent", label: "Rep(s)", type: "text", group: "Client" },
 
-      // Purchase Order Details.
-      // SO Order Type — every EC added under this SO inherits it.
+      // Purchase Order Details — SO Order Type is inherited by every EC.
       {
         column: "order_type",
         label: "Order Type",
         type: "select",
         options: ORDER_TYPE_OPTIONS,
+        group: "Purchase Order",
       },
       {
         column: "bill_type",
         label: "Bill Type",
         type: "select",
         options: BILL_TYPE_OPTIONS,
+        group: "Purchase Order",
       },
       // BOI (bought-out items) flag — Purchase sees it read-only and, when Yes,
       // adds the individual BOI items per EC.
-      { column: "boi", label: "BOI", type: "select", options: YES_NO },
-      { column: "po_no", label: "Purchase Order Number", type: "text" },
-      { column: "customer_po_date", label: "Purchase Order Date", type: "date" },
-      {
-        column: "order_value",
-        label: "Purchase/Sales Order Value (without GST)",
-        type: "number",
-      },
-      {
-        column: "order_currency",
-        label: "Currency",
-        type: "select",
-        options: CURRENCY_OPTIONS,
-      },
-      { column: "so_no", label: "Sales Order Number", type: "text" },
-      { column: "so_date", label: "Sales Order Date", type: "date" },
-
-      // Operations — freight & packing (visible read-only to Billing).
-      {
-        column: "freight_terms",
-        label: "Freight Terms",
-        type: "select",
-        options: opts(["Paid", "To Pay"]),
-      },
-      {
-        column: "packing_requirement",
-        label: "Packing Requirement",
-        type: "select",
-        options: opts(["Wooden Box", "Loose"]),
-      },
-
+      { column: "boi", label: "BOI", type: "select", options: YES_NO, group: "Purchase Order" },
       // 'No' means the QC department isn't involved for this order — its ECs
       // are skipped by the QC workspace and QC reminders.
       {
@@ -172,16 +148,81 @@ export const ORDER_SECTIONS: OrderSection[] = [
         label: "QC Req",
         type: "select",
         options: YES_NO,
+        group: "Purchase Order",
+      },
+      { column: "po_no", label: "Purchase Order Number", type: "text", group: "Purchase Order" },
+      { column: "customer_po_date", label: "Purchase Order Date", type: "date", group: "Purchase Order" },
+      {
+        column: "order_value",
+        label: "Purchase/Sales Order Value (without GST)",
+        type: "number",
+        group: "Purchase Order",
+      },
+      {
+        column: "order_currency",
+        label: "Currency",
+        type: "select",
+        options: CURRENCY_OPTIONS,
+        group: "Purchase Order",
+      },
+      { column: "so_no", label: "Sales Order Number", type: "text", group: "Purchase Order" },
+      { column: "so_date", label: "Sales Order Date", type: "date", group: "Purchase Order" },
+      { column: "total_quantity", label: "Sales Order Total Quantity", type: "int", group: "Purchase Order" },
+
+      // Target dates (per SO — the same target applies across every EC on
+      // this order). Set by Central Visibility at intake; departments see them
+      // read-only in their workspaces.
+      { column: "drg_target_date", label: "Target Date for Drawing", type: "date", group: "Target Dates" },
+      // Purchase target is only meaningful when BOI = Yes (there's nothing
+      // for Purchase to do otherwise).
+      {
+        column: "purchase_target_date",
+        label: "Target Date for Purchase",
+        type: "date",
+        dependsOn: [{ column: "boi", value: "Yes" }],
+        group: "Target Dates",
+      },
+      // QC target date is only relevant when QC is needed for this order.
+      {
+        column: "qc_doc_target_date",
+        label: "QC Target Date",
+        type: "date",
+        dependsOn: [{ column: "qc_required", value: "Yes" }],
+        group: "Target Dates",
+      },
+      { column: "dispatch_target_date", label: "Dispatch Target Date", type: "date", group: "Target Dates" },
+      {
+        column: "dispatch_target_revised_date",
+        label: "Revised Dispatch Target Date",
+        type: "date",
+        group: "Target Dates",
+      },
+
+      // Operations — freight & packing (visible read-only to Billing).
+      {
+        column: "freight_terms",
+        label: "Freight Terms",
+        type: "select",
+        options: opts(["Paid", "To Pay"]),
+        group: "Operations",
+      },
+      {
+        column: "packing_requirement",
+        label: "Packing Requirement",
+        type: "select",
+        options: opts(["Wooden Box", "Loose"]),
+        group: "Operations",
       },
 
       // Commercial. Payment Terms is free text (varies per order).
-      { column: "payment_terms", label: "Payment Terms", type: "text" },
-      { column: "ld", label: "LD", type: "select", options: YES_NO },
+      { column: "payment_terms", label: "Payment Terms", type: "text", group: "Commercial" },
+      { column: "ld", label: "LD", type: "select", options: YES_NO, group: "Commercial" },
       {
         column: "ld_date",
         label: "LD Date",
         type: "date",
         dependsOn: [{ column: "ld", value: "Yes" }],
+        group: "Commercial",
       },
 
       // --- Everything below is commented out, not deleted: the orders table
@@ -229,9 +270,17 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "ec_date", label: "EC Date", type: "date" },
       {
         column: "item_type",
-        label: "Pump Type",
+        label: "Type",
         type: "select",
         options: ITEM_OPTIONS,
+      },
+      {
+        column: "pump_type",
+        label: "Pump Type",
+        type: "select",
+        options: PUMP_TYPE_OPTIONS,
+        // Only relevant when the EC is a Pump.
+        dependsOn: [{ column: "item_type", value: "Pump" }],
       },
       { column: "model_no", label: "Model No.", type: "text" },
       { column: "quantity", label: "Quantity", type: "int" },
@@ -239,14 +288,6 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "pump_sno", label: "Pump Serial No.", type: "text" },
       { column: "application", label: "Application", type: "text" },
       { column: "version", label: "Series Version", type: "text" },
-      { column: "dispatch_target_date", label: "Dispatch Date", type: "date" },
-      {
-        column: "dispatch_target_revised_date",
-        label: "Revised Dispatch Date",
-        type: "date",
-      },
-      { column: "drg_target_date", label: "Target Date for Drawing", type: "date" },
-      { column: "qc_doc_target_date", label: "QC Target Date", type: "date" },
     ],
   },
   {
@@ -357,8 +398,8 @@ export const ORDER_SECTIONS: OrderSection[] = [
         type: "text",
         centralOnly: true,
       },
-      // Filled by Planning.
-      { column: "purchase_target_date", label: "Target Date for Purchase", type: "date" },
+      // Filled by Planning. (Purchase target date moved to the SO — Central
+      // Visibility sets it in Purchase Order Details.)
       { column: "pump_readiness_remarks", label: "Pump Readiness Remarks", type: "text" },
       { column: "planning_readiness_date", label: "Readiness Date Rcvd from Planning", type: "date" },
       { column: "planning_status", label: "Planning Status", type: "text" },
@@ -381,7 +422,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
   },
   {
     key: "assembly_dispatch",
-    title: "Assembly & Dispatch",
+    title: "Assembly & Packing",
     table: "order_assembly_dispatch",
     scope: "item",
     fields: [
@@ -525,14 +566,14 @@ export const DRAWING_CONTEXT_FIELDS: OrderField[] = [
   { column: "drg_target_date", label: "Target Date for Drawing", type: "date" },
 ];
 
-// QC target date — an EC attribute (order_items) shown read-only in the QC
-// workspace (Central Visibility sets it on the Add-On form).
+// QC target date — SO-level, in Purchase Order Details. Shown read-only in
+// the QC workspace.
 export const QC_CONTEXT_FIELDS: OrderField[] = [
   { column: "qc_doc_target_date", label: "QC Target Date", type: "date" },
 ];
 
-// BOI (SO-level, on orders), Target Date for Purchase (on order_planning) and
-// LD / LD Date (SO-level) shown read-only in the Purchase workspace.
+// BOI, Purchase target, and LD / LD Date (all SO-level, on orders) shown
+// read-only in the Purchase workspace.
 export const PURCHASE_CONTEXT_FIELDS: OrderField[] = [
   { column: "boi", label: "BOI", type: "select", options: YES_NO },
   { column: "purchase_target_date", label: "Target Date for Purchase", type: "date" },
@@ -540,7 +581,7 @@ export const PURCHASE_CONTEXT_FIELDS: OrderField[] = [
   { column: "ld_date", label: "LD Date", type: "date" },
 ];
 
-// Per-EC dispatch dates (order_items) shown read-only in the Planning
+// Dispatch dates (SO-level, on orders) shown read-only in the Planning
 // workspace, so Planning sees the dates it must schedule to.
 export const PLANNING_CONTEXT_FIELDS: OrderField[] = [
   { column: "dispatch_target_date", label: "Dispatch Target Date", type: "date" },

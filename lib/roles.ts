@@ -12,7 +12,7 @@ export const ROLE_LABELS = {
   planning: "Planning",
   purchase: "Purchase",
   qc: "QC",
-  dispatch: "Assembly & Dispatch",
+  dispatch: "Assembly & Packing",
 } as const;
 
 export type Role = keyof typeof ROLE_LABELS;
@@ -120,7 +120,7 @@ export function canEditQcRequirementDocs(role: string): boolean {
 // (7 days / 72h / 24h out). Billing and Accounts have no such date. Planning
 // has no target date of its own, so it borrows the order's Dispatch Target
 // Date — pump/order readiness (planning_readiness_date) must be in before
-// dispatch, same deadline Assembly & Dispatch works to.
+// dispatch, same deadline Assembly & Packing works to.
 export type ReminderDept = "drawing" | "purchase" | "qc" | "planning" | "dispatch";
 
 const REMINDER_DEPT_BY_ROLE: Partial<Record<Role, ReminderDept>> = {

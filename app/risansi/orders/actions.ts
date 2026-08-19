@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/session";
 import {
   addChildRow,
   createItem,
+  setItemOrderCopy,
   createOrder,
   deleteChildRow,
   deleteItem,
@@ -163,17 +164,8 @@ export async function createItemAction(
       details: `Added EC item to ${soLabel}`,
     });
 
-    // Target dates filled on the Add-On form count as newly set, so notify the
-    // departments that work to them (before: null → every filled field fires).
-    await notifySectionSaved({
-      orderId,
-      itemId,
-      orderLabel: label,
-      table: "order_items",
-      actorRole: user.role,
-      before: null,
-      after: itemInput as Record<string, unknown>,
-    });
+    // No target-date notifications here: target dates are SO-level and fire
+    // on order create/update, not on adding an EC.
 
     revalidatePath("/risansi/orders");
     revalidatePath(`/risansi/orders/${orderId}`);
@@ -182,6 +174,62 @@ export async function createItemAction(
     console.error("createItem failed:", error);
     return { ok: false, error: "Could not add the EC item. Please try again." };
   }
+}
+
+const MAX_ORDER_COPY_BYTES = 8 * 1024 * 1024; // stay under the action-body cap
+
+/**
+ * Add a Spare EC — like createItemAction but takes FormData so it can carry
+ * the Order Copy file. Fields: ec_no, ec_date, quantity, and optional
+ * `order_copy` file input.
+ */
+export async function createSpareItemAction(
+  orderId: string,
+  formData: FormData
+): Promise<CreateItemResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canCreateOrders(user.role)) {
+    return { ok: false, error: "You don't have permission to add EC items." };
+  }
+
+  const file = formData.get("order_copy");
+  const hasFile = file instanceof File && file.size > 0;
+  if (hasFile && file.size > MAX_ORDER_COPY_BYTES) {
+    return { ok: false, error: `"${file.name}" is larger than 8MB.` };
+  }
+
+  const input: NewItemInput = {
+    ec_no: (formData.get("ec_no") as string | null) ?? undefined,
+    ec_date: (formData.get("ec_date") as string | null) ?? undefined,
+    quantity: (formData.get("quantity") as string | null) ?? undefined,
+  };
+
+  const result = await createItemAction(orderId, input);
+  if (!result.ok) return result;
+
+  if (hasFile) {
+    try {
+      const data = Buffer.from(await file.arrayBuffer());
+      await setItemOrderCopy(result.itemId, {
+        name: file.name,
+        mimeType: file.type || null,
+        size: file.size,
+        data,
+      });
+      revalidatePath(`/risansi/orders/${orderId}`);
+    } catch (error) {
+      // The EC is already saved — surface the upload failure so the user knows
+      // to retry the file (via edit later, once wired), but keep the EC row.
+      console.error("setItemOrderCopy failed:", error);
+      return {
+        ok: false,
+        error: "EC added, but the Order Copy file failed to upload. Retry the upload.",
+      };
+    }
+  }
+
+  return result;
 }
 
 export type DeleteItemResult = { ok: true } | { ok: false; error: string };

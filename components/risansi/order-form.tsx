@@ -39,7 +39,7 @@ const SECTIONS: Section[] = [
     ],
   },
   {
-    title: "Purchase Order Details",
+    title: "Purchase Order",
     fields: [
       {
         name: "order_type",
@@ -54,6 +54,7 @@ const SECTIONS: Section[] = [
         options: BILL_TYPE_OPTIONS,
       },
       { name: "boi", label: "BOI", type: "select", options: YES_NO_OPTIONS },
+      { name: "qc_required", label: "QC Req", type: "select", options: YES_NO_OPTIONS },
       { name: "po_no", label: "Purchase Order Number", type: "text" },
       { name: "customer_po_date", label: "Purchase Order Date", type: "date" },
       {
@@ -69,6 +70,40 @@ const SECTIONS: Section[] = [
       },
       { name: "so_no", label: "Sales Order Number", type: "text" },
       { name: "so_date", label: "Sales Order Date", type: "date" },
+      {
+        name: "total_quantity",
+        label: "Sales Order Total Quantity",
+        type: "number",
+      },
+    ],
+  },
+  {
+    title: "Target Dates",
+    fields: [
+      { name: "drg_target_date", label: "Target Date for Drawing", type: "date" },
+      {
+        name: "purchase_target_date",
+        label: "Target Date for Purchase",
+        type: "date",
+        dependsOn: { name: "boi", value: "Yes" },
+      },
+      {
+        name: "qc_doc_target_date",
+        label: "QC Target Date",
+        type: "date",
+        dependsOn: { name: "qc_required", value: "Yes" },
+      },
+      { name: "dispatch_target_date", label: "Dispatch Target Date", type: "date" },
+      {
+        name: "dispatch_target_revised_date",
+        label: "Revised Dispatch Target Date",
+        type: "date",
+      },
+    ],
+  },
+  {
+    title: "Operations",
+    fields: [
       {
         name: "freight_terms",
         label: "Freight Terms",
@@ -87,7 +122,11 @@ const SECTIONS: Section[] = [
           { value: "Loose", label: "Loose" },
         ],
       },
-      { name: "qc_required", label: "QC Req", type: "select", options: YES_NO_OPTIONS },
+    ],
+  },
+  {
+    title: "Commercial",
+    fields: [
       { name: "payment_terms", label: "Payment Terms", type: "text" },
       { name: "ld", label: "LD", type: "select", options: YES_NO_OPTIONS },
       {

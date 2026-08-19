@@ -163,14 +163,17 @@ export function OrderDetail({
                 className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
               >
                 <Plus className="h-3.5 w-3.5" />
-                Add-On
+                {str(order.order_type) === "Spare" ? "Spare Add-On" : "Pump Add-On"}
               </button>
             )}
           </div>
 
           {items.length === 0 ? (
             <p className="text-sm text-muted">
-              No EC items yet.{canManageItems ? " Use Add-On to add a pump or spare." : ""}
+              No EC items yet.
+              {canManageItems
+                ? ` Use ${str(order.order_type) === "Spare" ? "Spare" : "Pump"} Add-On to add one.`
+                : ""}
             </p>
           ) : (
             <div className="overflow-x-auto">
@@ -178,10 +181,10 @@ export function OrderDetail({
                 <thead>
                   <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
                     <th className="px-3 py-2">EC No.</th>
-                    <th className="px-3 py-2">Type</th>
+                    <th className="px-3 py-2">EC Date</th>
+                    <th className="px-3 py-2">Pump Type</th>
                     <th className="px-3 py-2">Model</th>
                     <th className="px-3 py-2">Qty</th>
-                    <th className="px-3 py-2">Dispatch Target</th>
                     <th className="px-3 py-2">Dispatch Status</th>
                     <th className="px-3 py-2" />
                   </tr>
@@ -194,12 +197,12 @@ export function OrderDetail({
                         <td className="px-3 py-2 whitespace-nowrap font-medium">
                           {str(item.ec_no) || "—"}
                         </td>
-                        <td className="px-3 py-2">{str(item.item_type) || "—"}</td>
+                        <td className="px-3 py-2 whitespace-nowrap text-muted">
+                          {formatDate(item.ec_date)}
+                        </td>
+                        <td className="px-3 py-2">{str(item.pump_type) || "—"}</td>
                         <td className="px-3 py-2">{str(item.model_no) || "—"}</td>
                         <td className="px-3 py-2 tabular-nums">{str(item.quantity) || "—"}</td>
-                        <td className="px-3 py-2 whitespace-nowrap text-muted">
-                          {formatDate(item.dispatch_target_date)}
-                        </td>
                         <td className="px-3 py-2">
                           {str(item.dispatch_status) || (
                             <span className="text-muted-foreground">—</span>

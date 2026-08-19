@@ -37,7 +37,7 @@ export default async function DrawingWorkspacePage({
       DRAWING_CONTEXT_FIELDS.map((f) => ({
         column: f.column,
         type: f.type,
-        from: "order_items" as const,
+        from: "orders" as const,
       }))
     ),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),

@@ -29,9 +29,6 @@ const DROPPED_ORDER_COLUMNS = new Set([
   "version",
   "project",
   "master_reason_of_delay",
-  "dispatch_target_date",
-  "dispatch_target_revised_date",
-  "drg_target_date",
 ]);
 
 type Row = Record<string, unknown>;
@@ -47,11 +44,9 @@ export type ItemSummary = {
   ec_no: string | null;
   ec_date: string | null;
   item_type: string | null;
+  pump_type: string | null;
   model_no: string | null;
   quantity: string | null;
-  dispatch_target_date: string | null;
-  drg_target_date: string | null;
-  qc_doc_target_date: string | null;
   dispatch_status: string | null;
 };
 
@@ -95,6 +90,12 @@ export type NewOrderInput = {
   ld_date?: string;
   order_value?: string;
   order_currency?: string;
+  total_quantity?: string;
+  drg_target_date?: string;
+  dispatch_target_date?: string;
+  dispatch_target_revised_date?: string;
+  qc_doc_target_date?: string;
+  purchase_target_date?: string;
 };
 
 /** Fields captured when adding an EC/pump item (the Add-On form). */
@@ -102,17 +103,13 @@ export type NewItemInput = {
   ec_no?: string;
   ec_date?: string;
   item_type?: string;
+  pump_type?: string;
   model_no?: string;
   quantity?: string;
   orientation?: string;
   pump_sno?: string;
   application?: string;
   version?: string;
-  boi?: string;
-  dispatch_target_date?: string;
-  dispatch_target_revised_date?: string;
-  drg_target_date?: string;
-  qc_doc_target_date?: string;
 };
 
 function nullify(value?: string): string | null {
@@ -143,9 +140,12 @@ export async function createOrder(
         so_no, so_date, client_code, client_type, party, agent,
         nature_of_supply, industry_type, po_no, customer_po_date,
         order_value, order_currency, qc_required, payment_terms, ld, ld_date,
-        freight_terms, packing_requirement, order_type, bill_type, boi
+        freight_terms, packing_requirement, order_type, bill_type, boi,
+        total_quantity, drg_target_date, dispatch_target_date,
+        dispatch_target_revised_date, qc_doc_target_date, purchase_target_date
      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
+        $22,$23,$24,$25,$26,$27
      )
      RETURNING id, sl_no::int AS sl_no`,
     [
@@ -170,6 +170,12 @@ export async function createOrder(
       nullify(input.order_type),
       nullify(input.bill_type),
       nullify(input.boi),
+      toInt(input.total_quantity),
+      nullify(input.drg_target_date),
+      nullify(input.dispatch_target_date),
+      nullify(input.dispatch_target_revised_date),
+      nullify(input.qc_doc_target_date),
+      nullify(input.purchase_target_date),
     ]
   );
   return result.rows[0];
@@ -186,11 +192,10 @@ export async function createItem(
 ): Promise<{ id: string; seq: number }> {
   const result = await query<{ id: string; seq: number }>(
     `INSERT INTO order_items (
-        order_id, ec_no, ec_date, item_type, model_no, quantity, orientation,
-        pump_sno, application, version, boi, dispatch_target_date,
-        dispatch_target_revised_date, drg_target_date, qc_doc_target_date
+        order_id, ec_no, ec_date, item_type, pump_type, model_no, quantity,
+        orientation, pump_sno, application, version
      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
      )
      RETURNING id, seq::int AS seq`,
     [
@@ -198,20 +203,56 @@ export async function createItem(
       nullify(input.ec_no),
       nullify(input.ec_date),
       nullify(input.item_type),
+      nullify(input.pump_type),
       nullify(input.model_no),
       toInt(input.quantity),
       nullify(input.orientation),
       nullify(input.pump_sno),
       nullify(input.application),
       nullify(input.version),
-      nullify(input.boi),
-      nullify(input.dispatch_target_date),
-      nullify(input.dispatch_target_revised_date),
-      nullify(input.drg_target_date),
-      nullify(input.qc_doc_target_date),
     ]
   );
   return result.rows[0];
+}
+
+/** Save the Order Copy file bytes onto an EC (Spare form's file upload). */
+export async function setItemOrderCopy(
+  itemId: string,
+  file: { name: string; mimeType: string | null; size: number; data: Buffer }
+): Promise<void> {
+  if (!UUID_RE.test(itemId)) return;
+  await query(
+    `UPDATE order_items
+        SET order_copy_file_name = $2,
+            order_copy_mime_type = $3,
+            order_copy_file_size = $4,
+            order_copy_file_data = $5
+      WHERE id = $1`,
+    [itemId, file.name, file.mimeType, file.size, file.data]
+  );
+}
+
+/** Fetch the Order Copy file bytes for one EC (download route). */
+export async function getItemOrderCopy(
+  itemId: string
+): Promise<{ file_name: string; mime_type: string | null; file_data: Buffer } | null> {
+  if (!UUID_RE.test(itemId)) return null;
+  const result = await query<{
+    order_copy_file_name: string | null;
+    order_copy_mime_type: string | null;
+    order_copy_file_data: Buffer | null;
+  }>(
+    `SELECT order_copy_file_name, order_copy_mime_type, order_copy_file_data
+       FROM order_items WHERE id = $1`,
+    [itemId]
+  );
+  const row = result.rows[0];
+  if (!row?.order_copy_file_data || !row.order_copy_file_name) return null;
+  return {
+    file_name: row.order_copy_file_name,
+    mime_type: row.order_copy_mime_type,
+    file_data: row.order_copy_file_data,
+  };
 }
 
 /** Delete an EC item (cascades to its department detail and lots). */
@@ -229,11 +270,9 @@ export async function listItems(orderId: string): Promise<ItemSummary[]> {
             it.ec_no,
             to_char(it.ec_date, 'YYYY-MM-DD') AS ec_date,
             it.item_type,
+            it.pump_type,
             it.model_no,
             it.quantity::text AS quantity,
-            to_char(it.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
-            to_char(it.drg_target_date, 'YYYY-MM-DD') AS drg_target_date,
-            to_char(it.qc_doc_target_date, 'YYYY-MM-DD') AS qc_doc_target_date,
             ad.dispatch_status
        FROM order_items it
        LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
@@ -673,7 +712,7 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             (qc.qc_doc_actual_date IS NOT NULL) AS qc_submitted,
             o.qc_required,
             pl.planning_status,
-            to_char(it.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
+            to_char(o.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
             ad.dispatch_status
        FROM order_items it
        JOIN orders o ON o.id = it.order_id
@@ -909,6 +948,7 @@ export type PurchaseQueueRow = {
  * target date, and that EC's BOI items (for the manage-items list).
  */
 export async function listItemsForPurchase(): Promise<PurchaseQueueRow[]> {
+  // BOI = No SOs don't need Purchase involvement — hide them from the queue.
   const result = await query<PurchaseQueueRow>(
     `SELECT it.id,
             o.sl_no::int AS sl_no,
@@ -917,12 +957,12 @@ export async function listItemsForPurchase(): Promise<PurchaseQueueRow[]> {
             o.boi,
             o.ld,
             to_char(o.ld_date, 'YYYY-MM-DD') AS ld_date,
-            to_char(pl.purchase_target_date, 'YYYY-MM-DD') AS purchase_target_date,
+            to_char(o.purchase_target_date, 'YYYY-MM-DD') AS purchase_target_date,
             COALESCE((SELECT jsonb_agg(to_jsonb(bi) ORDER BY bi.created_at)
                       FROM order_boi_items bi WHERE bi.item_id = it.id), '[]'::jsonb) AS boi_items
        FROM order_items it
        JOIN orders o ON o.id = it.order_id
-       LEFT JOIN order_planning pl ON pl.item_id = it.id
+      WHERE o.boi = 'Yes'
       ORDER BY o.sl_no ASC, it.seq ASC`
   );
   return result.rows;
@@ -965,11 +1005,9 @@ export async function listOrders(): Promise<OrderListRow[]> {
                          it.ec_no,
                          to_char(it.ec_date, 'YYYY-MM-DD') AS ec_date,
                          it.item_type,
+                         it.pump_type,
                          it.model_no,
                          it.quantity::text AS quantity,
-                         to_char(it.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
-                         to_char(it.drg_target_date, 'YYYY-MM-DD') AS drg_target_date,
-                         to_char(it.qc_doc_target_date, 'YYYY-MM-DD') AS qc_doc_target_date,
                          ad.dispatch_status
                     FROM order_items it
                     LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id

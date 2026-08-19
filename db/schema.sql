@@ -1178,3 +1178,68 @@ ALTER TABLE order_billing_docs DROP COLUMN IF EXISTS challan_no;
 ALTER TABLE order_billing_docs DROP COLUMN IF EXISTS challan_date;
 ALTER TABLE order_billing_docs DROP COLUMN IF EXISTS challan_value;
 ALTER TABLE order_billing_docs DROP COLUMN IF EXISTS fr_reason;
+
+-- ===========================================================================
+-- Target dates and Total Quantity move to the SO (Purchase Order Details).
+-- Pump Type (PCP/MMP/RBL/OLB) and a per-EC Order Copy file are added on the
+-- item — Pump adds carry pump_type; Spare adds carry the Order Copy PDF.
+-- ===========================================================================
+
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS total_quantity INTEGER;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS drg_target_date DATE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS dispatch_target_date DATE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS dispatch_target_revised_date DATE;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS qc_doc_target_date DATE;
+
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_name='order_items' AND column_name='drg_target_date') THEN
+        UPDATE orders o SET
+            drg_target_date              = COALESCE(o.drg_target_date,              sub.drg),
+            dispatch_target_date         = COALESCE(o.dispatch_target_date,         sub.disp),
+            dispatch_target_revised_date = COALESCE(o.dispatch_target_revised_date, sub.disp_r),
+            qc_doc_target_date           = COALESCE(o.qc_doc_target_date,           sub.qc)
+          FROM (
+            SELECT order_id,
+                   MAX(drg_target_date)              AS drg,
+                   MAX(dispatch_target_date)         AS disp,
+                   MAX(dispatch_target_revised_date) AS disp_r,
+                   MAX(qc_doc_target_date)           AS qc
+              FROM order_items GROUP BY order_id
+          ) sub WHERE sub.order_id = o.id;
+        ALTER TABLE order_items DROP COLUMN drg_target_date;
+        ALTER TABLE order_items DROP COLUMN dispatch_target_date;
+        ALTER TABLE order_items DROP COLUMN dispatch_target_revised_date;
+        ALTER TABLE order_items DROP COLUMN qc_doc_target_date;
+    END IF;
+END $$;
+
+-- Per-EC pump type (PCP/MMP/RBL/OLB) — distinct from item_type (Pump/Spare).
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS pump_type TEXT;
+
+-- Per-EC Order Copy document (single file). Kept inline on the row so the
+-- Spare form's one attachment doesn't need its own child table.
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS order_copy_file_name TEXT;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS order_copy_mime_type TEXT;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS order_copy_file_size INT;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS order_copy_file_data BYTEA;
+
+-- purchase_target_date moves from order_planning (per-EC) to orders (per-SO)
+-- so Central sets it once in Purchase Order Details. Idempotent.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS purchase_target_date DATE;
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_name='order_planning' AND column_name='purchase_target_date') THEN
+        UPDATE orders o SET
+            purchase_target_date = COALESCE(o.purchase_target_date, sub.d)
+          FROM (
+            SELECT it.order_id, MAX(pl.purchase_target_date) AS d
+              FROM order_planning pl
+              JOIN order_items it ON it.id = pl.item_id
+             GROUP BY it.order_id
+          ) sub WHERE sub.order_id = o.id;
+        ALTER TABLE order_planning DROP COLUMN purchase_target_date;
+    END IF;
+END $$;

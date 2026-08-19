@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, FileText } from "lucide-react";
 import { CHILD_FIELDS, ITEM_SECTIONS, LOT_FIELDS } from "@/lib/order-schema";
 import {
   canAccessDepartment,
@@ -64,9 +64,20 @@ export function ItemDetail({
         </span>
         <h1 className="font-display text-xl font-bold tracking-tight text-foreground">
           {str(item.item_type) || "Item"}
-          {item.model_no ? ` — ${str(item.model_no)}` : ""}
+          {str(item.pump_type) ? ` · ${str(item.pump_type)}` : ""}
+          {str(item.model_no) ? ` — ${str(item.model_no)}` : ""}
         </h1>
         <span className="text-sm text-muted">SO {soLabel}</span>
+        {str(item.order_copy_file_name) && (
+          <a
+            href={`/api/orders/items/${itemId}/order-copy`}
+            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-input-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+            download
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Order Copy: {str(item.order_copy_file_name)}
+          </a>
+        )}
       </div>
 
       <div className="max-w-6xl space-y-6">

@@ -170,8 +170,6 @@ const TARGET_DATE_RECIPIENTS: Partial<
       label: "Purchase target date",
       roles: ["purchase"],
     },
-  ],
-  order_assembly_dispatch: [
     {
       column: "dispatch_team_target_date",
       label: "Dispatch team target date",

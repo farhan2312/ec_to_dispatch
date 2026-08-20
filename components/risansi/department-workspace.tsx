@@ -13,12 +13,15 @@ import {
 } from "lucide-react";
 import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
 import {
+  CHILD_FIELDS,
   SECTION_BY_TABLE,
   canonicalSelectValue,
+  dependsOnSatisfied,
   selectOptionsFor,
   type OrderField,
   type OrderTable,
 } from "@/lib/order-schema";
+import { OrderChildList } from "./order-children";
 import { Pagination, SearchInput, useTableSearch } from "./table-tools";
 import { QcDocumentsModal } from "./qc-documents-modal";
 import { OrderDetailsModal } from "./order-details-modal";
@@ -67,8 +70,7 @@ function rowSearchText(o: Row): string {
 // A dependsOn'd field (e.g. a billing document field gated on the order's
 // bill_type) only applies to a row whose data satisfies the condition.
 function fieldApplies(field: OrderField, row: Row): boolean {
-  if (!field.dependsOn) return true;
-  return field.dependsOn.every((d) => toInput(row[d.column]) === d.value);
+  return dependsOnSatisfied(field, (col) => toInput(row[col]));
 }
 
 export function DepartmentWorkspace({
@@ -168,6 +170,24 @@ export function DepartmentWorkspace({
         }, new Map<string, SoGroup>())
       ).map(([, g]) => g)
     : [];
+
+  // Per-EC child list carried by this section (packing slips), plus its gate
+  // against the SO and the label/kind it files rows under.
+  const section = SECTION_BY_TABLE.get(table);
+  const childTable = section?.childTable;
+  const childKind = section?.childKind;
+  const childTitle =
+    childKind === "tentative" ? "Tentative packing slips" : "Actual packing slips";
+  // The gate is a property of each SO (e.g. its Packing Details Required), so
+  // it's evaluated against that SO's own row, not the queue as a whole.
+  function childGateOkFor(head: Row): boolean {
+    if (!section?.childGate) return true;
+    return toInput(head[section.childGate.column]) === section.childGate.value;
+  }
+  // The queue query ships each EC's slips inline as `child_rows`.
+  function childRowsFor(ec: Row): Row[] {
+    return (ec.child_rows ?? []) as Row[];
+  }
 
   const colCount = groupBySo
     ? 3 + (showParty ? 1 : 0) + readonlyFields.length + 1 // toggle + Sl. + SO + party? + context + ECs count/edit
@@ -421,6 +441,44 @@ export function DepartmentWorkspace({
                                   ))}
                                 </tbody>
                               </table>
+
+                              {/* Sections with a per-EC child list (Planning /
+                                  Packing → packing slips) render it per EC. */}
+                              {childTable && (
+                                <div className="mt-4 space-y-4">
+                                  {!childGateOkFor(g.head) ? (
+                                    <p className="text-xs text-muted">
+                                      Packing Details Required is not set to Yes
+                                      on this order.
+                                    </p>
+                                  ) : (
+                                    g.ecs.map((ec) => (
+                                      <div
+                                        key={`slips-${String(ec.id)}`}
+                                        className="rounded-lg border border-card-border bg-surface p-3 shadow-sm"
+                                      >
+                                        <div className="mb-2 flex items-center gap-2">
+                                          <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
+                                            EC · {toInput(ec.ec_no) || "—"}
+                                          </span>
+                                        </div>
+                                        <OrderChildList
+                                          orderId={String(ec.id)}
+                                          table={childTable}
+                                          title={childTitle}
+                                          fields={CHILD_FIELDS[childTable]}
+                                          rows={childRowsFor(ec)}
+                                          canEdit={canEdit}
+                                          kind={childKind}
+                                          context={{
+                                            nature_of_supply: ec.nature_of_supply,
+                                          }}
+                                        />
+                                      </div>
+                                    ))
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -600,10 +658,9 @@ function EditSectionModal({
               // order's bill_type) is hidden entirely when its condition, read
               // from the edit values then the row data, isn't met.
               if (
-                field.dependsOn &&
-                !field.dependsOn.every(
-                  (d) =>
-                    (values[d.column] ?? toInput(data[d.column])) === d.value
+                !dependsOnSatisfied(
+                  field,
+                  (col) => values[col] ?? toInput(data[col])
                 )
               ) {
                 return null;

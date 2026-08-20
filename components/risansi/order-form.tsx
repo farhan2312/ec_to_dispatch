@@ -54,6 +54,12 @@ const SECTIONS: Section[] = [
         options: BILL_TYPE_OPTIONS,
       },
       { name: "boi", label: "BOI", type: "select", options: YES_NO_OPTIONS },
+      {
+        name: "packing_details_required",
+        label: "Packing Details Required",
+        type: "select",
+        options: YES_NO_OPTIONS,
+      },
       { name: "qc_required", label: "QC Req", type: "select", options: YES_NO_OPTIONS },
       { name: "po_no", label: "Purchase Order Number", type: "text" },
       { name: "customer_po_date", label: "Purchase Order Date", type: "date" },
@@ -92,6 +98,11 @@ const SECTIONS: Section[] = [
         label: "QC Target Date",
         type: "date",
         dependsOn: { name: "qc_required", value: "Yes" },
+      },
+      {
+        name: "dispatch_team_target_date",
+        label: "Target Date for Packing Team",
+        type: "date",
       },
       { name: "dispatch_target_date", label: "Dispatch Target Date", type: "date" },
       {

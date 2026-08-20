@@ -96,6 +96,8 @@ export type NewOrderInput = {
   dispatch_target_revised_date?: string;
   qc_doc_target_date?: string;
   purchase_target_date?: string;
+  dispatch_team_target_date?: string;
+  packing_details_required?: string;
 };
 
 /** Fields captured when adding an EC/pump item (the Add-On form). */
@@ -142,10 +144,11 @@ export async function createOrder(
         order_value, order_currency, qc_required, payment_terms, ld, ld_date,
         freight_terms, packing_requirement, order_type, bill_type, boi,
         total_quantity, drg_target_date, dispatch_target_date,
-        dispatch_target_revised_date, qc_doc_target_date, purchase_target_date
+        dispatch_target_revised_date, qc_doc_target_date, purchase_target_date,
+        packing_details_required, dispatch_team_target_date
      ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
-        $22,$23,$24,$25,$26,$27
+        $22,$23,$24,$25,$26,$27,$28,$29
      )
      RETURNING id, sl_no::int AS sl_no`,
     [
@@ -176,6 +179,8 @@ export async function createOrder(
       nullify(input.dispatch_target_revised_date),
       nullify(input.qc_doc_target_date),
       nullify(input.purchase_target_date),
+      nullify(input.packing_details_required),
+      nullify(input.dispatch_team_target_date),
     ]
   );
   return result.rows[0];
@@ -273,9 +278,9 @@ export async function listItems(orderId: string): Promise<ItemSummary[]> {
             it.pump_type,
             it.model_no,
             it.quantity::text AS quantity,
-            ad.dispatch_status
+            o.dispatch_status
        FROM order_items it
-       LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
+       JOIN orders o ON o.id = it.order_id
       WHERE it.order_id = $1
       ORDER BY it.seq ASC`,
     [orderId]
@@ -294,6 +299,7 @@ export type OrderDetail = {
   order_billing: Row | null;
   order_accounts: Row | null;
   order_billing_docs: Row[];
+  order_invoices: Row[];
   items: Row[];
 };
 
@@ -308,12 +314,14 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
         COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                   FROM order_billing_docs d WHERE d.order_id = o.id),
                  '[]'::jsonb) AS order_billing_docs,
+        COALESCE((SELECT jsonb_agg(to_jsonb(inv) ORDER BY inv.seq)
+                  FROM order_invoices inv WHERE inv.order_id = o.id),
+                 '[]'::jsonb) AS order_invoices,
         COALESCE((
           SELECT jsonb_agg(to_jsonb(x) ORDER BY x.seq)
             FROM (
-              SELECT it.*, ad.dispatch_status
+              SELECT it.*, o.dispatch_status
                 FROM order_items it
-                LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
                WHERE it.order_id = o.id
             ) x
         ), '[]'::jsonb) AS items
@@ -342,6 +350,7 @@ export type ItemDetail = {
   order_lots: Row[];
   order_boi_items: Row[];
   order_billing_docs: Row[];
+  order_packing_slips: Row[];
 };
 
 const ITEM_DETAIL_SELECT = `
@@ -359,7 +368,9 @@ const ITEM_DETAIL_SELECT = `
     COALESCE((SELECT jsonb_agg(to_jsonb(bi) ORDER BY bi.created_at)
               FROM order_boi_items bi WHERE bi.item_id = it.id), '[]'::jsonb) AS order_boi_items,
     COALESCE((SELECT jsonb_agg(to_jsonb(bd) ORDER BY bd.seq)
-              FROM order_billing_docs bd WHERE bd.order_id = o.id), '[]'::jsonb) AS order_billing_docs
+              FROM order_billing_docs bd WHERE bd.order_id = o.id), '[]'::jsonb) AS order_billing_docs,
+    COALESCE((SELECT jsonb_agg(to_jsonb(ps) ORDER BY ps.seq)
+              FROM order_packing_slips ps WHERE ps.item_id = it.id), '[]'::jsonb) AS order_packing_slips
    FROM order_items it
    JOIN orders o                        ON o.id  = it.order_id
    LEFT JOIN order_billing b            ON b.order_id  = o.id
@@ -453,6 +464,11 @@ export async function updateOrderSection(
   if (table === "order_accounts" || table === "orders") {
     await recomputeAccountsBalance(id);
   }
+  // Dispatch status compares invoices against the SO's quantity/value, so a
+  // change to either side restates it.
+  if (table === "orders") {
+    await recomputeDispatchStatus(id);
+  }
 }
 
 /** Recompute the SO's accounts balance from order value and amount received. */
@@ -467,20 +483,36 @@ async function recomputeAccountsBalance(orderId: string): Promise<void> {
   );
 }
 
+// Which parent column each 1:many child hangs off: per-SO tables key on
+// order_id, per-EC tables on item_id.
+const CHILD_PARENT_COLUMN: Record<ChildTable, "order_id" | "item_id"> = {
+  order_lots: "item_id",
+  order_boi_items: "item_id",
+  order_packing_slips: "item_id",
+  order_billing_docs: "order_id",
+  order_invoices: "order_id",
+};
+
 /**
- * Add a blank child row. Dispatch lots and BOI items are keyed by item_id
- * (per-EC); PIs (order_billing_docs) are keyed by order_id (per-SO).
+ * Add a blank child row. `kind` is only meaningful for packing slips, where
+ * Planning files 'tentative' rows and Packing files 'actual' ones.
  */
 export async function addChildRow(
   table: ChildTable,
-  parentId: string
+  parentId: string,
+  kind?: string
 ): Promise<{ id: string } | null> {
-  const keyCol = table === "order_billing_docs" ? "order_id" : "item_id";
+  const keyCol = CHILD_PARENT_COLUMN[table];
+  const useKind = table === "order_packing_slips" && kind;
   const result = await query<{ id: string }>(
-    `INSERT INTO ${table} (${keyCol}) VALUES ($1) RETURNING id`,
-    [parentId]
+    useKind
+      ? `INSERT INTO ${table} (${keyCol}, kind) VALUES ($1, $2) RETURNING id`
+      : `INSERT INTO ${table} (${keyCol}) VALUES ($1) RETURNING id`,
+    useKind ? [parentId, kind] : [parentId]
   );
-  return result.rows[0] ?? null;
+  const row = result.rows[0] ?? null;
+  if (row && table === "order_invoices") await recomputeDispatchStatus(parentId);
+  return row;
 }
 
 /** Update a child row's fields, validated against the child schema. */
@@ -494,20 +526,114 @@ export async function updateChildRow(
   const columns = Object.keys(values).filter(
     (c) => byColumn.has(c) && !byColumn.get(c)!.computed
   );
-  if (columns.length === 0) return;
-  const coerced = columns.map((c) =>
-    coerceField(byColumn.get(c)!.type, values[c])
-  );
-  const setClause = columns.map((c, i) => `${c} = $${i + 2}`).join(", ");
-  await query(`UPDATE ${table} SET ${setClause} WHERE id = $1`, [id, ...coerced]);
+  if (columns.length > 0) {
+    const coerced = columns.map((c) =>
+      coerceField(byColumn.get(c)!.type, values[c])
+    );
+    const setClause = columns.map((c, i) => `${c} = $${i + 2}`).join(", ");
+    await query(`UPDATE ${table} SET ${setClause} WHERE id = $1`, [id, ...coerced]);
+  }
+  // Invoiced quantity/value drives the SO's dispatch status.
+  if (table === "order_invoices") {
+    await recomputeDispatchStatusForInvoice(id);
+  }
 }
 
-/** Delete a child (lot) row by id. */
+/**
+ * Recompute an SO's dispatch status from its invoices:
+ *   • no invoice started            → Pending
+ *   • invoiced qty AND value reach the SO's → Fully dispatch
+ *   • otherwise (partially invoiced) → LOT dispatch
+ *
+ * Note: the ops spec writes "invoice > SO → Lot dispatch", which reads as a
+ * typo — a lot (partial) dispatch is when the invoice falls SHORT of the SO.
+ * Implemented as partial → LOT dispatch.
+ */
+export async function recomputeDispatchStatus(orderId: string): Promise<void> {
+  if (!UUID_RE.test(orderId)) return;
+  await query(
+    `UPDATE orders o
+        SET dispatch_status = CASE
+              WHEN inv.n IS NULL OR inv.n = 0 THEN 'Pending'
+              WHEN COALESCE(inv.qty, 0) >= COALESCE(o.total_quantity, 0)
+               AND COALESCE(inv.val, 0) >= COALESCE(o.order_value, 0)
+                THEN 'Fully dispatch'
+              ELSE 'LOT dispatch'
+            END
+       FROM (
+         SELECT COUNT(*) AS n,
+                SUM(invoice_quantity) AS qty,
+                SUM(invoice_value) AS val
+           FROM order_invoices WHERE order_id = $1
+       ) inv
+      WHERE o.id = $1`,
+    [orderId]
+  );
+}
+
+/** Recompute via an invoice id (resolves its SO first). */
+async function recomputeDispatchStatusForInvoice(invoiceId: string): Promise<void> {
+  const result = await query<{ order_id: string }>(
+    `SELECT order_id FROM order_invoices WHERE id = $1`,
+    [invoiceId]
+  );
+  const orderId = result.rows[0]?.order_id;
+  if (orderId) await recomputeDispatchStatus(orderId);
+}
+
+/** Save an invoice's LR attachment bytes. */
+export async function setInvoiceLrFile(
+  invoiceId: string,
+  file: { name: string; mimeType: string | null; size: number; data: Buffer }
+): Promise<void> {
+  if (!UUID_RE.test(invoiceId)) return;
+  await query(
+    `UPDATE order_invoices
+        SET lr_file_name = $2, lr_mime_type = $3, lr_file_size = $4, lr_file_data = $5
+      WHERE id = $1`,
+    [invoiceId, file.name, file.mimeType, file.size, file.data]
+  );
+}
+
+/** Fetch an invoice's LR attachment for download. */
+export async function getInvoiceLrFile(
+  invoiceId: string
+): Promise<{ file_name: string; mime_type: string | null; file_data: Buffer } | null> {
+  if (!UUID_RE.test(invoiceId)) return null;
+  const result = await query<{
+    lr_file_name: string | null;
+    lr_mime_type: string | null;
+    lr_file_data: Buffer | null;
+  }>(
+    `SELECT lr_file_name, lr_mime_type, lr_file_data FROM order_invoices WHERE id = $1`,
+    [invoiceId]
+  );
+  const row = result.rows[0];
+  if (!row?.lr_file_data || !row.lr_file_name) return null;
+  return {
+    file_name: row.lr_file_name,
+    mime_type: row.lr_mime_type,
+    file_data: row.lr_file_data,
+  };
+}
+
+/** Delete a child row by id. */
 export async function deleteChildRow(
   table: ChildTable,
   id: string
 ): Promise<void> {
   if (!UUID_RE.test(id)) return;
+  if (table === "order_invoices") {
+    // Capture the SO before the row goes, then restate its dispatch status.
+    const owner = await query<{ order_id: string }>(
+      `SELECT order_id FROM order_invoices WHERE id = $1`,
+      [id]
+    );
+    const orderId = owner.rows[0]?.order_id;
+    await query(`DELETE FROM ${table} WHERE id = $1`, [id]);
+    if (orderId) await recomputeDispatchStatus(orderId);
+    return;
+  }
   await query(`DELETE FROM ${table} WHERE id = $1`, [id]);
 }
 
@@ -639,11 +765,10 @@ export async function listDispatchRegister(): Promise<DispatchRegisterRow[]> {
             l.lot_no,
             to_char(l.lot_dispatch_date, 'YYYY-MM-DD') AS lot_dispatch_date,
             to_char(l.invoice_date, 'YYYY-MM-DD') AS invoice_date,
-            ad.dispatch_status
+            o.dispatch_status
        FROM order_lots l
        JOIN order_items it ON it.id = l.item_id
        JOIN orders o ON o.id = it.order_id
-       LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
       WHERE l.lot_dispatch_date IS NOT NULL
       ORDER BY l.lot_dispatch_date DESC, o.sl_no ASC`
   );
@@ -713,7 +838,7 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             o.qc_required,
             pl.planning_status,
             to_char(o.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
-            ad.dispatch_status
+            o.dispatch_status
        FROM order_items it
        JOIN orders o ON o.id = it.order_id
        LEFT JOIN order_billing b            ON b.order_id = o.id
@@ -721,7 +846,6 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
        LEFT JOIN order_drawing dr           ON dr.item_id = it.id
        LEFT JOIN order_qc qc                ON qc.item_id = it.id
        LEFT JOIN order_planning pl          ON pl.item_id = it.id
-       LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
       ORDER BY o.sl_no ASC, it.seq ASC`
   );
   return result.rows;
@@ -863,6 +987,22 @@ export async function listItemsForSection(
       ? `WHERE (o.qc_required IS NULL OR o.qc_required <> 'No')`
       : "";
 
+  // Sections backed by a per-EC child list (Planning/Packing → packing slips)
+  // carry those rows inline so the workspace can edit them without a round
+  // trip. `client_type` rides along for the export-only column gate.
+  // childKind is a schema constant, never user input — still pinned to the
+  // known values so it can never widen what goes into the SQL text.
+  const slipKind = section.childKind === "tentative" ? "tentative" : "actual";
+  const childSelect =
+    section.childTable === "order_packing_slips"
+      ? `, o.nature_of_supply, o.packing_details_required,
+         COALESCE((SELECT jsonb_agg(to_jsonb(ps) ORDER BY ps.seq)
+                     FROM order_packing_slips ps
+                    WHERE ps.item_id = it.id
+                      AND ps.kind = '${slipKind}'),
+                  '[]'::jsonb) AS child_rows`
+      : "";
+
   const result = await query<Row>(
     `SELECT it.id,
             it.seq::int AS seq,
@@ -871,6 +1011,7 @@ export async function listItemsForSection(
             it.ec_no,
             it.item_type,
             o.party
+            ${childSelect}
             ,${detailSelects}${contextSelects}
        FROM order_items it
        JOIN orders o ON o.id = it.order_id
@@ -898,7 +1039,9 @@ export type BillingQueueRow = {
   challan_date: string | null;
   challan_value: string | null;
   fr_reason: string | null;
+  dispatch_status: string | null;
   pi_docs: Row[];
+  invoices: Row[];
 };
 
 /**
@@ -921,9 +1064,13 @@ export async function listOrdersForBilling(): Promise<BillingQueueRow[]> {
             to_char(b.challan_date, 'YYYY-MM-DD') AS challan_date,
             b.challan_value::text AS challan_value,
             b.fr_reason,
+            o.dispatch_status,
             COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                       FROM order_billing_docs d WHERE d.order_id = o.id),
-                     '[]'::jsonb) AS pi_docs
+                     '[]'::jsonb) AS pi_docs,
+            COALESCE((SELECT jsonb_agg(to_jsonb(inv) ORDER BY inv.seq)
+                      FROM order_invoices inv WHERE inv.order_id = o.id),
+                     '[]'::jsonb) AS invoices
        FROM orders o
        LEFT JOIN order_billing b ON b.order_id = o.id
       ORDER BY o.sl_no ASC`
@@ -1008,9 +1155,8 @@ export async function listOrders(): Promise<OrderListRow[]> {
                          it.pump_type,
                          it.model_no,
                          it.quantity::text AS quantity,
-                         ad.dispatch_status
+                         o.dispatch_status
                     FROM order_items it
-                    LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
                    WHERE it.order_id = o.id
                 ) x
             ), '[]'::jsonb) AS items

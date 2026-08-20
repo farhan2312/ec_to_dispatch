@@ -7,6 +7,7 @@ import {
   addChildRow,
   createItem,
   setItemOrderCopy,
+  setInvoiceLrFile,
   createOrder,
   deleteChildRow,
   deleteItem,
@@ -202,6 +203,7 @@ export async function createSpareItemAction(
   const input: NewItemInput = {
     ec_no: (formData.get("ec_no") as string | null) ?? undefined,
     ec_date: (formData.get("ec_date") as string | null) ?? undefined,
+    model_no: (formData.get("model_no") as string | null) ?? undefined,
     quantity: (formData.get("quantity") as string | null) ?? undefined,
   };
 
@@ -415,6 +417,8 @@ const CHILD_TABLES: readonly ChildTable[] = [
   "order_lots",
   "order_boi_items",
   "order_billing_docs",
+  "order_packing_slips",
+  "order_invoices",
 ];
 
 function isChildTable(table: string): table is ChildTable {
@@ -435,12 +439,14 @@ async function guardChild(table: string): Promise<ChildActionResult> {
 
 export async function addOrderChildAction(
   orderId: string,
-  table: string
+  table: string,
+  // Packing slips only: 'tentative' (Planning) or 'actual' (Packing).
+  kind?: string
 ): Promise<ChildActionResult> {
   const guard = await guardChild(table);
   if (!guard.ok) return guard;
   try {
-    await addChildRow(table as ChildTable, orderId);
+    await addChildRow(table as ChildTable, orderId, kind);
     revalidatePath(`/risansi/orders/${orderId}`);
     return { ok: true };
   } catch (error) {
@@ -520,6 +526,40 @@ async function notifyPiCreated(
     type: "dept_update",
     message: `PI ${piNo} created for ${soLabel}`,
   });
+}
+
+const MAX_LR_BYTES = 8 * 1024 * 1024;
+
+/** Attach (or replace) an invoice's LR document. Billing only. */
+export async function uploadInvoiceLrAction(
+  invoiceId: string,
+  orderId: string,
+  formData: FormData
+): Promise<ChildActionResult> {
+  const guard = await guardChild("order_invoices");
+  if (!guard.ok) return guard;
+
+  const file = formData.get("lr");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "Choose a file to attach." };
+  }
+  if (file.size > MAX_LR_BYTES) {
+    return { ok: false, error: `"${file.name}" is larger than 8MB.` };
+  }
+  try {
+    const data = Buffer.from(await file.arrayBuffer());
+    await setInvoiceLrFile(invoiceId, {
+      name: file.name,
+      mimeType: file.type || null,
+      size: file.size,
+      data,
+    });
+    revalidatePath(`/risansi/orders/${orderId}`);
+    return { ok: true };
+  } catch (error) {
+    console.error("uploadInvoiceLr failed:", error);
+    return { ok: false, error: "Could not attach the file. Please try again." };
+  }
 }
 
 export async function deleteOrderChildAction(

@@ -59,7 +59,7 @@ export const BULK_HEADERS: string[] = [
   "Readiness Dt. Rcvd from Planning",
   "Final Dt. for Packing & Dispatch",
   "Documents Required by Assembly/Dispatch Team",
-  "Target Date for Dispatch Team",
+  "Target Date for Packing Team",
   "ACTUAL Material Packing Date",
   "PLANNING STATUS",
   "Project",

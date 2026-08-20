@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ArrowLeft, FileText } from "lucide-react";
-import { CHILD_FIELDS, ITEM_SECTIONS, LOT_FIELDS } from "@/lib/order-schema";
+import { CHILD_FIELDS, ITEM_SECTIONS } from "@/lib/order-schema";
 import {
   canAccessDepartment,
   canEditChild,
@@ -46,8 +46,6 @@ export function ItemDetail({
       canAccessDepartment(role, s.table) && (s.table !== "order_qc" || qcNeeded)
   );
 
-  const canSeeLots = canEditChild(role, "order_lots");
-
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
       <Link
@@ -82,37 +80,80 @@ export function ItemDetail({
 
       <div className="max-w-6xl space-y-6">
         {visibleSections.map((section) => {
-          // A section backed by a child list (Purchase → BOI items) renders the
-          // list, gated by its childGate against the SO (e.g. boi = Yes).
+          // A section may carry a 1:many child list (Purchase → BOI items,
+          // Planning/Packing → packing slips), gated by childGate against the
+          // SO (e.g. boi = Yes, packing_details_required = Yes).
           if (section.childTable) {
+            const child = section.childTable;
             const gateOk =
               !section.childGate ||
               str(order[section.childGate.column]) === section.childGate.value;
-            if (!gateOk) {
-              return (
-                <section
-                  key={section.key}
-                  className="rounded-xl border border-card-border bg-surface p-6 shadow-sm"
-                >
-                  <h2 className="font-display text-base font-semibold text-foreground">
-                    {section.title}
-                  </h2>
-                  <p className="mt-1 text-sm text-muted">
-                    No BOI for this order (BOI = No).
-                  </p>
-                </section>
+
+            // Packing slips are shared by Planning (tentative) and Packing
+            // (actual) — show only this section's rows.
+            // order_invoices is per-SO, so it never appears on an EC detail —
+            // the cast narrows to the per-EC child lists this page carries.
+            let rows = ((detail as Record<string, unknown>)[child] ?? []) as Row[];
+            if (child === "order_packing_slips") {
+              rows = rows.filter(
+                (r) => !section.childKind || str(r.kind) === section.childKind
               );
             }
+            // The export-only packing columns gate on the SO's Market Type.
+            const childContext =
+              child === "order_packing_slips"
+                ? { nature_of_supply: order.nature_of_supply }
+                : undefined;
+
+            const childTitle =
+              child === "order_packing_slips"
+                ? `${section.title} — ${
+                    section.childKind === "tentative"
+                      ? "Tentative packing slips"
+                      : "Actual packing slips"
+                  }`
+                : `${section.title} — BOI Items`;
+
             return (
-              <OrderChildList
-                key={section.key}
-                orderId={itemId}
-                table={section.childTable}
-                title={`${section.title} — BOI Items`}
-                fields={CHILD_FIELDS[section.childTable]}
-                rows={detail[section.childTable] as Row[]}
-                canEdit={canEditChild(role, section.childTable)}
-              />
+              <div key={section.key} className="space-y-6">
+                {section.fields.length > 0 && (
+                  <EditableSection
+                    targetId={itemId}
+                    section={section}
+                    data={(detail[
+                      section.table as
+                        | "order_purchase"
+                        | "order_planning"
+                        | "order_assembly_dispatch"
+                    ] as Row | null) ?? null}
+                    canEdit={canEditSection(role, section.table)}
+                    canEditCentral={central}
+                  />
+                )}
+                {gateOk ? (
+                  <OrderChildList
+                    orderId={itemId}
+                    table={child}
+                    title={childTitle}
+                    fields={CHILD_FIELDS[child]}
+                    rows={rows}
+                    canEdit={canEditChild(role, child)}
+                    kind={section.childKind}
+                    context={childContext}
+                  />
+                ) : (
+                  <section className="rounded-xl border border-card-border bg-surface p-6 shadow-sm">
+                    <h2 className="font-display text-base font-semibold text-foreground">
+                      {childTitle}
+                    </h2>
+                    <p className="mt-1 text-sm text-muted">
+                      {child === "order_packing_slips"
+                        ? "Packing Details Required is not set to Yes on this order."
+                        : "No BOI for this order (BOI = No)."}
+                    </p>
+                  </section>
+                )}
+              </div>
             );
           }
 
@@ -155,17 +196,6 @@ export function ItemDetail({
             />
           );
         })}
-
-        {canSeeLots && (
-          <OrderChildList
-            orderId={itemId}
-            table="order_lots"
-            title="Dispatch Lots"
-            fields={LOT_FIELDS}
-            rows={detail.order_lots}
-            canEdit={canEditChild(role, "order_lots")}
-          />
-        )}
       </div>
     </div>
   );

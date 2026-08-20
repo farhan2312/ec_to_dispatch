@@ -7,12 +7,14 @@ import type { BillingQueueRow } from "@/lib/orders";
 import {
   BILLING_DOC_FIELDS,
   FR_REASON_OPTIONS,
+  INVOICE_FIELDS,
   selectOptionsFor,
   type OrderField,
 } from "@/lib/order-schema";
 import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
 import { OrderChildList } from "./order-children";
 import { OrderDetailsModal } from "./order-details-modal";
+import { InvoiceLrCell } from "./invoice-lr-cell";
 import { Pagination, SearchInput, useTableSearch } from "./table-tools";
 
 type Row = Record<string, unknown>;
@@ -204,13 +206,14 @@ export function BillingWorkspace({
                 <th className="px-4 py-3">Bill Type</th>
                 <th className="px-4 py-3">Payment Terms</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
+                <th className="px-4 py-3">Dispatch Status</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-card-border">
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-sm text-muted">
+                  <td colSpan={9} className="px-4 py-10 text-center text-sm text-muted">
                     No orders match your search.
                   </td>
                 </tr>
@@ -245,6 +248,15 @@ export function BillingWorkspace({
                         {formatValue(row.order_value)}
                         {row.order_currency ? ` ${row.order_currency}` : ""}
                       </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {row.dispatch_status ? (
+                          <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                            {row.dispatch_status}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 whitespace-nowrap text-right">
                         <button
                           type="button"
@@ -258,21 +270,42 @@ export function BillingWorkspace({
                     </tr>
                     {isOpen && (
                       <tr className="bg-background/40">
-                        <td colSpan={8} className="p-0">
-                          {isChallan ? (
-                            <ChallanInlineForm row={row} canEdit={canEdit} />
-                          ) : (
-                            <div className="px-4 py-3">
+                        <td colSpan={9} className="p-0">
+                          <div className="space-y-4 px-4 py-3">
+                            {isChallan ? (
+                              <ChallanInlineForm row={row} canEdit={canEdit} />
+                            ) : (
                               <OrderChildList
                                 orderId={row.id}
                                 table="order_billing_docs"
-                                title="PIs"
+                                title="Billing & Operations"
                                 fields={BILLING_DOC_FIELDS}
                                 rows={(row.pi_docs ?? []) as Row[]}
                                 canEdit={canEdit}
                               />
-                            </div>
-                          )}
+                            )}
+
+                            {/* Stage 5 — invoice, dispatch and docket details.
+                                Dispatch Status derives from these. */}
+                            <OrderChildList
+                              orderId={row.id}
+                              table="order_invoices"
+                              title="Billing & Dispatch"
+                              fields={INVOICE_FIELDS}
+                              rows={(row.invoices ?? []) as Row[]}
+                              canEdit={canEdit}
+                              renderExtra={{
+                                label: "LR Attachment",
+                                render: (inv) => (
+                                  <InvoiceLrCell
+                                    row={inv}
+                                    orderId={row.id}
+                                    canEdit={canEdit}
+                                  />
+                                ),
+                              }}
+                            />
+                          </div>
                         </td>
                       </tr>
                     )}

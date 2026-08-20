@@ -25,11 +25,11 @@ export type OrderField = {
   label: string;
   type: OrderFieldType;
   options?: { value: string; label: string }[];
-  // When set, the field only applies while every listed field equals its
-  // `value` (e.g. GB Status only when Gear Box = "Yes"; AND-ed together so a
-  // field can gate on more than one condition, e.g. BOI = "Yes" AND Gear Box
-  // = "Yes").
-  dependsOn?: { column: string; value: string }[];
+  // When set, the field only applies while every listed condition holds
+  // (AND-ed). A condition passes when the column equals `value`, or — when
+  // `value` is a list — matches any entry (e.g. Transporter Name applies to
+  // both "Transport" and "By BUS" delivery modes).
+  dependsOn?: { column: string; value: string | string[] }[];
   // When true, only Central Visibility / Admin may edit this field; the owning
   // department sees it read-only (e.g. LD in the Planning section).
   centralOnly?: boolean;
@@ -84,6 +84,17 @@ export const DISPATCH_STATUS_OPTIONS = opts([
   "Fully dispatch",
 ]);
 
+// --- Stage 5 (Billing) dispatch/docket vocabularies -------------------------
+export const DELIVERY_TYPE_OPTIONS = opts(["Door delivery", "Godown delivery"]);
+export const DELIVERY_MODE_OPTIONS = opts([
+  "Transport",
+  "Direct Vehicle",
+  "By BUS",
+  "By Courier",
+]);
+export const COURIER_MODE_OPTIONS = opts(["Normal", "By Air"]);
+export const DOCKET_TYPE_OPTIONS = opts(["Export", "Direct", "Hundi", "COD"]);
+
 // Payment status values. "Outstanding hold" is the escalation trigger.
 export const PAYMENT_HOLD_VALUE = "Outstanding hold";
 export const PAYMENT_STATUS_OPTIONS = opts([
@@ -106,6 +117,10 @@ export type OrderSection = {
   // by the parent SO/EC data (e.g. the SO's boi = Yes).
   childTable?: ChildTable;
   childGate?: { column: string; value: string };
+  // When the child table is shared by two sections (packing slips: Planning
+  // files 'tentative', Packing files 'actual'), this pins which rows the
+  // section sees and what new rows are created as.
+  childKind?: string;
 };
 
 export const ORDER_SECTIONS: OrderSection[] = [
@@ -141,6 +156,14 @@ export const ORDER_SECTIONS: OrderSection[] = [
       // BOI (bought-out items) flag — Purchase sees it read-only and, when Yes,
       // adds the individual BOI items per EC.
       { column: "boi", label: "BOI", type: "select", options: YES_NO, group: "Purchase Order" },
+      // Whether the customer requires packing details for this order.
+      {
+        column: "packing_details_required",
+        label: "Packing Details Required",
+        type: "select",
+        options: YES_NO,
+        group: "Purchase Order",
+      },
       // 'No' means the QC department isn't involved for this order — its ECs
       // are skipped by the QC workspace and QC reminders.
       {
@@ -188,6 +211,12 @@ export const ORDER_SECTIONS: OrderSection[] = [
         label: "QC Target Date",
         type: "date",
         dependsOn: [{ column: "qc_required", value: "Yes" }],
+        group: "Target Dates",
+      },
+      {
+        column: "dispatch_team_target_date",
+        label: "Target Date for Packing Team",
+        type: "date",
         group: "Target Dates",
       },
       { column: "dispatch_target_date", label: "Dispatch Target Date", type: "date", group: "Target Dates" },
@@ -391,13 +420,8 @@ export const ORDER_SECTIONS: OrderSection[] = [
     table: "order_planning",
     scope: "item",
     fields: [
-      // Filled by Central Visibility, read-only to Planning.
-      {
-        column: "planning_documents_required",
-        label: "Documents Required from Planning",
-        type: "text",
-        centralOnly: true,
-      },
+      // (Documents-required field removed — replaced by SO-level
+      // "Packing Details Required" in Purchase Order Details.)
       // Filled by Planning. (Purchase target date moved to the SO — Central
       // Visibility sets it in Purchase Order Details.)
       { column: "pump_readiness_remarks", label: "Pump Readiness Remarks", type: "text" },
@@ -419,6 +443,11 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "assembled_packed_qty", label: "Assembled / Packed Qty", type: "text" },
       { column: "assembly_date", label: "Assembly Date", type: "date" },
     ],
+    // Planning files the TENTATIVE packing slips for each EC, once Central has
+    // flagged Packing Details Required = Yes on the SO.
+    childTable: "order_packing_slips",
+    childGate: { column: "packing_details_required", value: "Yes" },
+    childKind: "tentative",
   },
   {
     key: "assembly_dispatch",
@@ -426,28 +455,20 @@ export const ORDER_SECTIONS: OrderSection[] = [
     table: "order_assembly_dispatch",
     scope: "item",
     fields: [
-      {
-        column: "dispatch_documents_required",
-        label: "Documents Required by Assembly/Dispatch",
-        type: "text",
-        centralOnly: true,
-      },
-      {
-        column: "dispatch_team_target_date",
-        label: "Target Date for Dispatch Team",
-        type: "date",
-        centralOnly: true,
-      },
+      // (Documents-required field removed — replaced by SO-level "Packing
+      // Details Required"; Target Date for Dispatch Team moved to the SO's
+      // Target Dates — both in Purchase Order Details / Order details.)
       { column: "final_packing_dispatch_date", label: "Final Date for Packing & Dispatch", type: "date" },
       { column: "actual_packing_date", label: "Actual Material Packing Date", type: "date" },
       { column: "delay_remarks", label: "Remarks / Reason of Delay", type: "text" },
-      {
-        column: "dispatch_status",
-        label: "Dispatch Status",
-        type: "select",
-        options: DISPATCH_STATUS_OPTIONS,
-      },
+      // (Dispatch Status is no longer hand-entered — it's derived on the SO
+      // from invoiced quantity/value vs the SO's own. See recomputeDispatchStatus.)
     ],
+    // Packing files the ACTUAL packing slips for each EC, once Central has
+    // flagged Packing Details Required = Yes on the SO.
+    childTable: "order_packing_slips",
+    childGate: { column: "packing_details_required", value: "Yes" },
+    childKind: "actual",
   },
 ];
 
@@ -493,8 +514,138 @@ export function selectOptionsFor(
   return opts;
 }
 
-// 1:many children: dispatch lots + BOI items (per EC), PIs (per SO).
-export type ChildTable = "order_lots" | "order_boi_items" | "order_billing_docs";
+// 1:many children: dispatch lots, BOI items and packing slips (per EC);
+// PIs and invoices (per SO).
+export type ChildTable =
+  | "order_lots"
+  | "order_boi_items"
+  | "order_billing_docs"
+  | "order_packing_slips"
+  | "order_invoices";
+
+// A packing slip under an EC. Planning files the tentative set, Packing files
+// the actual set (same shape, different `kind` — see PACKING_SLIP_KINDS).
+// The export extras are gated on the SO's Market Type being "Export".
+const EXPORT_ONLY = [{ column: "nature_of_supply", value: "Export" }];
+export const PACKING_SLIP_FIELDS: OrderField[] = [
+  { column: "packing_slip_no", label: "Packing Slip No.", type: "text" },
+  { column: "packing_slip_date", label: "Packing Slip Date", type: "date" },
+  { column: "box_size", label: "Box Size", type: "text", dependsOn: EXPORT_ONLY },
+  { column: "marking_on_case", label: "Marking on Case", type: "text", dependsOn: EXPORT_ONLY },
+  { column: "description", label: "Description (Pump/Spare)", type: "text", dependsOn: EXPORT_ONLY },
+  { column: "quantity", label: "Qty", type: "int", dependsOn: EXPORT_ONLY },
+  { column: "item_weight", label: "Item Weight", type: "number", dependsOn: EXPORT_ONLY },
+  { column: "gross_weight", label: "Gross Weight", type: "number", dependsOn: EXPORT_ONLY },
+  { column: "net_weight", label: "Net Weight", type: "number", dependsOn: EXPORT_ONLY },
+];
+
+export const PACKING_SLIP_KINDS = {
+  tentative: { value: "tentative", label: "Tentative (Planning)" },
+  actual: { value: "actual", label: "Actual (Packing)" },
+} as const;
+
+// An invoice under an SO — Billing's three phases on one row. The dispatch
+// fields that apply depend on Delivery Mode.
+export const INVOICE_FIELDS: OrderField[] = [
+  // Phase 1 — invoice details.
+  { column: "invoice_no", label: "Invoice No.", type: "text", group: "Invoice" },
+  { column: "invoice_date", label: "Invoice Date", type: "date", group: "Invoice" },
+  { column: "invoice_value", label: "Invoice Value", type: "number", group: "Invoice" },
+  { column: "invoice_quantity", label: "Invoice Qty", type: "int", group: "Invoice" },
+
+  // Phase 2 — dispatch details.
+  {
+    column: "delivery_type",
+    label: "Delivery Type",
+    type: "select",
+    options: DELIVERY_TYPE_OPTIONS,
+    group: "Dispatch",
+  },
+  {
+    column: "delivery_mode",
+    label: "Delivery Mode",
+    type: "select",
+    options: DELIVERY_MODE_OPTIONS,
+    group: "Dispatch",
+  },
+  // Transport → name / freight / delivery date. By BUS → name / vehicle no /
+  // freight. Direct Vehicle → weight / size / vehicle no / freight / date.
+  // By Courier → courier mode / docket no / freight.
+  {
+    column: "transporter_name",
+    label: "Transporter Name",
+    type: "text",
+    dependsOn: [{ column: "delivery_mode", value: ["Transport", "By BUS"] }],
+    group: "Dispatch",
+  },
+  {
+    column: "vehicle_weight",
+    label: "Vehicle Weight",
+    type: "text",
+    dependsOn: [{ column: "delivery_mode", value: "Direct Vehicle" }],
+    group: "Dispatch",
+  },
+  {
+    column: "vehicle_size",
+    label: "Vehicle Size",
+    type: "text",
+    dependsOn: [{ column: "delivery_mode", value: "Direct Vehicle" }],
+    group: "Dispatch",
+  },
+  {
+    column: "vehicle_no",
+    label: "Vehicle No.",
+    type: "text",
+    dependsOn: [{ column: "delivery_mode", value: ["Direct Vehicle", "By BUS"] }],
+    group: "Dispatch",
+  },
+  {
+    column: "courier_mode",
+    label: "Mode of Courier",
+    type: "select",
+    options: COURIER_MODE_OPTIONS,
+    dependsOn: [{ column: "delivery_mode", value: "By Courier" }],
+    group: "Dispatch",
+  },
+  { column: "freight_value", label: "Freight Value", type: "number", group: "Dispatch" },
+  { column: "delivery_date", label: "Delivery Date", type: "date", group: "Dispatch" },
+
+  // Phase 3 — docket / LR details.
+  {
+    column: "docket_type",
+    label: "Docket Type",
+    type: "select",
+    options: DOCKET_TYPE_OPTIONS,
+    group: "Docket",
+  },
+  { column: "docket_no", label: "Docket No.", type: "text", group: "Docket" },
+  { column: "booking_date", label: "Booking Date", type: "date", group: "Docket" },
+  { column: "material_weight", label: "Weight of Material", type: "number", group: "Docket" },
+  { column: "per_kg_rate", label: "Per KG Rate", type: "number", group: "Docket" },
+  { column: "so_freight_terms", label: "SO Freight Terms", type: "text", group: "Docket" },
+  { column: "delivery_charges", label: "Delivery Charges", type: "number", group: "Docket" },
+  { column: "other_charges", label: "Other Charges", type: "number", group: "Docket" },
+];
+
+/**
+ * True when a field's dependsOn conditions all hold for the given values.
+ * Comparison is case-insensitive and trimmed: some gating columns are free
+ * text (Market Type is typed as "EXPORT" / "Export"), and the dropdown-backed
+ * ones are canonicalised anyway, so this only ever makes a gate more forgiving.
+ */
+export function dependsOnSatisfied(
+  field: OrderField,
+  read: (column: string) => string
+): boolean {
+  if (!field.dependsOn) return true;
+  const norm = (s: string) => (s ?? "").trim().toLowerCase();
+  return field.dependsOn.every((d) => {
+    const current = norm(read(d.column));
+    return Array.isArray(d.value)
+      ? d.value.some((v) => norm(v) === current)
+      : norm(d.value) === current;
+  });
+}
 
 // A PI under an SO (Tax Invoice bill type only). Billing owns these fields;
 // each save fires a "PI created" notification to Accounts (see actions.ts).
@@ -527,6 +678,8 @@ export const CHILD_FIELDS: Record<ChildTable, OrderField[]> = {
   order_lots: LOT_FIELDS,
   order_boi_items: BOI_ITEM_FIELDS,
   order_billing_docs: BILLING_DOC_FIELDS,
+  order_packing_slips: PACKING_SLIP_FIELDS,
+  order_invoices: INVOICE_FIELDS,
 };
 
 // Payment Terms (owned by Central Visibility) shown read-only in the Accounts
@@ -579,6 +732,16 @@ export const PURCHASE_CONTEXT_FIELDS: OrderField[] = [
   { column: "purchase_target_date", label: "Target Date for Purchase", type: "date" },
   { column: "ld", label: "LD", type: "select", options: YES_NO },
   { column: "ld_date", label: "LD Date", type: "date" },
+];
+
+// Target Date for Packing Team (SO-level) shown read-only in the Assembly &
+// Packing workspace.
+export const DISPATCH_CONTEXT_FIELDS: OrderField[] = [
+  {
+    column: "dispatch_team_target_date",
+    label: "Target Date for Packing Team",
+    type: "date",
+  },
 ];
 
 // Dispatch dates (SO-level, on orders) shown read-only in the Planning

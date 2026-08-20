@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
 import { deleteItemAction } from "@/app/risansi/orders/actions";
-import { BILLING_DOC_FIELDS, SO_SECTIONS } from "@/lib/order-schema";
+import { BILLING_DOC_FIELDS, INVOICE_FIELDS, SO_SECTIONS } from "@/lib/order-schema";
 import {
   canAccessDepartment,
   canCreateOrders,
@@ -16,6 +16,7 @@ import type { OrderDetail as OrderDetailData } from "@/lib/orders";
 import { EditableSection } from "./editable-section";
 import { AddOnForm } from "./add-on-form";
 import { OrderChildList } from "./order-children";
+import { InvoiceLrCell } from "./invoice-lr-cell";
 
 type Row = Record<string, unknown>;
 
@@ -97,35 +98,56 @@ export function OrderDetail({
       <div className="max-w-6xl space-y-6">
         {visibleSections.map((section) => {
           // Billing: flat challan fields (when bill_type = Challan) OR a PI
-          // list (when bill_type = Tax Invoice). Only Billing can edit either.
+          // list (when bill_type = Tax Invoice), plus Stage-5 invoices
+          // (Invoice + Dispatch + Docket + LR) under a single "Billing and
+          // Dispatch" umbrella. Only Billing can edit either.
           if (section.table === "order_billing") {
             const isChallan = String(order.bill_type ?? "") === "Challan";
-            if (isChallan) {
-              const data: Row = {
-                ...((detail.order_billing as Row | null) ?? {}),
-                bill_type: order.bill_type,
-              };
-              return (
-                <EditableSection
-                  key={section.key}
-                  targetId={orderId}
-                  section={section}
-                  data={data}
-                  canEdit={canAccessDepartment(role, section.table)}
-                  canEditCentral={central}
-                />
-              );
-            }
+            const canEdit = canAccessDepartment(role, section.table);
+            const billingCanEditChild = canEditChild(role, "order_billing_docs");
+            const invoicesCanEditChild = canEditChild(role, "order_invoices");
             return (
-              <OrderChildList
-                key={section.key}
-                orderId={orderId}
-                table="order_billing_docs"
-                title={`${section.title} — PIs`}
-                fields={BILLING_DOC_FIELDS}
-                rows={detail.order_billing_docs as Row[]}
-                canEdit={canEditChild(role, "order_billing_docs")}
-              />
+              <div key={section.key} className="space-y-6">
+                {isChallan ? (
+                  <EditableSection
+                    targetId={orderId}
+                    section={section}
+                    data={{
+                      ...((detail.order_billing as Row | null) ?? {}),
+                      bill_type: order.bill_type,
+                    }}
+                    canEdit={canEdit}
+                    canEditCentral={central}
+                  />
+                ) : (
+                  <OrderChildList
+                    orderId={orderId}
+                    table="order_billing_docs"
+                    title={section.title}
+                    fields={BILLING_DOC_FIELDS}
+                    rows={detail.order_billing_docs as Row[]}
+                    canEdit={billingCanEditChild}
+                  />
+                )}
+                <OrderChildList
+                  orderId={orderId}
+                  table="order_invoices"
+                  title="Billing & Dispatch"
+                  fields={INVOICE_FIELDS}
+                  rows={(detail.order_invoices ?? []) as Row[]}
+                  canEdit={invoicesCanEditChild}
+                  renderExtra={{
+                    label: "LR Attachment",
+                    render: (inv) => (
+                      <InvoiceLrCell
+                        row={inv}
+                        orderId={orderId}
+                        canEdit={invoicesCanEditChild}
+                      />
+                    ),
+                  }}
+                />
+              </div>
             );
           }
 

@@ -74,17 +74,20 @@ const ALERTS_SQL = `
      )
 
   UNION ALL
-  -- Dispatch not done by the dispatch team's own target date (per EC)
-  SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
+  -- Dispatch not done by the dispatch team's target date (SO-level target);
+  -- the SO stays overdue while any EC hasn't been packed yet.
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
          'Assembly & Packing'::text, 'overdue'::text,
-         to_char(ad.dispatch_team_target_date, 'YYYY-MM-DD'),
-         (${TODAY_IST} - ad.dispatch_team_target_date)::int
-    FROM order_items it
-    JOIN orders o ON o.id = it.order_id
-    JOIN order_assembly_dispatch ad ON ad.item_id = it.id
-   WHERE ad.dispatch_team_target_date < ${TODAY_IST}
-     AND (ad.dispatch_status IS NULL OR btrim(ad.dispatch_status) = '')
-     AND ad.actual_packing_date IS NULL
+         to_char(o.dispatch_team_target_date, 'YYYY-MM-DD'),
+         (${TODAY_IST} - o.dispatch_team_target_date)::int
+    FROM orders o
+   WHERE o.dispatch_team_target_date < ${TODAY_IST}
+     AND (o.dispatch_status IS NULL OR o.dispatch_status = 'Pending')
+     AND EXISTS (
+       SELECT 1 FROM order_items it
+        LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
+        WHERE it.order_id = o.id AND ad.actual_packing_date IS NULL
+     )
 
   UNION ALL
   -- Payment on hold (escalated to Central Visibility, SO-level)

@@ -6,6 +6,7 @@ import { Loader2, Paperclip, Pencil } from "lucide-react";
 import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
 import {
   canonicalSelectValue,
+  dependsOnSatisfied,
   selectOptionsFor,
   type OrderField,
   type OrderSection,
@@ -59,9 +60,9 @@ function dependsSatisfied(
   values: Record<string, string>,
   data: Row | null
 ): boolean {
-  if (!field.dependsOn) return true;
-  return field.dependsOn.every(
-    (d) => (values[d.column] ?? toInput(data?.[d.column])) === d.value
+  return dependsOnSatisfied(
+    field,
+    (col) => values[col] ?? toInput(data?.[col])
   );
 }
 

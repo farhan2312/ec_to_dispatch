@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
 import { listItemsForSection } from "@/lib/orders";
 import { listRemindersForDepartment } from "@/lib/reminders";
-import { SECTION_BY_TABLE } from "@/lib/order-schema";
+import { DISPATCH_CONTEXT_FIELDS, SECTION_BY_TABLE } from "@/lib/order-schema";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
 import { RemindersPanel } from "@/components/risansi/reminders-panel";
 
@@ -29,7 +29,14 @@ export default async function AssemblyDispatchWorkspacePage({
   const { edit } = await searchParams;
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const [orders, reminders] = await Promise.all([
-    listItemsForSection(TABLE),
+    listItemsForSection(
+      TABLE,
+      DISPATCH_CONTEXT_FIELDS.map((f) => ({
+        column: f.column,
+        type: f.type,
+        from: "orders" as const,
+      }))
+    ),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);
 
@@ -55,6 +62,7 @@ export default async function AssemblyDispatchWorkspacePage({
         table={TABLE}
         fields={section.fields}
         orders={orders}
+        readonlyFields={DISPATCH_CONTEXT_FIELDS}
         canEditCentral={isCentral(user.role)}
         openOrderId={edit}
       />

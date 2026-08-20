@@ -33,10 +33,11 @@ const PUMP_FIELDS: OrderField[] = [
   { column: "version", label: "Series Version", type: "text" },
 ];
 
-// Spare Add-On: EC identity + quantity + Order Copy file upload.
+// Spare Add-On: EC identity + model + quantity + Order Copy file upload.
 const SPARE_FIELDS: OrderField[] = [
   { column: "ec_no", label: "EC No.", type: "text" },
   { column: "ec_date", label: "EC Date", type: "date" },
+  { column: "model_no", label: "Model No.", type: "text" },
   { column: "quantity", label: "Quantity", type: "int" },
 ];
 

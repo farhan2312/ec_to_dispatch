@@ -102,19 +102,21 @@ const REMINDERS_SQL = `
      )
 
   UNION ALL
-  -- Assembly & Packing due to complete, against the dispatch team's own
-  -- target date (per EC).
-  SELECT o.id, o.sl_no::int, o.so_no, it.ec_no, o.party,
+  -- Assembly & Packing due to complete, against the dispatch team's target
+  -- date (SO-level). Fires while any EC is still unpacked.
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
          'dispatch'::text, 'Assembly & Packing'::text,
-         to_char(ad.dispatch_team_target_date, 'YYYY-MM-DD'),
-         (ad.dispatch_team_target_date - ${TODAY_IST})::int
-    FROM order_items it
-    JOIN orders o ON o.id = it.order_id
-    JOIN order_assembly_dispatch ad ON ad.item_id = it.id
-   WHERE ad.dispatch_team_target_date >= ${TODAY_IST}
-     AND ad.dispatch_team_target_date <= ${TODAY_IST} + 7
-     AND (ad.dispatch_status IS NULL OR btrim(ad.dispatch_status) = '')
-     AND ad.actual_packing_date IS NULL
+         to_char(o.dispatch_team_target_date, 'YYYY-MM-DD'),
+         (o.dispatch_team_target_date - ${TODAY_IST})::int
+    FROM orders o
+   WHERE o.dispatch_team_target_date >= ${TODAY_IST}
+     AND o.dispatch_team_target_date <= ${TODAY_IST} + 7
+     AND (o.dispatch_status IS NULL OR o.dispatch_status = 'Pending')
+     AND EXISTS (
+       SELECT 1 FROM order_items it
+        LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
+        WHERE it.order_id = o.id AND ad.actual_packing_date IS NULL
+     )
 `;
 
 function tierOf(daysLeft: number): ReminderTier {

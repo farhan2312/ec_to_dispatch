@@ -92,10 +92,25 @@ export function canSeeDispatched(role: string): boolean {
  */
 export function canEditChild(
   role: string,
-  table: "order_lots" | "order_boi_items" | "order_billing_docs"
+  table:
+    | "order_lots"
+    | "order_boi_items"
+    | "order_billing_docs"
+    | "order_packing_slips"
+    | "order_invoices"
 ): boolean {
   if (table === "order_boi_items") return canEditSection(role, "order_purchase");
-  if (table === "order_billing_docs") return canEditSection(role, "order_billing");
+  if (table === "order_billing_docs" || table === "order_invoices") {
+    return canEditSection(role, "order_billing");
+  }
+  // Packing slips are shared: Planning files the tentative set, Packing the
+  // actual one. Either owner may edit; which rows they see is scoped by kind.
+  if (table === "order_packing_slips") {
+    return (
+      canEditSection(role, "order_planning") ||
+      canEditSection(role, "order_assembly_dispatch")
+    );
+  }
   return canEditSection(role, "order_assembly_dispatch");
 }
 

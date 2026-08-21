@@ -2,9 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { Menu } from "lucide-react";
+import { Menu, PlayCircle } from "lucide-react";
 import { ReportBugTrigger } from "./report-bug";
 import { Sidebar } from "./sidebar";
+
+// SharePoint-hosted demo walkthrough. Opens in a new tab; noopener/noreferrer
+// so we don't hand the target a window.opener reference or leaking Referer.
+const DEMO_VIDEO_URL =
+  "https://risansi-my.sharepoint.com/:v:/p/asad/IQCoh6QLJt2eR4hAbeI--LEfARNSzknVsWP6-38DnXdpW_s?nav=eyJyZWZlcnJhbEluZm8iOnsicmVmZXJyYWxBcHAiOiJPbmVEcml2ZUZvckJ1c2luZXNzIiwicmVmZXJyYWxBcHBQbGF0Zm9ybSI6IldlYiIsInJlZmVycmFsTW9kZSI6InZpZXciLCJyZWZlcnJhbFZpZXciOiJNeUZpbGVzTGlua0NvcHkifX0&e=PMUkZP";
 
 type ShellUser = { name: string; email: string; role: string };
 
@@ -67,7 +72,16 @@ export function AppShell({
           <span className="font-display text-sm font-semibold text-foreground lg:hidden">
             Risansi
           </span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <a
+              href={DEMO_VIDEO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-card-border bg-surface px-3 text-sm font-medium text-foreground transition-colors hover:bg-background"
+            >
+              <PlayCircle className="h-4 w-4 text-primary" />
+              <span className="hidden sm:inline">Demo</span>
+            </a>
             <ReportBugTrigger />
           </div>
         </header>

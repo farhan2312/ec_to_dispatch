@@ -72,7 +72,7 @@ const REMINDERS_SQL = `
   UNION ALL
   -- QC docs due to be submitted (SO-level target).
   SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
-         'qc'::text, 'QC'::text,
+         'qc'::text, 'Quality'::text,
          to_char(o.qc_doc_target_date, 'YYYY-MM-DD'),
          (o.qc_doc_target_date - ${TODAY_IST})::int
     FROM orders o

@@ -114,9 +114,12 @@ export type OrderSection = {
   fields: OrderField[];
   // A section may render a 1:many child list instead of / alongside flat
   // fields (e.g. Purchase → BOI items). Shown only when childGate is satisfied
-  // by the parent SO/EC data (e.g. the SO's boi = Yes).
+  // by the parent SO/EC data. `value` requires exact match; `present: true`
+  // just requires the column to hold any non-empty value.
   childTable?: ChildTable;
-  childGate?: { column: string; value: string };
+  childGate?:
+    | { column: string; value: string }
+    | { column: string; present: true };
   // When the child table is shared by two sections (packing slips: Planning
   // files 'tentative', Packing files 'actual'), this pins which rows the
   // section sees and what new rows are created as.
@@ -242,7 +245,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
       // QC target date is only relevant when QC is needed for this order.
       {
         column: "qc_doc_target_date",
-        label: "QC Target Date",
+        label: "Quality Target Date",
         type: "date",
         dependsOn: [{ column: "qc_required", value: "Yes" }],
         group: "Target Dates",
@@ -405,7 +408,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
   },
   {
     key: "qc",
-    title: "QC",
+    title: "Quality",
     table: "order_qc",
     scope: "item",
     fields: [
@@ -413,7 +416,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
       // now an EC attribute — see the item section / QC_CONTEXT_FIELDS.)
       {
         column: "required_qc_documents",
-        label: "Required QC Documents",
+        label: "Required Quality Documents",
         type: "text",
         centralOnly: true,
       },
@@ -451,10 +454,12 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "assembled_packed_qty", label: "Assembled / Packed Qty", type: "text" },
       { column: "assembly_date", label: "Assembly Date", type: "date" },
     ],
-    // Planning files the TENTATIVE packing slips for each EC, once Central has
-    // flagged Packing Details Required = Yes on the SO.
+    // Planning files the TENTATIVE packing slips for each EC. Available as soon
+    // as the SO has a Market Type (Domestic/Export) — at that point only the
+    // slip no. + date fields are exposed. Full detail (box/marking/weights)
+    // gates on Packing Details Required = Yes via per-field dependsOn.
     childTable: "order_packing_slips",
-    childGate: { column: "packing_details_required", value: "Yes" },
+    childGate: { column: "nature_of_supply", present: true },
     childKind: "tentative",
   },
   {
@@ -472,10 +477,10 @@ export const ORDER_SECTIONS: OrderSection[] = [
       // (Dispatch Status is no longer hand-entered — it's derived on the SO
       // from invoiced quantity/value vs the SO's own. See recomputeDispatchStatus.)
     ],
-    // Packing files the ACTUAL packing slips for each EC, once Central has
-    // flagged Packing Details Required = Yes on the SO.
+    // Packing files the ACTUAL packing slips for each EC. Same gating as
+    // Planning's tentative set — see above.
     childTable: "order_packing_slips",
-    childGate: { column: "packing_details_required", value: "Yes" },
+    childGate: { column: "nature_of_supply", present: true },
     childKind: "actual",
   },
 ];
@@ -533,18 +538,23 @@ export type ChildTable =
 
 // A packing slip under an EC. Planning files the tentative set, Packing files
 // the actual set (same shape, different `kind` — see PACKING_SLIP_KINDS).
-// The export extras are gated on the SO's Market Type being "Export".
-const EXPORT_ONLY = [{ column: "nature_of_supply", value: "Export" }];
+// Section visibility (see ITEM_SECTIONS below): shown whenever the SO's Market
+// Type is set (Domestic or Export) — at that point just the number + date.
+// The full detail block (box / weights / marking …) unlocks only when the SO
+// has Packing Details Required = Yes.
+const PACKING_DETAILS_YES = [
+  { column: "packing_details_required", value: "Yes" },
+];
 export const PACKING_SLIP_FIELDS: OrderField[] = [
   { column: "packing_slip_no", label: "Packing Slip No.", type: "text" },
   { column: "packing_slip_date", label: "Packing Slip Date", type: "date" },
-  { column: "box_size", label: "Box Size", type: "text", dependsOn: EXPORT_ONLY },
-  { column: "marking_on_case", label: "Marking on Case", type: "text", dependsOn: EXPORT_ONLY },
-  { column: "description", label: "Description (Pump/Spare)", type: "text", dependsOn: EXPORT_ONLY },
-  { column: "quantity", label: "Qty", type: "int", dependsOn: EXPORT_ONLY },
-  { column: "item_weight", label: "Item Weight", type: "number", dependsOn: EXPORT_ONLY },
-  { column: "gross_weight", label: "Gross Weight", type: "number", dependsOn: EXPORT_ONLY },
-  { column: "net_weight", label: "Net Weight", type: "number", dependsOn: EXPORT_ONLY },
+  { column: "box_size", label: "Box Size", type: "text", dependsOn: PACKING_DETAILS_YES },
+  { column: "marking_on_case", label: "Marking on Case", type: "text", dependsOn: PACKING_DETAILS_YES },
+  { column: "description", label: "Description (Pump/Spare)", type: "text", dependsOn: PACKING_DETAILS_YES },
+  { column: "quantity", label: "Qty", type: "int", dependsOn: PACKING_DETAILS_YES },
+  { column: "item_weight", label: "Item Weight", type: "number", dependsOn: PACKING_DETAILS_YES },
+  { column: "gross_weight", label: "Gross Weight", type: "number", dependsOn: PACKING_DETAILS_YES },
+  { column: "net_weight", label: "Net Weight", type: "number", dependsOn: PACKING_DETAILS_YES },
 ];
 
 export const PACKING_SLIP_KINDS = {
@@ -731,7 +741,7 @@ export const DRAWING_CONTEXT_FIELDS: OrderField[] = [
 // QC target date — SO-level, in Purchase Order Details. Shown read-only in
 // the QC workspace.
 export const QC_CONTEXT_FIELDS: OrderField[] = [
-  { column: "qc_doc_target_date", label: "QC Target Date", type: "date" },
+  { column: "qc_doc_target_date", label: "Quality Target Date", type: "date" },
 ];
 
 // BOI, Purchase target, and LD / LD Date (all SO-level, on orders) shown

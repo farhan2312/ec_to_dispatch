@@ -219,7 +219,7 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
     { label: "Accounts", done: rows.filter(done.accounts).length, of: total },
     { label: "Drawing", done: rows.filter(done.drawing).length, of: total },
     { label: "Purchase", done: rows.filter(done.purchase).length, of: total },
-    { label: "QC", done: rows.filter(done.qc).length, of: qcApplicable },
+    { label: "Quality", done: rows.filter(done.qc).length, of: qcApplicable },
     { label: "Planning", done: rows.filter(done.planning).length, of: total },
     { label: "Assembly & Packing", done: rows.filter(done.dispatch).length, of: total },
   ];
@@ -399,7 +399,7 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
                 <th className="px-3 py-3">Accounts</th>
                 <th className="px-3 py-3">Drawing</th>
                 <th className="px-3 py-3">Purchase</th>
-                <th className="px-3 py-3">QC</th>
+                <th className="px-3 py-3">Quality</th>
                 <th className="px-3 py-3">Planning</th>
                 <th className="px-3 py-3">Dispatch</th>
                 <th className="px-3 py-3">Target</th>

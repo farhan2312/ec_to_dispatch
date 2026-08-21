@@ -162,7 +162,7 @@ const TARGET_DATE_RECIPIENTS: Partial<
     },
     {
       column: "qc_doc_target_date",
-      label: "QC target date",
+      label: "Quality target date",
       roles: ["qc"],
     },
     {

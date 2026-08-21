@@ -602,8 +602,8 @@ function canEditQcDocTable(table: QcDocTable, role: string): boolean {
 }
 
 const QC_DOC_TABLE_LABEL: Record<QcDocTable, string> = {
-  order_qc_documents: "QC",
-  order_qc_requirement_documents: "QC Requirement Docs",
+  order_qc_documents: "Quality",
+  order_qc_requirement_documents: "Quality Requirement Docs",
 };
 
 export async function listQcDocumentsAction(

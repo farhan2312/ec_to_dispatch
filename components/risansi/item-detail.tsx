@@ -85,9 +85,12 @@ export function ItemDetail({
           // SO (e.g. boi = Yes, packing_details_required = Yes).
           if (section.childTable) {
             const child = section.childTable;
-            const gateOk =
-              !section.childGate ||
-              str(order[section.childGate.column]) === section.childGate.value;
+            const gate = section.childGate;
+            const gateOk = !gate
+              ? true
+              : "present" in gate
+                ? str(order[gate.column]).trim() !== ""
+                : str(order[gate.column]) === gate.value;
 
             // Packing slips are shared by Planning (tentative) and Packing
             // (actual) — show only this section's rows.
@@ -99,18 +102,22 @@ export function ItemDetail({
                 (r) => !section.childKind || str(r.kind) === section.childKind
               );
             }
-            // The export-only packing columns gate on the SO's Market Type.
+            // The detail packing columns gate on Packing Details Required;
+            // the section-level gate above uses Market Type.
             const childContext =
               child === "order_packing_slips"
-                ? { nature_of_supply: order.nature_of_supply }
+                ? {
+                    nature_of_supply: order.nature_of_supply,
+                    packing_details_required: order.packing_details_required,
+                  }
                 : undefined;
 
             const childTitle =
               child === "order_packing_slips"
                 ? `${section.title} — ${
                     section.childKind === "tentative"
-                      ? "Tentative packing slips"
-                      : "Actual packing slips"
+                      ? "Tentative packing Details"
+                      : "Actual packing Details"
                   }`
                 : `${section.title} — BOI Items`;
 
@@ -148,7 +155,7 @@ export function ItemDetail({
                     </h2>
                     <p className="mt-1 text-sm text-muted">
                       {child === "order_packing_slips"
-                        ? "Packing Details Required is not set to Yes on this order."
+                        ? "Set Market Type on this order to record packing slips."
                         : "No BOI for this order (BOI = No)."}
                     </p>
                   </section>

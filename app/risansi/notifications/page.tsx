@@ -125,7 +125,7 @@ function severityOf(alert: AlertRow): Severity {
 function messageOf(alert: AlertRow): string {
   if (alert.type === "hold") return "Payment on hold — escalated to Central Visibility";
   const days = alert.days_overdue ?? 0;
-  if (alert.type === "ld_risk") return `QC docs overdue by ${days} day(s) — LD risk`;
+  if (alert.type === "ld_risk") return `Quality docs overdue by ${days} day(s) — LD risk`;
   return `${alert.department} overdue by ${days} day(s)`;
 }
 

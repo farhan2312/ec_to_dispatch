@@ -937,6 +937,13 @@ export async function listOrdersForSection(
     .map(([t, a]) => `LEFT JOIN ${t} ${a} ON ${a}.order_id = o.id`)
     .join("\n       ");
 
+  // Accounts is not involved for Challan orders — Billing collects payment
+  // against the challan directly, so those SOs shouldn't sit in the Accounts
+  // queue at all.
+  const whereSql = table === "order_accounts"
+    ? "WHERE COALESCE(o.bill_type, '') <> 'Challan'"
+    : "";
+
   const result = await query<Row>(
     `SELECT o.id,
             o.sl_no::int AS sl_no,
@@ -947,6 +954,7 @@ export async function listOrdersForSection(
        FROM orders o
        LEFT JOIN ${table} d ON d.order_id = o.id
        ${extraJoinSql}
+       ${whereSql}
       ORDER BY o.sl_no ASC`
   );
   return result.rows;

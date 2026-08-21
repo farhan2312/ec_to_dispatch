@@ -132,7 +132,7 @@ const SECTIONS: Section[] = [
       },
       {
         name: "qc_doc_target_date",
-        label: "QC Target Date",
+        label: "Quality Target Date",
         type: "date",
         dependsOn: { name: "qc_required", value: "Yes" },
       },

@@ -177,12 +177,15 @@ export function DepartmentWorkspace({
   const childTable = section?.childTable;
   const childKind = section?.childKind;
   const childTitle =
-    childKind === "tentative" ? "Tentative packing slips" : "Actual packing slips";
-  // The gate is a property of each SO (e.g. its Packing Details Required), so
-  // it's evaluated against that SO's own row, not the queue as a whole.
+    childKind === "tentative" ? "Tentative packing Details" : "Actual packing Details";
+  // The gate is a property of each SO (e.g. its Market Type), so it's
+  // evaluated against that SO's own row, not the queue as a whole.
   function childGateOkFor(head: Row): boolean {
-    if (!section?.childGate) return true;
-    return toInput(head[section.childGate.column]) === section.childGate.value;
+    const gate = section?.childGate;
+    if (!gate) return true;
+    return "present" in gate
+      ? toInput(head[gate.column]).trim() !== ""
+      : toInput(head[gate.column]) === gate.value;
   }
   // The queue query ships each EC's slips inline as `child_rows`.
   function childRowsFor(ec: Row): Row[] {
@@ -472,6 +475,8 @@ export function DepartmentWorkspace({
                                           kind={childKind}
                                           context={{
                                             nature_of_supply: ec.nature_of_supply,
+                                            packing_details_required:
+                                              ec.packing_details_required,
                                           }}
                                         />
                                       </div>
@@ -610,7 +615,7 @@ function EditSectionModal({
                   className="inline-flex items-center gap-1.5 rounded-lg border border-input-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
                 >
                   <ClipboardList className="h-3.5 w-3.5" />
-                  View billing
+                  View PIs
                 </button>
               )}
               <button

@@ -33,7 +33,7 @@ const MAPPINGS: Mapping[] = [
   { header: "INDUSTRY TYPE", table: "orders", column: "industry_type", type: "text" },
   { header: "AGENT", table: "orders", column: "agent", type: "text" },
   { header: "Representative", table: "orders", column: "agent", type: "text" },
-  { header: "QC Needed", table: "orders", column: "qc_required", type: "text" },
+  { header: "Quality Needed", table: "orders", column: "qc_required", type: "text" },
   { header: "Item", table: "order_items", column: "item_type", type: "text" },
   { header: "PO NO.", table: "orders", column: "po_no", type: "text" },
   { header: "Customer PO Date", table: "orders", column: "customer_po_date", type: "date" },
@@ -56,7 +56,7 @@ const MAPPINGS: Mapping[] = [
   // Gear Box / Motor / status / pending / receipt columns are replaced by the
   // per-EC order_boi_items list; they no longer map to a single column.
   { header: "Target Dt. For Purchase", table: "order_planning", column: "purchase_target_date", type: "date" },
-  { header: "Required QC Documents", table: "order_qc", column: "required_qc_documents", type: "text" },
+  { header: "Required Quality Documents", table: "order_qc", column: "required_qc_documents", type: "text" },
   { header: "Target Dt. For Doc. Submission", table: "order_items", column: "qc_doc_target_date", type: "date" },
   { header: "Actual Dt. Of Doc. Submission", table: "order_qc", column: "qc_doc_actual_date", type: "date" },
   { header: "LD (Yes)", table: "orders", column: "ld", type: "text" },

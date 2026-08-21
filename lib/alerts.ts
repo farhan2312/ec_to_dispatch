@@ -61,7 +61,7 @@ const ALERTS_SQL = `
   -- QC docs not submitted by target date (LD risk). SO-level target; SO stays
   -- overdue while ANY EC hasn't submitted its actual date yet.
   SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
-         'QC'::text, 'ld_risk'::text,
+         'Quality'::text, 'ld_risk'::text,
          to_char(o.qc_doc_target_date, 'YYYY-MM-DD'),
          (${TODAY_IST} - o.qc_doc_target_date)::int
     FROM orders o

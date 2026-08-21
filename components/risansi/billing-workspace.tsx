@@ -278,7 +278,7 @@ export function BillingWorkspace({
                               <OrderChildList
                                 orderId={row.id}
                                 table="order_billing_docs"
-                                title="Billing & Operations"
+                                title="Operation"
                                 fields={BILLING_DOC_FIELDS}
                                 rows={(row.pi_docs ?? []) as Row[]}
                                 canEdit={canEdit}

@@ -55,10 +55,18 @@ export function OrderDetail({
   const soLabel = str(order.so_no) || `#${str(order.sl_no) || "—"}`;
 
   // SO-scope sections the current role can see (Central sees all; Billing sees
-  // Billing & Operations; Accounts sees Accounts).
-  const visibleSections = SO_SECTIONS.filter((s) =>
-    canAccessDepartment(role, s.table)
+  // Billing & Operations; Accounts sees Accounts). Accounts is skipped
+  // entirely for Challan orders — no A/R for those.
+  const isChallanOrder = String(order.bill_type ?? "") === "Challan";
+  const visibleSections = SO_SECTIONS.filter(
+    (s) =>
+      canAccessDepartment(role, s.table) &&
+      !(s.table === "order_accounts" && isChallanOrder)
   );
+  // Split so the EC panel can sit between Order details (core) and the other
+  // SO sections (Billing & Operations, Accounts).
+  const coreSections = visibleSections.filter((s) => s.table === "orders");
+  const otherSections = visibleSections.filter((s) => s.table !== "orders");
 
   const items = (detail.items ?? []) as Row[];
 
@@ -96,83 +104,92 @@ export function OrderDetail({
       </div>
 
       <div className="max-w-6xl space-y-6">
-        {visibleSections.map((section) => {
-          // Billing: flat challan fields (when bill_type = Challan) OR a PI
-          // list (when bill_type = Tax Invoice), plus Stage-5 invoices
-          // (Invoice + Dispatch + Docket + LR) under a single "Billing and
-          // Dispatch" umbrella. Only Billing can edit either.
-          if (section.table === "order_billing") {
-            const isChallan = String(order.bill_type ?? "") === "Challan";
-            const canEdit = canAccessDepartment(role, section.table);
-            const billingCanEditChild = canEditChild(role, "order_billing_docs");
-            const invoicesCanEditChild = canEditChild(role, "order_invoices");
-            return (
-              <div key={section.key} className="space-y-6">
-                {isChallan ? (
-                  <EditableSection
-                    targetId={orderId}
-                    section={section}
-                    data={{
-                      ...((detail.order_billing as Row | null) ?? {}),
-                      bill_type: order.bill_type,
-                    }}
-                    canEdit={canEdit}
-                    canEditCentral={central}
-                  />
-                ) : (
+        {(() => {
+          // Render a single SO-scope section — Billing is a compound view
+          // (Challan fields or PI list + the Stage-5 invoices list).
+          const renderSection = (section: typeof SO_SECTIONS[number]) => {
+            if (section.table === "order_billing") {
+              const isChallan = String(order.bill_type ?? "") === "Challan";
+              const canEdit = canAccessDepartment(role, section.table);
+              const billingCanEditChild = canEditChild(role, "order_billing_docs");
+              const invoicesCanEditChild = canEditChild(role, "order_invoices");
+              return (
+                <div key={section.key} className="space-y-6">
+                  {isChallan ? (
+                    <EditableSection
+                      targetId={orderId}
+                      section={section}
+                      data={{
+                        ...((detail.order_billing as Row | null) ?? {}),
+                        bill_type: order.bill_type,
+                      }}
+                      canEdit={canEdit}
+                      canEditCentral={central}
+                    />
+                  ) : (
+                    <OrderChildList
+                      orderId={orderId}
+                      table="order_billing_docs"
+                      title={section.title}
+                      fields={BILLING_DOC_FIELDS}
+                      rows={detail.order_billing_docs as Row[]}
+                      canEdit={billingCanEditChild}
+                    />
+                  )}
                   <OrderChildList
                     orderId={orderId}
-                    table="order_billing_docs"
-                    title={section.title}
-                    fields={BILLING_DOC_FIELDS}
-                    rows={detail.order_billing_docs as Row[]}
-                    canEdit={billingCanEditChild}
+                    table="order_invoices"
+                    title="Billing & Dispatch"
+                    fields={INVOICE_FIELDS}
+                    rows={(detail.order_invoices ?? []) as Row[]}
+                    canEdit={invoicesCanEditChild}
+                    renderExtra={{
+                      label: "LR Attachment",
+                      render: (inv) => (
+                        <InvoiceLrCell
+                          row={inv}
+                          orderId={orderId}
+                          canEdit={invoicesCanEditChild}
+                        />
+                      ),
+                    }}
                   />
-                )}
-                <OrderChildList
-                  orderId={orderId}
-                  table="order_invoices"
-                  title="Billing & Dispatch"
-                  fields={INVOICE_FIELDS}
-                  rows={(detail.order_invoices ?? []) as Row[]}
-                  canEdit={invoicesCanEditChild}
-                  renderExtra={{
-                    label: "LR Attachment",
-                    render: (inv) => (
-                      <InvoiceLrCell
-                        row={inv}
-                        orderId={orderId}
-                        canEdit={invoicesCanEditChild}
-                      />
-                    ),
-                  }}
-                />
-              </div>
+                </div>
+              );
+            }
+
+            const data: Row | null =
+              section.table === "orders"
+                ? detail.order
+                : (detail[section.table as "order_billing" | "order_accounts"] as Row | null);
+            return (
+              <EditableSection
+                key={section.key}
+                targetId={orderId}
+                section={section}
+                data={data ?? null}
+                canEdit={canAccessDepartment(role, section.table)}
+                canEditCentral={central}
+              />
             );
-          }
+          };
 
-          const data: Row | null =
-            section.table === "orders"
-              ? detail.order
-              : (detail[section.table as "order_billing" | "order_accounts"] as Row | null);
           return (
-            <EditableSection
-              key={section.key}
-              targetId={orderId}
-              section={section}
-              data={data ?? null}
-              canEdit={canAccessDepartment(role, section.table)}
-              canEditCentral={central}
-            />
+            <>
+              {coreSections.map(renderSection)}
+              {/* EC orders sits between Order details and Billing/Accounts. */}
+              <EcOrdersPanel />
+              {otherSections.map(renderSection)}
+            </>
           );
-        })}
 
-        {/* EC / pump orders */}
+          function EcOrdersPanel() {
+            return (
         <section className="rounded-xl border border-card-border bg-surface p-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="font-display text-base font-semibold text-foreground">
-                EC / Pump orders
+                EC orders
               </h2>
               <p className="text-sm text-muted">
                 {items.length} {items.length === 1 ? "item" : "items"} under this SO.
@@ -264,6 +281,9 @@ export function OrderDetail({
             </div>
           )}
         </section>
+            );
+          }
+        })()}
       </div>
 
       {addOpen && (

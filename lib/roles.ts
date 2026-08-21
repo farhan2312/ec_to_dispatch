@@ -11,7 +11,7 @@ export const ROLE_LABELS = {
   drawing: "Drawing",
   planning: "Planning",
   purchase: "Purchase",
-  qc: "QC",
+  qc: "Quality",
   dispatch: "Assembly & Packing",
 } as const;
 

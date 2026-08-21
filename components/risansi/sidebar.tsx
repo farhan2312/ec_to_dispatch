@@ -81,7 +81,7 @@ const DEPARTMENT_NAV: DeptNavItem[] = [
     table: "order_purchase",
   },
   {
-    label: "QC",
+    label: "Quality",
     href: "/risansi/departments/qc",
     icon: ClipboardCheck,
     table: "order_qc",

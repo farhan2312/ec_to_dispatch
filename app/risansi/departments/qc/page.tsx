@@ -17,7 +17,7 @@ import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
 import { RemindersPanel } from "@/components/risansi/reminders-panel";
 
 export const metadata: Metadata = {
-  title: "QC | Risansi",
+  title: "Quality | Risansi",
 };
 
 export const dynamic = "force-dynamic";
@@ -61,12 +61,12 @@ export default async function QcWorkspacePage({
         </div>
         <div>
           <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-            QC
+            Quality
           </h1>
           <p className="text-sm text-muted">
-            Fill in the actual submission date and remarks; Required QC
+            Fill in the actual submission date and remarks; Required Quality
             Documents and the target date are set by Central Visibility.
-            {" "}Requirement Docs are reference files Central Visibility uploads for QC to work from.
+            {" "}Requirement Docs are reference files Central Visibility uploads for Quality to work from.
           </p>
         </div>
       </div>

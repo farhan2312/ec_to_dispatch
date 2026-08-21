@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, FileText } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { CHILD_FIELDS, ITEM_SECTIONS } from "@/lib/order-schema";
 import {
   canAccessDepartment,
+  canCreateOrders,
   canEditChild,
   canEditQcDocuments,
   canEditQcRequirementDocs,
@@ -14,6 +15,7 @@ import {
 import type { ItemDetail as ItemDetailData } from "@/lib/orders";
 import { EditableSection, type DocumentsConfig } from "./editable-section";
 import { OrderChildList } from "./order-children";
+import { OrderCopyCell } from "./order-copy-cell";
 
 type Row = Record<string, unknown>;
 
@@ -66,16 +68,6 @@ export function ItemDetail({
           {str(item.model_no) ? ` — ${str(item.model_no)}` : ""}
         </h1>
         <span className="text-sm text-muted">SO {soLabel}</span>
-        {str(item.order_copy_file_name) && (
-          <a
-            href={`/api/orders/items/${itemId}/order-copy`}
-            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-input-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
-            download
-          >
-            <FileText className="h-3.5 w-3.5" />
-            Order Copy: {str(item.order_copy_file_name)}
-          </a>
-        )}
       </div>
 
       <div className="max-w-6xl space-y-6">
@@ -191,16 +183,29 @@ export function ItemDetail({
                 ]
               : undefined;
 
+          // Spares carry an Order Copy attachment (set on the Spare Add-On
+          // form). Show its manage-card right below the EC card. Pumps don't
+          // have one, so it's omitted for them.
+          const isSpare = str(item.item_type).trim().toLowerCase() === "spare";
           return (
-            <EditableSection
-              key={section.key}
-              targetId={itemId}
-              section={section}
-              data={data ?? null}
-              canEdit={canEditSection(role, section.table)}
-              canEditCentral={central}
-              documents={documents}
-            />
+            <div key={section.key} className="space-y-6">
+              <EditableSection
+                targetId={itemId}
+                section={section}
+                data={data ?? null}
+                canEdit={canEditSection(role, section.table)}
+                canEditCentral={central}
+                documents={documents}
+              />
+              {section.table === "order_items" && isSpare && (
+                <OrderCopyCell
+                  itemId={itemId}
+                  orderId={orderId}
+                  fileName={str(item.order_copy_file_name)}
+                  canEdit={canCreateOrders(role)}
+                />
+              )}
+            </div>
           );
         })}
       </div>

@@ -237,6 +237,41 @@ export async function createSpareItemAction(
   return result;
 }
 
+/** Attach or replace a Spare EC's Order Copy after creation. */
+export async function uploadItemOrderCopyAction(
+  itemId: string,
+  orderId: string,
+  formData: FormData
+): Promise<ChildActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canCreateOrders(user.role)) {
+    return { ok: false, error: "You don't have permission to change the Order Copy." };
+  }
+  const file = formData.get("order_copy");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "Choose a file to attach." };
+  }
+  if (file.size > MAX_ORDER_COPY_BYTES) {
+    return { ok: false, error: `"${file.name}" is larger than 8MB.` };
+  }
+  try {
+    const data = Buffer.from(await file.arrayBuffer());
+    await setItemOrderCopy(itemId, {
+      name: file.name,
+      mimeType: file.type || null,
+      size: file.size,
+      data,
+    });
+    revalidatePath(`/risansi/orders/${orderId}/items/${itemId}`);
+    revalidatePath(`/risansi/orders/${orderId}`);
+    return { ok: true };
+  } catch (error) {
+    console.error("uploadItemOrderCopy failed:", error);
+    return { ok: false, error: "Could not attach the file. Please try again." };
+  }
+}
+
 export type DeleteItemResult = { ok: true } | { ok: false; error: string };
 
 /** Delete an EC item (cascades to its department detail + lots). */

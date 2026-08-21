@@ -305,7 +305,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
     // this on the Add-On form; it carries the per-EC intake attributes and the
     // target dates each department works to.
     key: "item",
-    title: "EC / Pump order",
+    title: "EC order",
     table: "order_items",
     scope: "item",
     fields: [
@@ -317,21 +317,23 @@ export const ORDER_SECTIONS: OrderSection[] = [
         type: "select",
         options: ITEM_OPTIONS,
       },
+      // Everything below is pump-specific — a Spare only carries EC identity +
+      // model + quantity (matching the Spare Add-On form), so these are gated
+      // on Type = Pump and stay hidden for Spares.
       {
         column: "pump_type",
         label: "Pump Type",
         type: "select",
         options: PUMP_TYPE_OPTIONS,
-        // Only relevant when the EC is a Pump.
         dependsOn: [{ column: "item_type", value: "Pump" }],
       },
       { column: "model_no", label: "Model No.", type: "text" },
       { column: "quantity", label: "Quantity", type: "int" },
-      { column: "suction", label: "Suction", type: "text" },
-      { column: "delivery", label: "Delivery", type: "text" },
-      { column: "pump_sno", label: "Pump Serial No.", type: "text" },
-      { column: "application", label: "Application", type: "text" },
-      { column: "version", label: "Series Version", type: "text" },
+      { column: "suction", label: "Suction", type: "text", dependsOn: [{ column: "item_type", value: "Pump" }] },
+      { column: "delivery", label: "Delivery", type: "text", dependsOn: [{ column: "item_type", value: "Pump" }] },
+      { column: "pump_sno", label: "Pump Serial No.", type: "text", dependsOn: [{ column: "item_type", value: "Pump" }] },
+      { column: "application", label: "Application", type: "text", dependsOn: [{ column: "item_type", value: "Pump" }] },
+      { column: "version", label: "Series Version", type: "text", dependsOn: [{ column: "item_type", value: "Pump" }] },
     ],
   },
   {

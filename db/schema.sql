@@ -1410,3 +1410,16 @@ ALTER TABLE order_items ADD COLUMN IF NOT EXISTS delivery TEXT;
 -- Purchase BOI item picker gets a free-text make & description alongside the
 -- item type.
 ALTER TABLE order_boi_items ADD COLUMN IF NOT EXISTS boi_make_desc TEXT;
+
+-- Each actual packing slip (kind = 'actual') auto-creates a row in
+-- order_invoices so Billing sees a pre-populated placeholder to fill in the
+-- invoice/dispatch/docket details for that packing slip. We keep the link so
+-- re-saves can sync packing_slip_no, and a unique partial index prevents
+-- duplicate invoices for the same slip.
+ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS item_id UUID
+    REFERENCES order_items(id) ON DELETE SET NULL;
+ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS packing_slip_id UUID
+    REFERENCES order_packing_slips(id) ON DELETE SET NULL;
+ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS packing_slip_no TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS order_invoices_packing_slip_id_uidx
+    ON order_invoices (packing_slip_id) WHERE packing_slip_id IS NOT NULL;

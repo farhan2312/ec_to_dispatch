@@ -323,8 +323,12 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
         COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                   FROM order_billing_docs d WHERE d.order_id = o.id),
                  '[]'::jsonb) AS order_billing_docs,
-        COALESCE((SELECT jsonb_agg(to_jsonb(inv) ORDER BY inv.seq)
-                  FROM order_invoices inv WHERE inv.order_id = o.id),
+        COALESCE((SELECT jsonb_agg(
+                    to_jsonb(inv) || jsonb_build_object('ec_no', it.ec_no)
+                    ORDER BY inv.seq)
+                  FROM order_invoices inv
+                  LEFT JOIN order_items it ON it.id = inv.item_id
+                  WHERE inv.order_id = o.id),
                  '[]'::jsonb) AS order_invoices,
         COALESCE((
           SELECT jsonb_agg(to_jsonb(x) ORDER BY x.seq)
@@ -578,6 +582,95 @@ export async function recomputeDispatchStatus(orderId: string): Promise<void> {
       WHERE o.id = $1`,
     [orderId]
   );
+}
+
+/**
+ * When Packing saves an actual packing slip, upsert a matching invoice row
+ * pre-populated with the slip's number + quantity so Billing sees a
+ * placeholder to fill in. Returns metadata for the follow-on notification
+ * (order_id + ec_no + packing_slip_no + invoice_quantity), or null if the
+ * slip isn't 'actual' or has been deleted.
+ */
+export async function upsertInvoiceFromPackingSlip(
+  packingSlipId: string
+): Promise<{
+  order_id: string;
+  ec_no: string | null;
+  packing_slip_no: string | null;
+  invoice_quantity: number | null;
+} | null> {
+  if (!UUID_RE.test(packingSlipId)) return null;
+  // Only 'actual' packing slips drive an invoice row; tentative ones don't.
+  const result = await query<{
+    order_id: string;
+    ec_no: string | null;
+    packing_slip_no: string | null;
+    invoice_quantity: number | null;
+  }>(
+    `WITH src AS (
+       SELECT it.order_id, it.id AS item_id, it.ec_no,
+              ps.id AS slip_id, ps.packing_slip_no, ps.quantity
+         FROM order_packing_slips ps
+         JOIN order_items it ON it.id = ps.item_id
+        WHERE ps.id = $1 AND ps.kind = 'actual'
+     ),
+     up AS (
+       INSERT INTO order_invoices (
+         order_id, item_id, packing_slip_id, packing_slip_no, invoice_quantity
+       )
+       SELECT order_id, item_id, slip_id, packing_slip_no, quantity FROM src
+       ON CONFLICT (packing_slip_id) DO UPDATE
+         SET packing_slip_no = EXCLUDED.packing_slip_no
+       RETURNING order_id, invoice_quantity
+     )
+     SELECT up.order_id,
+            src.ec_no,
+            src.packing_slip_no,
+            up.invoice_quantity
+       FROM up JOIN src ON src.order_id = up.order_id`,
+    [packingSlipId]
+  );
+  const row = result.rows[0] ?? null;
+  if (row) await recomputeDispatchStatus(row.order_id);
+  return row;
+}
+
+/** Look up an SO's display label (so_no, falling back to #sl_no). */
+export async function getOrderLabel(orderId: string): Promise<string | null> {
+  if (!UUID_RE.test(orderId)) return null;
+  const result = await query<{ so_no: string | null; sl_no: number }>(
+    `SELECT so_no, sl_no::int AS sl_no FROM orders WHERE id = $1`,
+    [orderId]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  return row.so_no ?? `#${row.sl_no}`;
+}
+
+/**
+ * For any child row: return its parent order_id (needed to notify + revalidate
+ * even when the caller only has the child id).
+ */
+export async function getChildOrderId(
+  table: ChildTable,
+  id: string
+): Promise<string | null> {
+  if (!UUID_RE.test(id)) return null;
+  const parent = CHILD_PARENT_COLUMN[table];
+  if (parent === "order_id") {
+    const result = await query<{ order_id: string }>(
+      `SELECT order_id FROM ${table} WHERE id = $1`,
+      [id]
+    );
+    return result.rows[0]?.order_id ?? null;
+  }
+  const result = await query<{ order_id: string }>(
+    `SELECT it.order_id
+       FROM ${table} t JOIN order_items it ON it.id = t.item_id
+      WHERE t.id = $1`,
+    [id]
+  );
+  return result.rows[0]?.order_id ?? null;
 }
 
 /** Recompute via an invoice id (resolves its SO first). */
@@ -1085,8 +1178,12 @@ export async function listOrdersForBilling(): Promise<BillingQueueRow[]> {
             COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                       FROM order_billing_docs d WHERE d.order_id = o.id),
                      '[]'::jsonb) AS pi_docs,
-            COALESCE((SELECT jsonb_agg(to_jsonb(inv) ORDER BY inv.seq)
-                      FROM order_invoices inv WHERE inv.order_id = o.id),
+            COALESCE((SELECT jsonb_agg(
+                        to_jsonb(inv) || jsonb_build_object('ec_no', it.ec_no)
+                        ORDER BY inv.seq)
+                      FROM order_invoices inv
+                      LEFT JOIN order_items it ON it.id = inv.item_id
+                      WHERE inv.order_id = o.id),
                      '[]'::jsonb) AS invoices
        FROM orders o
        LEFT JOIN order_billing b ON b.order_id = o.id

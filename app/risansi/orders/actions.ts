@@ -15,10 +15,12 @@ import {
   deleteQcDocument,
   getItemDetail,
   getOrderDetail,
+  getOrderLabel,
   insertQcDocument,
   listQcDocuments,
   updateChildRow,
   updateOrderSection,
+  upsertInvoiceFromPackingSlip,
   type NewItemInput,
   type NewOrderInput,
   type QcDocTable,
@@ -483,6 +485,20 @@ export async function updateOrderChildAction(
       piNoBefore = before.rows[0]?.pi_no ?? null;
     }
 
+    // Actual packing slips: capture pre-save kind so we know whether to
+    // upsert a linked invoice row afterwards. Doing it before the update
+    // covers the case where the client changes packing_slip_no on the same
+    // save — we still fire the upsert against the new value.
+    let actualSlipKind: "actual" | "tentative" | null = null;
+    if (tbl === "order_packing_slips") {
+      const meta = await query<{ kind: string | null }>(
+        `SELECT kind FROM order_packing_slips WHERE id = $1`,
+        [id]
+      );
+      const k = (meta.rows[0]?.kind ?? "").toLowerCase();
+      if (k === "actual" || k === "tentative") actualSlipKind = k;
+    }
+
     await updateChildRow(tbl, id, clean);
 
     if (tbl === "order_billing_docs") {
@@ -492,6 +508,61 @@ export async function updateOrderChildAction(
         // Newly-filled PI number → tell Accounts + Central (skip Central if
         // Central is the one who saved — they already know).
         await notifyPiCreated(orderId, id, piNoAfter, user.role);
+      }
+    } else if (tbl === "order_packing_slips" && actualSlipKind === "actual") {
+      // Actual packing slip → auto-populate a matching invoice row for
+      // Billing to complete, then notify Billing + Central with the
+      // context they need to spot the new placeholder (SO, EC, packing
+      // no., qty).
+      const linked = await upsertInvoiceFromPackingSlip(id);
+      const soLabel = (await getOrderLabel(orderId)) ?? orderId;
+      const ec = linked?.ec_no ? `EC ${linked.ec_no}` : "EC";
+      const psn = linked?.packing_slip_no ?? clean.packing_slip_no ?? "";
+      const qty =
+        linked?.invoice_quantity != null
+          ? ` · Qty ${linked.invoice_quantity}`
+          : "";
+      const detail = `${soLabel} · ${ec}${psn ? ` · Packing Slip ${psn}` : ""}${qty}`;
+      const billingRoles = ["operations"];
+      if (!isCentral(user.role)) billingRoles.push("central_visibility");
+      await emitNotification({
+        roles: billingRoles,
+        orderId,
+        type: "dept_update",
+        message: `Actual packing slip ready to invoice — ${detail}`,
+      });
+    } else if (tbl === "order_invoices") {
+      // Billing & Dispatch save → Central Visibility (Mitali).
+      if (!isCentral(user.role)) {
+        const soLabel = (await getOrderLabel(orderId)) ?? orderId;
+        await emitNotification({
+          roles: ["central_visibility"],
+          orderId,
+          type: "dept_update",
+          message: `Billing & Dispatch updated for ${soLabel}`,
+        });
+      }
+    } else if (tbl === "order_packing_slips" && actualSlipKind === "tentative") {
+      // Tentative packing slip save (Planning) → Central Visibility.
+      if (!isCentral(user.role)) {
+        const soLabel = (await getOrderLabel(orderId)) ?? orderId;
+        await emitNotification({
+          roles: ["central_visibility"],
+          orderId,
+          type: "dept_update",
+          message: `Tentative packing details updated for ${soLabel}`,
+        });
+      }
+    } else if (tbl === "order_boi_items") {
+      // Purchase BOI item save → Central Visibility.
+      if (!isCentral(user.role)) {
+        const soLabel = (await getOrderLabel(orderId)) ?? orderId;
+        await emitNotification({
+          roles: ["central_visibility"],
+          orderId,
+          type: "dept_update",
+          message: `Purchase BOI updated for ${soLabel}`,
+        });
       }
     }
     revalidatePath(`/risansi/orders/${orderId}`);

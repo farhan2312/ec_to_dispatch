@@ -563,9 +563,12 @@ export const PACKING_SLIP_KINDS = {
 } as const;
 
 // An invoice under an SO — Billing's three phases on one row. The dispatch
-// fields that apply depend on Delivery Mode.
+// fields that apply depend on Delivery Mode. Packing Slip No. + Invoice Qty
+// are pre-populated when the Packing team saves an actual packing slip; the
+// rest is filled in by Billing.
 export const INVOICE_FIELDS: OrderField[] = [
   // Phase 1 — invoice details.
+  { column: "packing_slip_no", label: "Packing Slip No.", type: "text", group: "Invoice" },
   { column: "invoice_no", label: "Invoice No.", type: "text", group: "Invoice" },
   { column: "invoice_date", label: "Invoice Date", type: "date", group: "Invoice" },
   { column: "invoice_value", label: "Invoice Value", type: "number", group: "Invoice" },

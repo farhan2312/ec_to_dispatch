@@ -53,7 +53,6 @@ const SECTIONS: Section[] = [
         type: "select",
         options: BILL_TYPE_OPTIONS,
       },
-      { name: "qc_required", label: "QC Req", type: "select", options: YES_NO_OPTIONS },
       { name: "quotation_no", label: "Quotation No.", type: "text" },
       { name: "po_no", label: "Purchase Order Number", type: "text" },
       { name: "customer_po_date", label: "Purchase Order Date", type: "date" },
@@ -87,6 +86,7 @@ const SECTIONS: Section[] = [
         type: "select",
         options: YES_NO_OPTIONS,
       },
+      { name: "qc_required", label: "Quality Required", type: "select", options: YES_NO_OPTIONS },
       {
         name: "freight_terms",
         label: "Freight Terms",

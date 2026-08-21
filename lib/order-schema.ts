@@ -153,15 +153,6 @@ export const ORDER_SECTIONS: OrderSection[] = [
         options: BILL_TYPE_OPTIONS,
         group: "Purchase Order",
       },
-      // 'No' means the QC department isn't involved for this order — its ECs
-      // are skipped by the QC workspace and QC reminders.
-      {
-        column: "qc_required",
-        label: "QC Req",
-        type: "select",
-        options: YES_NO,
-        group: "Purchase Order",
-      },
       { column: "quotation_no", label: "Quotation No.", type: "text", group: "Purchase Order" },
       { column: "po_no", label: "Purchase Order Number", type: "text", group: "Purchase Order" },
       { column: "customer_po_date", label: "Purchase Order Date", type: "date", group: "Purchase Order" },
@@ -191,6 +182,15 @@ export const ORDER_SECTIONS: OrderSection[] = [
       {
         column: "packing_details_required",
         label: "Packing Details Required",
+        type: "select",
+        options: YES_NO,
+        group: "Terms & Conditions",
+      },
+      // 'No' means the QC department isn't involved for this order — its ECs
+      // are skipped by the QC workspace and QC reminders.
+      {
+        column: "qc_required",
+        label: "Quality Required",
         type: "select",
         options: YES_NO,
         group: "Terms & Conditions",

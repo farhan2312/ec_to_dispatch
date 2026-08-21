@@ -153,17 +153,6 @@ export const ORDER_SECTIONS: OrderSection[] = [
         options: BILL_TYPE_OPTIONS,
         group: "Purchase Order",
       },
-      // BOI (bought-out items) flag — Purchase sees it read-only and, when Yes,
-      // adds the individual BOI items per EC.
-      { column: "boi", label: "BOI", type: "select", options: YES_NO, group: "Purchase Order" },
-      // Whether the customer requires packing details for this order.
-      {
-        column: "packing_details_required",
-        label: "Packing Details Required",
-        type: "select",
-        options: YES_NO,
-        group: "Purchase Order",
-      },
       // 'No' means the QC department isn't involved for this order — its ECs
       // are skipped by the QC workspace and QC reminders.
       {
@@ -192,6 +181,50 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "so_no", label: "Sales Order Number", type: "text", group: "Purchase Order" },
       { column: "so_date", label: "Sales Order Date", type: "date", group: "Purchase Order" },
       { column: "total_quantity", label: "Sales Order Total Quantity", type: "int", group: "Purchase Order" },
+
+      // Terms & Conditions — customer requirements + freight/packing + commercial
+      // terms rolled into one section. Visible read-only to Billing.
+      // BOI (bought-out items) flag — Purchase sees it read-only and, when Yes,
+      // adds the individual BOI items per EC.
+      { column: "boi", label: "BOI", type: "select", options: YES_NO, group: "Terms & Conditions" },
+      // Whether the customer requires packing details for this order.
+      {
+        column: "packing_details_required",
+        label: "Packing Details Required",
+        type: "select",
+        options: YES_NO,
+        group: "Terms & Conditions",
+      },
+      {
+        column: "freight_terms",
+        label: "Freight Terms",
+        type: "select",
+        options: opts(["Paid", "To Pay"]),
+        group: "Terms & Conditions",
+      },
+      {
+        column: "packing_requirement",
+        label: "Packing Requirement",
+        type: "select",
+        options: opts(["Wooden Box", "Loose"]),
+        group: "Terms & Conditions",
+      },
+      {
+        column: "delivery_date_as_per_so",
+        label: "Delivery date As per SO",
+        type: "date",
+        group: "Terms & Conditions",
+      },
+      // Payment Terms is free text (varies per order).
+      { column: "payment_terms", label: "Payment Terms", type: "text", group: "Terms & Conditions" },
+      { column: "ld", label: "LD", type: "select", options: YES_NO, group: "Terms & Conditions" },
+      {
+        column: "ld_date",
+        label: "LD Date",
+        type: "date",
+        dependsOn: [{ column: "ld", value: "Yes" }],
+        group: "Terms & Conditions",
+      },
 
       // Target dates (per SO — the same target applies across every EC on
       // this order). Set by Central Visibility at intake; departments see them
@@ -226,39 +259,6 @@ export const ORDER_SECTIONS: OrderSection[] = [
         label: "Revised Dispatch Target Date",
         type: "date",
         group: "Target Dates",
-      },
-
-      // Terms & Conditions — freight, packing and commercial terms rolled into
-      // one section. Visible read-only to Billing.
-      {
-        column: "freight_terms",
-        label: "Freight Terms",
-        type: "select",
-        options: opts(["Paid", "To Pay"]),
-        group: "Terms & Conditions",
-      },
-      {
-        column: "packing_requirement",
-        label: "Packing Requirement",
-        type: "select",
-        options: opts(["Wooden Box", "Loose"]),
-        group: "Terms & Conditions",
-      },
-      {
-        column: "delivery_date_as_per_so",
-        label: "Delivery date As per SO",
-        type: "date",
-        group: "Terms & Conditions",
-      },
-      // Payment Terms is free text (varies per order).
-      { column: "payment_terms", label: "Payment Terms", type: "text", group: "Terms & Conditions" },
-      { column: "ld", label: "LD", type: "select", options: YES_NO, group: "Terms & Conditions" },
-      {
-        column: "ld_date",
-        label: "LD Date",
-        type: "date",
-        dependsOn: [{ column: "ld", value: "Yes" }],
-        group: "Terms & Conditions",
       },
 
       // --- Everything below is commented out, not deleted: the orders table

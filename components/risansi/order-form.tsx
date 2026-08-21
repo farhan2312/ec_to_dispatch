@@ -53,13 +53,6 @@ const SECTIONS: Section[] = [
         type: "select",
         options: BILL_TYPE_OPTIONS,
       },
-      { name: "boi", label: "BOI", type: "select", options: YES_NO_OPTIONS },
-      {
-        name: "packing_details_required",
-        label: "Packing Details Required",
-        type: "select",
-        options: YES_NO_OPTIONS,
-      },
       { name: "qc_required", label: "QC Req", type: "select", options: YES_NO_OPTIONS },
       { name: "quotation_no", label: "Quotation No.", type: "text" },
       { name: "po_no", label: "Purchase Order Number", type: "text" },
@@ -85,37 +78,15 @@ const SECTIONS: Section[] = [
     ],
   },
   {
-    title: "Target Dates",
-    fields: [
-      { name: "drg_target_date", label: "Target Date for Drawing", type: "date" },
-      {
-        name: "purchase_target_date",
-        label: "Target Date for Purchase",
-        type: "date",
-        dependsOn: { name: "boi", value: "Yes" },
-      },
-      {
-        name: "qc_doc_target_date",
-        label: "QC Target Date",
-        type: "date",
-        dependsOn: { name: "qc_required", value: "Yes" },
-      },
-      {
-        name: "dispatch_team_target_date",
-        label: "Target Date for Packing Team",
-        type: "date",
-      },
-      { name: "dispatch_target_date", label: "Dispatch Target Date", type: "date" },
-      {
-        name: "dispatch_target_revised_date",
-        label: "Revised Dispatch Target Date",
-        type: "date",
-      },
-    ],
-  },
-  {
     title: "Terms & Conditions",
     fields: [
+      { name: "boi", label: "BOI", type: "select", options: YES_NO_OPTIONS },
+      {
+        name: "packing_details_required",
+        label: "Packing Details Required",
+        type: "select",
+        options: YES_NO_OPTIONS,
+      },
       {
         name: "freight_terms",
         label: "Freight Terms",
@@ -146,6 +117,35 @@ const SECTIONS: Section[] = [
         label: "LD Date",
         type: "date",
         dependsOn: { name: "ld", value: "Yes" },
+      },
+    ],
+  },
+  {
+    title: "Target Dates",
+    fields: [
+      { name: "drg_target_date", label: "Target Date for Drawing", type: "date" },
+      {
+        name: "purchase_target_date",
+        label: "Target Date for Purchase",
+        type: "date",
+        dependsOn: { name: "boi", value: "Yes" },
+      },
+      {
+        name: "qc_doc_target_date",
+        label: "QC Target Date",
+        type: "date",
+        dependsOn: { name: "qc_required", value: "Yes" },
+      },
+      {
+        name: "dispatch_team_target_date",
+        label: "Target Date for Packing Team",
+        type: "date",
+      },
+      { name: "dispatch_target_date", label: "Dispatch Target Date", type: "date" },
+      {
+        name: "dispatch_target_revised_date",
+        label: "Revised Dispatch Target Date",
+        type: "date",
       },
     ],
   },

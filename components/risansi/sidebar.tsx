@@ -6,7 +6,6 @@ import { usePathname } from "next/navigation";
 import Image from "next/image";
 import logo from "@/assets/logo.png";
 import {
-  AlertTriangle,
   Bell,
   Bug,
   CalendarClock,
@@ -31,7 +30,6 @@ import {
 import { logout } from "@/app/risansi/actions";
 import {
   canAccessDepartment,
-  canSeeDispatched,
   canSeeEscalations,
   isCentral,
   reminderDeptForRole,
@@ -267,32 +265,6 @@ export function Sidebar({
                   }
                 />
               ))}
-            </div>
-          </div>
-        )}
-
-        {canSeeEscalations(user.role) && (
-          <div className="mb-6">
-            <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted">
-              Oversight
-            </p>
-            <div className="space-y-1">
-              <NavLink
-                item={{
-                  label: "Payment Holds",
-                  href: "/risansi/escalations",
-                  icon: AlertTriangle,
-                }}
-              />
-              {canSeeDispatched(user.role) && (
-                <NavLink
-                  item={{
-                    label: "Dispatched",
-                    href: "/risansi/dispatched",
-                    icon: Truck,
-                  }}
-                />
-              )}
             </div>
           </div>
         )}

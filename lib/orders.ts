@@ -323,12 +323,8 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
         COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                   FROM order_billing_docs d WHERE d.order_id = o.id),
                  '[]'::jsonb) AS order_billing_docs,
-        COALESCE((SELECT jsonb_agg(
-                    to_jsonb(inv) || jsonb_build_object('ec_no', it.ec_no)
-                    ORDER BY inv.seq)
-                  FROM order_invoices inv
-                  LEFT JOIN order_items it ON it.id = inv.item_id
-                  WHERE inv.order_id = o.id),
+        COALESCE((SELECT jsonb_agg(to_jsonb(inv) ORDER BY inv.seq)
+                  FROM order_invoices inv WHERE inv.order_id = o.id),
                  '[]'::jsonb) AS order_invoices,
         COALESCE((
           SELECT jsonb_agg(to_jsonb(x) ORDER BY x.seq)
@@ -536,9 +532,10 @@ export async function updateChildRow(
 ): Promise<void> {
   if (!UUID_RE.test(id)) return;
   const byColumn = new Map(CHILD_FIELDS[table].map((f) => [f.column, f]));
-  const columns = Object.keys(values).filter(
-    (c) => byColumn.has(c) && !byColumn.get(c)!.computed
-  );
+  const columns = Object.keys(values).filter((c) => {
+    const f = byColumn.get(c);
+    return f !== undefined && !f.computed && !f.readOnly;
+  });
   if (columns.length > 0) {
     const coerced = columns.map((c) =>
       coerceField(byColumn.get(c)!.type, values[c])
@@ -586,10 +583,12 @@ export async function recomputeDispatchStatus(orderId: string): Promise<void> {
 
 /**
  * When Packing saves an actual packing slip, upsert a matching invoice row
- * pre-populated with the slip's number + quantity so Billing sees a
- * placeholder to fill in. Returns metadata for the follow-on notification
- * (order_id + ec_no + packing_slip_no + invoice_quantity), or null if the
- * slip isn't 'actual' or has been deleted.
+ * for Billing (one invoice per slip). EC / Packing Slip No. / Packing Qty
+ * are copied to the invoice as read-only display columns so Billing's
+ * add-on header shows which slip they're invoicing. Subsequent packing-slip
+ * saves re-sync those three columns; Billing's own invoice fields are
+ * untouched. Returns the SO/EC/slip context (for the follow-on notification)
+ * or null if the slip isn't 'actual'.
  */
 export async function upsertInvoiceFromPackingSlip(
   packingSlipId: string
@@ -597,15 +596,14 @@ export async function upsertInvoiceFromPackingSlip(
   order_id: string;
   ec_no: string | null;
   packing_slip_no: string | null;
-  invoice_quantity: number | null;
+  quantity: number | null;
 } | null> {
   if (!UUID_RE.test(packingSlipId)) return null;
-  // Only 'actual' packing slips drive an invoice row; tentative ones don't.
   const result = await query<{
     order_id: string;
     ec_no: string | null;
     packing_slip_no: string | null;
-    invoice_quantity: number | null;
+    quantity: number | null;
   }>(
     `WITH src AS (
        SELECT it.order_id, it.id AS item_id, it.ec_no,
@@ -616,17 +614,19 @@ export async function upsertInvoiceFromPackingSlip(
      ),
      up AS (
        INSERT INTO order_invoices (
-         order_id, item_id, packing_slip_id, packing_slip_no, invoice_quantity
+         order_id, item_id, packing_slip_id,
+         ec_no, packing_slip_no, packing_quantity
        )
-       SELECT order_id, item_id, slip_id, packing_slip_no, quantity FROM src
-       ON CONFLICT (packing_slip_id) DO UPDATE
-         SET packing_slip_no = EXCLUDED.packing_slip_no
-       RETURNING order_id, invoice_quantity
+       SELECT order_id, item_id, slip_id,
+              ec_no, packing_slip_no, quantity
+         FROM src
+       ON CONFLICT (packing_slip_id) WHERE packing_slip_id IS NOT NULL DO UPDATE
+         SET ec_no            = EXCLUDED.ec_no,
+             packing_slip_no  = EXCLUDED.packing_slip_no,
+             packing_quantity = EXCLUDED.packing_quantity
+       RETURNING order_id
      )
-     SELECT up.order_id,
-            src.ec_no,
-            src.packing_slip_no,
-            up.invoice_quantity
+     SELECT up.order_id, src.ec_no, src.packing_slip_no, src.quantity
        FROM up JOIN src ON src.order_id = up.order_id`,
     [packingSlipId]
   );
@@ -1178,12 +1178,8 @@ export async function listOrdersForBilling(): Promise<BillingQueueRow[]> {
             COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                       FROM order_billing_docs d WHERE d.order_id = o.id),
                      '[]'::jsonb) AS pi_docs,
-            COALESCE((SELECT jsonb_agg(
-                        to_jsonb(inv) || jsonb_build_object('ec_no', it.ec_no)
-                        ORDER BY inv.seq)
-                      FROM order_invoices inv
-                      LEFT JOIN order_items it ON it.id = inv.item_id
-                      WHERE inv.order_id = o.id),
+            COALESCE((SELECT jsonb_agg(to_jsonb(inv) ORDER BY inv.seq)
+                      FROM order_invoices inv WHERE inv.order_id = o.id),
                      '[]'::jsonb) AS invoices
        FROM orders o
        LEFT JOIN order_billing b ON b.order_id = o.id

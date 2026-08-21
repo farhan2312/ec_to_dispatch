@@ -61,10 +61,31 @@ function formatValue(field: OrderField, value: unknown): string {
   return s;
 }
 
-function rowSearchText(o: Row): string {
-  return [o.sl_no, o.so_no, o.ec_no, o.party, o.item_type]
-    .map((v) => (v == null ? "" : String(v)))
-    .join(" ");
+// Build the search matcher + placeholder from what each department actually
+// shows: Billing/Accounts (SO-scope) search by SO + Client Name; the per-EC
+// departments search by SO + EC + item type (Client Name is hidden for them).
+function searchConfigFor(table: OrderTable): {
+  match: (o: Row) => string;
+  placeholder: string;
+} {
+  const scope = SECTION_BY_TABLE.get(table)?.scope;
+  const showEcNo = scope !== "so";
+  const showParty = table === "order_billing" || table === "order_accounts";
+
+  const cols: string[] = ["sl_no", "so_no"];
+  const words: string[] = ["SO"];
+  if (showEcNo) {
+    cols.push("ec_no", "item_type");
+    words.push("EC", "item");
+  }
+  if (showParty) {
+    cols.push("party");
+    words.push("client");
+  }
+  return {
+    match: (o) => cols.map((k) => (o[k] == null ? "" : String(o[k]))).join(" "),
+    placeholder: `Search ${words.join(", ")}…`,
+  };
 }
 
 // A dependsOn'd field (e.g. a billing document field gated on the order's
@@ -101,6 +122,8 @@ export function DepartmentWorkspace({
   );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  const { match: rowSearchText, placeholder: searchPlaceholder } =
+    searchConfigFor(table);
   const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
     useTableSearch(orders, rowSearchText);
 
@@ -209,7 +232,7 @@ export function DepartmentWorkspace({
         <SearchInput
           value={query}
           onChange={setQuery}
-          placeholder="Search SO, EC, party, item…"
+          placeholder={searchPlaceholder}
         />
       </div>
 

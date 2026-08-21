@@ -24,6 +24,20 @@ function str(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
+// Header shown at the top of each Billing & Dispatch add-on: the packing-slip
+// context copied from Assembly's actual packing slip. Falls back to a
+// placeholder when the invoice has no linked slip (should be rare).
+export function invoiceRowHeader(inv: Row): React.ReactNode {
+  const ec = str(inv.ec_no);
+  const psn = str(inv.packing_slip_no);
+  const qty = str(inv.packing_quantity);
+  const parts: string[] = [];
+  if (ec) parts.push(`EC ${ec}`);
+  if (psn) parts.push(`Packing Slip ${psn}`);
+  if (qty) parts.push(`Qty ${qty}`);
+  return parts.length ? parts.join(" · ") : "Awaiting packing slip";
+}
+
 function formatDate(value: unknown): string {
   const s = str(value);
   if (s === "") return "—";
@@ -143,6 +157,8 @@ export function OrderDetail({
                     fields={INVOICE_FIELDS}
                     rows={(detail.order_invoices ?? []) as Row[]}
                     canEdit={invoicesCanEditChild}
+                    canAdd={false}
+                    rowHeader={invoiceRowHeader}
                     renderExtra={{
                       label: "LR Attachment",
                       render: (inv) => (

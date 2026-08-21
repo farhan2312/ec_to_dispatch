@@ -13,6 +13,7 @@ import {
   deleteItem,
   deleteOrder,
   deleteQcDocument,
+  getChildOrderId,
   getItemDetail,
   getOrderDetail,
   getOrderLabel,
@@ -448,7 +449,19 @@ export async function addOrderChildAction(
   const guard = await guardChild(table);
   if (!guard.ok) return guard;
   try {
-    await addChildRow(table as ChildTable, orderId, kind);
+    const created = await addChildRow(table as ChildTable, orderId, kind);
+    // Actual packing slips need an invoice add-on to appear in Billing &
+    // Dispatch the moment Packing clicks Add — don't wait for the first
+    // Save. The invoice's read-only header stays blank until Packing fills
+    // in the slip.
+    if (created && table === "order_packing_slips" && kind === "actual") {
+      await upsertInvoiceFromPackingSlip(created.id);
+      // Refresh the parent SO's detail page too (this action's `orderId` is
+      // the item_id for per-EC children, so the direct revalidate below only
+      // hits the item route).
+      const soId = await getChildOrderId("order_packing_slips", created.id);
+      if (soId) revalidatePath(`/risansi/orders/${soId}`);
+    }
     revalidatePath(`/risansi/orders/${orderId}`);
     return { ok: true };
   } catch (error) {
@@ -501,6 +514,17 @@ export async function updateOrderChildAction(
 
     await updateChildRow(tbl, id, clean);
 
+    // For per-EC child tables (BOI items, packing slips) the `orderId` arg is
+    // actually the item_id. The notification's order_id is a FK to orders(id),
+    // so we must resolve the real SO id — otherwise the INSERT hits an FK
+    // violation and the notification is silently dropped.
+    const isPerEc =
+      tbl === "order_boi_items" || tbl === "order_packing_slips";
+    const soOrderId = isPerEc
+      ? (await getChildOrderId(tbl, id)) ?? null
+      : orderId;
+    const notifyMuted = user.role === "central_visibility";
+
     if (tbl === "order_billing_docs") {
       const piNoAfter = (clean.pi_no ?? "").trim();
       const wasEmpty = !(piNoBefore ?? "").trim();
@@ -510,60 +534,68 @@ export async function updateOrderChildAction(
         await notifyPiCreated(orderId, id, piNoAfter, user.role);
       }
     } else if (tbl === "order_packing_slips" && actualSlipKind === "actual") {
-      // Actual packing slip → auto-populate a matching invoice row for
-      // Billing to complete, then notify Billing + Central with the
-      // context they need to spot the new placeholder (SO, EC, packing
-      // no., qty).
-      const linked = await upsertInvoiceFromPackingSlip(id);
-      const soLabel = (await getOrderLabel(orderId)) ?? orderId;
-      const ec = linked?.ec_no ? `EC ${linked.ec_no}` : "EC";
-      const psn = linked?.packing_slip_no ?? clean.packing_slip_no ?? "";
-      const qty =
-        linked?.invoice_quantity != null
-          ? ` · Qty ${linked.invoice_quantity}`
-          : "";
-      const detail = `${soLabel} · ${ec}${psn ? ` · Packing Slip ${psn}` : ""}${qty}`;
-      const billingRoles = ["operations"];
-      if (!isCentral(user.role)) billingRoles.push("central_visibility");
-      await emitNotification({
-        roles: billingRoles,
-        orderId,
-        type: "dept_update",
-        message: `Actual packing slip ready to invoice — ${detail}`,
-      });
+      // Actual packing slip saved → upsert its matching invoice row so
+      // Billing sees an add-on pre-populated with EC / Packing Slip No. /
+      // Qty (read-only), then tell Billing + Central which slip is ready.
+      const ctx = await upsertInvoiceFromPackingSlip(id);
+      const emitOrderId = soOrderId ?? ctx?.order_id ?? null;
+      if (emitOrderId) {
+        const soLabel = (await getOrderLabel(emitOrderId)) ?? emitOrderId;
+        const ec = ctx?.ec_no ? `EC ${ctx.ec_no}` : "EC";
+        const psn = ctx?.packing_slip_no ?? "";
+        const qty = ctx?.quantity != null ? ` · Qty ${ctx.quantity}` : "";
+        const detail = `${soLabel} · ${ec}${psn ? ` · Packing Slip ${psn}` : ""}${qty}`;
+        const billingRoles = ["operations"];
+        // Only Mitali (central_visibility) herself is self-muted; admin acting
+        // still notifies central_visibility (and admin's bell picks it up via
+        // the admin → central_visibility recipient expansion).
+        if (!notifyMuted) billingRoles.push("central_visibility");
+        await emitNotification({
+          roles: billingRoles,
+          orderId: emitOrderId,
+          type: "dept_update",
+          message: `Actual packing slip ready to invoice — ${detail}`,
+        });
+      }
     } else if (tbl === "order_invoices") {
       // Billing & Dispatch save → Central Visibility (Mitali).
-      if (!isCentral(user.role)) {
-        const soLabel = (await getOrderLabel(orderId)) ?? orderId;
+      if (!notifyMuted && soOrderId) {
+        const soLabel = (await getOrderLabel(soOrderId)) ?? soOrderId;
         await emitNotification({
           roles: ["central_visibility"],
-          orderId,
+          orderId: soOrderId,
           type: "dept_update",
           message: `Billing & Dispatch updated for ${soLabel}`,
         });
       }
     } else if (tbl === "order_packing_slips" && actualSlipKind === "tentative") {
       // Tentative packing slip save (Planning) → Central Visibility.
-      if (!isCentral(user.role)) {
-        const soLabel = (await getOrderLabel(orderId)) ?? orderId;
+      if (!notifyMuted && soOrderId) {
+        const soLabel = (await getOrderLabel(soOrderId)) ?? soOrderId;
         await emitNotification({
           roles: ["central_visibility"],
-          orderId,
+          orderId: soOrderId,
           type: "dept_update",
           message: `Tentative packing details updated for ${soLabel}`,
         });
       }
     } else if (tbl === "order_boi_items") {
       // Purchase BOI item save → Central Visibility.
-      if (!isCentral(user.role)) {
-        const soLabel = (await getOrderLabel(orderId)) ?? orderId;
+      if (!notifyMuted && soOrderId) {
+        const soLabel = (await getOrderLabel(soOrderId)) ?? soOrderId;
         await emitNotification({
           roles: ["central_visibility"],
-          orderId,
+          orderId: soOrderId,
           type: "dept_update",
           message: `Purchase BOI updated for ${soLabel}`,
         });
       }
+    }
+    // Refresh the parent SO detail page when the child is per-EC (its
+    // `orderId` arg is the item_id), so Billing & Dispatch reflects any
+    // invoice row we just upserted.
+    if (isPerEc && soOrderId) {
+      revalidatePath(`/risansi/orders/${soOrderId}`);
     }
     revalidatePath(`/risansi/orders/${orderId}`);
     return { ok: true };
@@ -585,9 +617,10 @@ async function notifyPiCreated(
     ? String(detail.order.so_no ?? `#${detail.order.sl_no}`)
     : orderId;
   // Always tell Accounts; also tell Central Visibility (and by extension Admin,
-  // via recipientRolesForUser) unless Central themselves saved the PI.
+  // via recipientRolesForUser) unless Mitali herself saved the PI. Admin
+  // saves still notify central_visibility so admin's bell picks it up.
   const roles = ["accounts"];
-  if (!isCentral(actorRole)) roles.push("central_visibility");
+  if (actorRole !== "central_visibility") roles.push("central_visibility");
   // itemId is intentionally null here: notifications.item_id is a FK to
   // order_items(id), and a PI id (order_billing_docs.id) would fail that
   // constraint. Deep-link is by order_id — Accounts opens the SO detail.

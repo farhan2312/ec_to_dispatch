@@ -36,6 +36,10 @@ export type OrderField = {
   // When true, the field is never editable — it's derived and displayed only
   // (e.g. Balance of Payment = order value − amount received, set server-side).
   computed?: boolean;
+  // Rendered as read-only text even when the row is editable — for values a
+  // department fills that another department needs to see (e.g. EC / Packing
+  // Slip No. / Qty copied from the actual packing slip onto its invoice).
+  readOnly?: boolean;
   // Optional visual grouping inside a section — consecutive fields sharing
   // the same `group` label are rendered together under one subheading.
   group?: string;
@@ -563,12 +567,12 @@ export const PACKING_SLIP_KINDS = {
 } as const;
 
 // An invoice under an SO — Billing's three phases on one row. The dispatch
-// fields that apply depend on Delivery Mode. Packing Slip No. + Invoice Qty
-// are pre-populated when the Packing team saves an actual packing slip; the
-// rest is filled in by Billing.
+// fields that apply depend on Delivery Mode. EC / Packing Slip No. / Packing
+// Qty live only in the add-on's card header (see OrderChildList's
+// `rowHeader`); they mirror the packing slip and Billing can't edit them,
+// so they don't appear in the invoice form itself.
 export const INVOICE_FIELDS: OrderField[] = [
-  // Phase 1 — invoice details.
-  { column: "packing_slip_no", label: "Packing Slip No.", type: "text", group: "Invoice" },
+  // Phase 1 — invoice details Billing fills.
   { column: "invoice_no", label: "Invoice No.", type: "text", group: "Invoice" },
   { column: "invoice_date", label: "Invoice Date", type: "date", group: "Invoice" },
   { column: "invoice_value", label: "Invoice Value", type: "number", group: "Invoice" },

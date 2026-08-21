@@ -15,6 +15,7 @@ import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
 import { OrderChildList } from "./order-children";
 import { OrderDetailsModal } from "./order-details-modal";
 import { InvoiceLrCell } from "./invoice-lr-cell";
+import { invoiceRowHeader } from "./order-detail";
 import { Pagination, SearchInput, useTableSearch } from "./table-tools";
 
 type Row = Record<string, unknown>;
@@ -294,6 +295,8 @@ export function BillingWorkspace({
                               fields={INVOICE_FIELDS}
                               rows={(row.invoices ?? []) as Row[]}
                               canEdit={canEdit}
+                              canAdd={false}
+                              rowHeader={invoiceRowHeader}
                               renderExtra={{
                                 label: "LR Attachment",
                                 render: (inv) => (

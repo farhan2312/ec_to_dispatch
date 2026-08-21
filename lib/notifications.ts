@@ -1,5 +1,4 @@
 import { query } from "@/lib/db";
-import { isCentral } from "@/lib/roles";
 import { SECTION_BY_TABLE, type OrderTable } from "@/lib/order-schema";
 
 type Row = Record<string, unknown> | null;
@@ -237,8 +236,9 @@ export async function notifySectionSaved(params: {
     }
 
     // Any department edit → Central Visibility, reported uniformly as an
-    // update (no special-casing for the save that completes a section).
-    if (!isCentral(actorRole) && sectionChanged(table, before, after)) {
+    // update. Only Mitali (central_visibility) herself is self-muted; admin
+    // saves still notify central_visibility so admin's bell picks it up.
+    if (actorRole !== "central_visibility" && sectionChanged(table, before, after)) {
       const dept = SECTION_BY_TABLE.get(table)?.title ?? "A department";
       await emit(["central_visibility"], {
         orderId,

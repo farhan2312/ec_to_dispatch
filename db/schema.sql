@@ -1411,15 +1411,50 @@ ALTER TABLE order_items ADD COLUMN IF NOT EXISTS delivery TEXT;
 -- item type.
 ALTER TABLE order_boi_items ADD COLUMN IF NOT EXISTS boi_make_desc TEXT;
 
--- Each actual packing slip (kind = 'actual') auto-creates a row in
--- order_invoices so Billing sees a pre-populated placeholder to fill in the
--- invoice/dispatch/docket details for that packing slip. We keep the link so
--- re-saves can sync packing_slip_no, and a unique partial index prevents
--- duplicate invoices for the same slip.
+-- Actual packing slips (kind = 'actual') auto-create a matching row in
+-- order_invoices so Billing sees one add-on per packing slip in Billing &
+-- Dispatch. EC / Packing Slip No. / Packing Qty are denormalized onto the
+-- invoice so the add-on's header can read "EC 3 · Packing Slip 7 · Qty 5"
+-- without a join at render time (they're never shown as invoice form
+-- fields — only as the card's header). Delete cascades so removing a
+-- packing slip removes its invoice add-on; the unique partial index keeps
+-- at most one invoice per packing slip.
 ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS item_id UUID
     REFERENCES order_items(id) ON DELETE SET NULL;
-ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS packing_slip_id UUID
-    REFERENCES order_packing_slips(id) ON DELETE SET NULL;
+ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS packing_slip_id UUID;
+ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS ec_no TEXT;
 ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS packing_slip_no TEXT;
+ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS packing_quantity INTEGER;
+-- Drop any pre-existing FK on packing_slip_id (older migrations used
+-- ON DELETE SET NULL) and add it back with CASCADE.
+DO $$
+DECLARE conname text;
+BEGIN
+  SELECT c.conname INTO conname
+    FROM pg_constraint c
+    JOIN pg_class t ON t.oid = c.conrelid
+    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY (c.conkey)
+   WHERE t.relname = 'order_invoices' AND c.contype = 'f' AND a.attname = 'packing_slip_id'
+   LIMIT 1;
+  IF conname IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE order_invoices DROP CONSTRAINT %I', conname);
+  END IF;
+END $$;
+ALTER TABLE order_invoices
+  ADD CONSTRAINT order_invoices_packing_slip_id_fkey
+  FOREIGN KEY (packing_slip_id) REFERENCES order_packing_slips(id) ON DELETE CASCADE;
 CREATE UNIQUE INDEX IF NOT EXISTS order_invoices_packing_slip_id_uidx
     ON order_invoices (packing_slip_id) WHERE packing_slip_id IS NOT NULL;
+
+-- Backfill: seed order_invoices from any existing actual packing slip that
+-- doesn't already have one. Idempotent (skips slips already linked).
+INSERT INTO order_invoices (
+  order_id, item_id, packing_slip_id, ec_no, packing_slip_no, packing_quantity
+)
+SELECT it.order_id, it.id, ps.id, it.ec_no, ps.packing_slip_no, ps.quantity
+  FROM order_packing_slips ps
+  JOIN order_items it ON it.id = ps.item_id
+ WHERE ps.kind = 'actual'
+   AND NOT EXISTS (
+     SELECT 1 FROM order_invoices inv WHERE inv.packing_slip_id = ps.id
+   );

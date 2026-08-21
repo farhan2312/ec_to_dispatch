@@ -32,6 +32,7 @@ export function OrderChildList({
   kind,
   context,
   renderExtra,
+  rowHeader,
 }: {
   orderId: string;
   table: ChildTable;
@@ -52,6 +53,11 @@ export function OrderChildList({
   context?: Row;
   // Optional trailing cell per row (e.g. an invoice's LR attachment control).
   renderExtra?: { label: string; render: (row: Row) => React.ReactNode };
+  // Optional per-row header shown in the grouped card layout — replaces the
+  // auto-summary in the chevron toggle. Used for invoices to display the
+  // linked packing slip's EC / Packing Slip No. / Qty at the top of the card
+  // (that context isn't part of the invoice form itself).
+  rowHeader?: (row: Row) => React.ReactNode;
 }) {
   const router = useRouter();
   // Edits overlay keyed by row id; the row list itself always comes from props.
@@ -180,6 +186,7 @@ export function OrderChildList({
               update={update}
               onSave={() => saveRow(row)}
               onDelete={() => deleteRow(row)}
+              headerContent={rowHeader?.(row) ?? null}
             />
           ))}
         </div>
@@ -307,6 +314,7 @@ function RowCard({
   update,
   onSave,
   onDelete,
+  headerContent,
 }: {
   row: Row;
   groups: Bucket[];
@@ -320,6 +328,9 @@ function RowCard({
   update: (row: Row, column: string, value: string) => void;
   onSave: () => void;
   onDelete: () => void;
+  // Explicit header text/content, e.g. the packing-slip context for an
+  // invoice card. When set, it replaces the auto-generated field summary.
+  headerContent?: React.ReactNode;
 }) {
   const inputClass =
     "h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
@@ -361,7 +372,7 @@ function RowCard({
           )}
         </span>
         <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-          {summary}
+          {headerContent ?? summary}
         </span>
         {dirty && !collapsed && (
           <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">

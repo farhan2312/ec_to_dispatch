@@ -173,6 +173,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
         options: YES_NO,
         group: "Purchase Order",
       },
+      { column: "quotation_no", label: "Quotation No.", type: "text", group: "Purchase Order" },
       { column: "po_no", label: "Purchase Order Number", type: "text", group: "Purchase Order" },
       { column: "customer_po_date", label: "Purchase Order Date", type: "date", group: "Purchase Order" },
       {
@@ -227,31 +228,37 @@ export const ORDER_SECTIONS: OrderSection[] = [
         group: "Target Dates",
       },
 
-      // Operations — freight & packing (visible read-only to Billing).
+      // Terms & Conditions — freight, packing and commercial terms rolled into
+      // one section. Visible read-only to Billing.
       {
         column: "freight_terms",
         label: "Freight Terms",
         type: "select",
         options: opts(["Paid", "To Pay"]),
-        group: "Operations",
+        group: "Terms & Conditions",
       },
       {
         column: "packing_requirement",
         label: "Packing Requirement",
         type: "select",
         options: opts(["Wooden Box", "Loose"]),
-        group: "Operations",
+        group: "Terms & Conditions",
       },
-
-      // Commercial. Payment Terms is free text (varies per order).
-      { column: "payment_terms", label: "Payment Terms", type: "text", group: "Commercial" },
-      { column: "ld", label: "LD", type: "select", options: YES_NO, group: "Commercial" },
+      {
+        column: "delivery_date_as_per_so",
+        label: "Delivery date As per SO",
+        type: "date",
+        group: "Terms & Conditions",
+      },
+      // Payment Terms is free text (varies per order).
+      { column: "payment_terms", label: "Payment Terms", type: "text", group: "Terms & Conditions" },
+      { column: "ld", label: "LD", type: "select", options: YES_NO, group: "Terms & Conditions" },
       {
         column: "ld_date",
         label: "LD Date",
         type: "date",
         dependsOn: [{ column: "ld", value: "Yes" }],
-        group: "Commercial",
+        group: "Terms & Conditions",
       },
 
       // --- Everything below is commented out, not deleted: the orders table
@@ -313,7 +320,8 @@ export const ORDER_SECTIONS: OrderSection[] = [
       },
       { column: "model_no", label: "Model No.", type: "text" },
       { column: "quantity", label: "Quantity", type: "int" },
-      { column: "orientation", label: "Pump Orientation", type: "text" },
+      { column: "suction", label: "Suction", type: "text" },
+      { column: "delivery", label: "Delivery", type: "text" },
       { column: "pump_sno", label: "Pump Serial No.", type: "text" },
       { column: "application", label: "Application", type: "text" },
       { column: "version", label: "Series Version", type: "text" },
@@ -670,6 +678,7 @@ export const BOI_ITEM_FIELDS: OrderField[] = [
     type: "text",
     dependsOn: [{ column: "boi_item", value: "Others" }],
   },
+  { column: "boi_make_desc", label: "BOI Make & Description", type: "text" },
   { column: "receipt_date", label: "Receipt Date", type: "date" },
   { column: "remarks", label: "Remarks", type: "text" },
 ];

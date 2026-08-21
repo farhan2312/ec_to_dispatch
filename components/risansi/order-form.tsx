@@ -61,6 +61,7 @@ const SECTIONS: Section[] = [
         options: YES_NO_OPTIONS,
       },
       { name: "qc_required", label: "QC Req", type: "select", options: YES_NO_OPTIONS },
+      { name: "quotation_no", label: "Quotation No.", type: "text" },
       { name: "po_no", label: "Purchase Order Number", type: "text" },
       { name: "customer_po_date", label: "Purchase Order Date", type: "date" },
       {
@@ -113,7 +114,7 @@ const SECTIONS: Section[] = [
     ],
   },
   {
-    title: "Operations",
+    title: "Terms & Conditions",
     fields: [
       {
         name: "freight_terms",
@@ -133,11 +134,11 @@ const SECTIONS: Section[] = [
           { value: "Loose", label: "Loose" },
         ],
       },
-    ],
-  },
-  {
-    title: "Commercial",
-    fields: [
+      {
+        name: "delivery_date_as_per_so",
+        label: "Delivery date As per SO",
+        type: "date",
+      },
       { name: "payment_terms", label: "Payment Terms", type: "text" },
       { name: "ld", label: "LD", type: "select", options: YES_NO_OPTIONS },
       {

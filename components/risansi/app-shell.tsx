@@ -53,26 +53,27 @@ export function AppShell({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Mobile top bar */}
-        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-card-border bg-surface px-4 lg:hidden">
+        {/* Top bar — mobile shows drawer toggle + brand; desktop is a slim
+            strip that hosts the Report a Bug button on the right. */}
+        <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-card-border bg-surface px-4">
           <button
             type="button"
             onClick={() => setDrawerOpen(true)}
             aria-label="Open menu"
-            className="-ml-1.5 rounded-lg p-1.5 text-foreground transition-colors hover:bg-background"
+            className="-ml-1.5 rounded-lg p-1.5 text-foreground transition-colors hover:bg-background lg:hidden"
           >
             <Menu className="h-5 w-5" />
           </button>
-          <span className="font-display text-sm font-semibold text-foreground">
+          <span className="font-display text-sm font-semibold text-foreground lg:hidden">
             Risansi
           </span>
+          <div className="ml-auto">
+            <ReportBugTrigger />
+          </div>
         </header>
 
         <main className="min-w-0 flex-1">{children}</main>
       </div>
-
-      {/* Floating "Report a Bug" button, present on every /risansi page. */}
-      <ReportBugTrigger />
     </div>
   );
 }

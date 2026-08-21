@@ -1393,3 +1393,20 @@ BEGIN
         ALTER TABLE order_assembly_dispatch DROP COLUMN dispatch_team_target_date;
     END IF;
 END $$;
+
+-- Quotation number (SO-level) sits alongside the Purchase Order Number in the
+-- Order details form. Idempotent.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS quotation_no TEXT;
+
+-- Delivery date as per SO (SO-level) — added to the merged Terms & Conditions
+-- section (Operations + Commercial).
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_date_as_per_so DATE;
+
+-- EC now captures Suction and Delivery separately instead of a single
+-- Orientation field.
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS suction TEXT;
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS delivery TEXT;
+
+-- Purchase BOI item picker gets a free-text make & description alongside the
+-- item type.
+ALTER TABLE order_boi_items ADD COLUMN IF NOT EXISTS boi_make_desc TEXT;

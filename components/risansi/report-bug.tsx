@@ -22,7 +22,7 @@ import { submitBugReportAction } from "@/app/risansi/bug-reports/actions";
 
 type Kind = "bug" | "feature";
 
-/** Floating "Report a Bug" button + modal. Renders once inside the app shell. */
+/** "Report a Bug" button + modal. Lives in the app-shell top bar. */
 export function ReportBugTrigger() {
   const [open, setOpen] = useState(false);
   return (
@@ -31,10 +31,10 @@ export function ReportBugTrigger() {
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Report a bug"
-        className="fixed bottom-5 right-5 z-30 inline-flex h-11 items-center gap-2 rounded-full border border-card-border bg-surface px-4 text-sm font-semibold text-foreground shadow-lg transition-colors hover:bg-background"
+        className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-card-border bg-surface px-3 text-sm font-medium text-foreground transition-colors hover:bg-background"
       >
         <Bug className="h-4 w-4 text-rose-600" />
-        Report a Bug
+        <span className="hidden sm:inline">Report a Bug</span>
       </button>
       {open && <ReportBugModal onClose={() => setOpen(false)} />}
     </>

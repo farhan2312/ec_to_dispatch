@@ -81,10 +81,12 @@ export type NewOrderInput = {
   bill_type?: string;
   boi?: string;
   qc_required?: string;
+  quotation_no?: string;
   po_no?: string;
   customer_po_date?: string;
   freight_terms?: string;
   packing_requirement?: string;
+  delivery_date_as_per_so?: string;
   payment_terms?: string;
   ld?: string;
   ld_date?: string;
@@ -109,6 +111,8 @@ export type NewItemInput = {
   model_no?: string;
   quantity?: string;
   orientation?: string;
+  suction?: string;
+  delivery?: string;
   pump_sno?: string;
   application?: string;
   version?: string;
@@ -140,15 +144,16 @@ export async function createOrder(
   const result = await query<{ id: string; sl_no: number }>(
     `INSERT INTO orders (
         so_no, so_date, client_code, client_type, party, agent,
-        nature_of_supply, industry_type, po_no, customer_po_date,
+        nature_of_supply, industry_type, quotation_no, po_no, customer_po_date,
         order_value, order_currency, qc_required, payment_terms, ld, ld_date,
-        freight_terms, packing_requirement, order_type, bill_type, boi,
+        freight_terms, packing_requirement, delivery_date_as_per_so,
+        order_type, bill_type, boi,
         total_quantity, drg_target_date, dispatch_target_date,
         dispatch_target_revised_date, qc_doc_target_date, purchase_target_date,
         packing_details_required, dispatch_team_target_date
      ) VALUES (
         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
-        $22,$23,$24,$25,$26,$27,$28,$29
+        $22,$23,$24,$25,$26,$27,$28,$29,$30,$31
      )
      RETURNING id, sl_no::int AS sl_no`,
     [
@@ -160,6 +165,7 @@ export async function createOrder(
       nullify(input.agent),
       nullify(input.nature_of_supply),
       nullify(input.industry_type),
+      nullify(input.quotation_no),
       nullify(input.po_no),
       nullify(input.customer_po_date),
       toNumeric(input.order_value),
@@ -170,6 +176,7 @@ export async function createOrder(
       nullify(input.ld_date),
       nullify(input.freight_terms),
       nullify(input.packing_requirement),
+      nullify(input.delivery_date_as_per_so),
       nullify(input.order_type),
       nullify(input.bill_type),
       nullify(input.boi),
@@ -198,9 +205,9 @@ export async function createItem(
   const result = await query<{ id: string; seq: number }>(
     `INSERT INTO order_items (
         order_id, ec_no, ec_date, item_type, pump_type, model_no, quantity,
-        orientation, pump_sno, application, version
+        orientation, suction, delivery, pump_sno, application, version
      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13
      )
      RETURNING id, seq::int AS seq`,
     [
@@ -212,6 +219,8 @@ export async function createItem(
       nullify(input.model_no),
       toInt(input.quantity),
       nullify(input.orientation),
+      nullify(input.suction),
+      nullify(input.delivery),
       nullify(input.pump_sno),
       nullify(input.application),
       nullify(input.version),

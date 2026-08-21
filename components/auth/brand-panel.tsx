@@ -2,9 +2,9 @@ import { Gauge } from "lucide-react";
 import Image from "next/image";
 import logo from "@/assets/logo.png";
 const stats = [
-  { value: "24/7", label: "Live EC monitoring" },
-  { value: "<30s", label: "Dispatch routing" },
-  { value: "99.9%", label: "Uptime" },
+  { value: "7", label: "Departments in sync" },
+  { value: "EC-level", label: "Order tracking" },
+  { value: "Live", label: "Cross-team alerts" },
 ];
 
 export function BrandPanel() {
@@ -22,13 +22,14 @@ export function BrandPanel() {
       {/* headline */}
       <div className="relative max-w-md">
         <h1 className="mb-5 font-display text-[44px] font-bold leading-[1.08] tracking-[-0.02em] text-white">
-          From pump EC
+          From Sales Order
           <br />
           straight to Dispatch.
         </h1>
         <p className="text-[16.5px] leading-relaxed text-[#b9cbe6]">
-          Monitor electrical conductivity in real time and route work orders to
-          the field crew — one connected control surface.
+          Track every sales order from EC to dispatch — across drawing,
+          purchase, quality, planning, packing and billing. One connected
+          workspace, every hand-off in view.
         </p>
 
         {/* stat row */}

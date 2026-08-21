@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import type { ItemSummary, OrderListRow } from "@/lib/orders";
 import { deleteOrderAction } from "@/app/risansi/orders/actions";
-import { PAYMENT_STATUS_OPTIONS } from "@/lib/order-schema";
 import {
   FilterBar,
   Pagination,
@@ -31,14 +30,7 @@ function searchText(o: OrderListRow): string {
     .join(" ");
 }
 
-const ORDER_FILTERS: FilterDef<OrderListRow>[] = [
-  {
-    key: "payment_status",
-    label: "Payment Status",
-    getValue: (o) => o.payment_status,
-    staticOptions: PAYMENT_STATUS_OPTIONS.map((o) => o.value),
-  },
-];
+const ORDER_FILTERS: FilterDef<OrderListRow>[] = [];
 
 const numberFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 
@@ -200,7 +192,7 @@ export function OrdersTable({
         activeCount={activeCount}
         clearAll={clearAll}
         total={total}
-        searchPlaceholder="Search SO, party, client, EC…"
+        searchPlaceholder="Search SO, client name, client code, EC…"
       />
 
       <div className="mb-3 flex justify-end">

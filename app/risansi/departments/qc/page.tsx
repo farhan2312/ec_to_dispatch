@@ -83,13 +83,13 @@ export default async function QcWorkspacePage({
         documents={[
           {
             table: "order_qc_documents",
-            label: "Attach Docs",
+            label: "Docs attached by QC",
             canEdit: canEditQcDocuments(user.role),
             counts: docCounts,
           },
           {
             table: "order_qc_requirement_documents",
-            label: "Requirement Docs",
+            label: "Required Docs",
             canEdit: canEditQcRequirementDocs(user.role),
             counts: requirementDocCounts,
           },

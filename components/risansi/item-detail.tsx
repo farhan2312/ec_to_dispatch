@@ -172,12 +172,12 @@ export function ItemDetail({
               ? [
                   {
                     table: "order_qc_documents",
-                    label: "Attach Docs",
+                    label: "Docs attached by QC",
                     canEdit: canEditQcDocuments(role),
                   },
                   {
                     table: "order_qc_requirement_documents",
-                    label: "Requirement Docs",
+                    label: "Required Docs",
                     canEdit: canEditQcRequirementDocs(role),
                   },
                 ]

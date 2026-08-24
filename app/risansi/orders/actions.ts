@@ -61,9 +61,6 @@ export async function createOrderAction(
   if (!(input.client_code ?? "").trim()) {
     return { ok: false, error: "Client Code is required." };
   }
-  if (!(input.client_type ?? "").trim()) {
-    return { ok: false, error: "Client Type is required." };
-  }
 
   try {
     const { id, sl_no } = await createOrder(input);

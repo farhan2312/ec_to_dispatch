@@ -33,7 +33,7 @@ const SECTIONS: Section[] = [
       { name: "client_code", label: "Client Code", type: "text", required: true },
       { name: "client_name", label: "Client Name", type: "text" },
       { name: "industry_type", label: "Industry", type: "text" },
-      { name: "client_type", label: "Client Type", type: "text", required: true },
+      { name: "client_type", label: "Client Type", type: "text" },
       { name: "market_type", label: "Market Type", type: "text" },
       { name: "reps", label: "Rep(s)", type: "text" },
     ],

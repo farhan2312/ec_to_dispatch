@@ -52,6 +52,10 @@ export const SESSION_MAX_AGE = MAX_AGE_SECONDS;
 /**
  * Returns the currently logged-in user based on the signed session cookie,
  * or null if there is no valid session.
+ *
+ * Status is re-checked on every request: a token stays valid for 7 days, so
+ * without this an account disabled/suspended by an admin would keep full
+ * access until its token expired.
  */
 export async function getCurrentUser(): Promise<User | null> {
   const cookieStore = await cookies();
@@ -59,5 +63,12 @@ export async function getCurrentUser(): Promise<User | null> {
   if (!token) return null;
   const userId = await verifySession(token);
   if (!userId) return null;
-  return getUserById(userId);
+  const user = await getUserById(userId);
+  if (!user || user.status !== "approved") return null;
+  return user;
+}
+
+/** True when the request carries a valid session for an approved user. */
+export async function isAuthenticated(): Promise<boolean> {
+  return (await getCurrentUser()) !== null;
 }

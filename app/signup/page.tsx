@@ -3,7 +3,7 @@ import { BrandPanel } from "@/components/auth/brand-panel";
 import { SignupForm } from "@/components/signup/signup-form";
 
 export const metadata: Metadata = {
-  title: "Request access | Pumps EC to Dispatch",
+  title: "Request access | SO to Dispatch",
 };
 
 export default function SignupPage() {

@@ -223,7 +223,7 @@ export function Sidebar({
       <nav className="flex-1 overflow-y-auto px-3 py-2">
         <div className="mb-6">
           <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted">
-            EC to Dispatch
+            SO to Dispatch
           </p>
           <div className="space-y-1">
             {visiblePrimaryNav.map((item) => (

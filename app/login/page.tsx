@@ -3,7 +3,7 @@ import { BrandPanel } from "@/components/auth/brand-panel";
 import { LoginForm } from "@/components/login/login-form";
 
 export const metadata: Metadata = {
-  title: "Sign in | Pumps EC to Dispatch",
+  title: "Sign in | SO to Dispatch",
 };
 
 export default async function LoginPage({

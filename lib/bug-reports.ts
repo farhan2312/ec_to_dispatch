@@ -102,6 +102,15 @@ export async function getBugReportScreenshot(
   };
 }
 
+/** How many reports are still "open" or "in progress" — for the top-bar bell. */
+export async function countOpenBugReports(): Promise<number> {
+  const result = await query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM bug_reports
+      WHERE status IN ('open', 'in_progress')`
+  );
+  return Number(result.rows[0]?.n ?? 0);
+}
+
 /** Move a report through its lifecycle (admin action). */
 export async function updateBugReportStatus(
   id: string,

@@ -1,12 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ClipboardList,
   IndianRupee,
+  Loader2,
   PauseCircle,
+  RotateCw,
+  X,
 } from "lucide-react";
 import type { OrderOverviewRow } from "@/lib/orders";
 import { PAYMENT_STATUS_OPTIONS } from "@/lib/order-schema";
@@ -203,7 +207,39 @@ const done = {
     (r.dispatch_status ?? "").trim().toLowerCase() === "fully dispatch",
 };
 
-export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
+export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }) {
+  const router = useRouter();
+  // Date range filter (inclusive) on each item's dispatch_target_date.
+  // ISO YYYY-MM-DD compares as strings, matching how the column is serialized
+  // in listOrdersOverview — no Date-object timezone drift.
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+
+  const rows = useMemo(() => {
+    if (!fromDate && !toDate) return allRows;
+    return allRows.filter((r) => {
+      const d = r.dispatch_target_date ?? "";
+      if (!d) return false;
+      if (fromDate && d < fromDate) return false;
+      if (toDate && d > toDate) return false;
+      return true;
+    });
+  }, [allRows, fromDate, toDate]);
+  const filterActive = !!fromDate || !!toDate;
+
+  function clearFilter() {
+    setFromDate("");
+    setToDate("");
+  }
+  function refresh() {
+    setRefreshing(true);
+    router.refresh();
+    // The server-component refetch is quick, but give the spinner a beat so
+    // the click registers visibly.
+    setTimeout(() => setRefreshing(false), 500);
+  }
+
   const total = rows.length;
   const holds = rows.filter((r) => isHold(r.payment_status)).length;
   const overdue = rows.filter(isOverdue).length;
@@ -294,14 +330,86 @@ export function CentralDashboard({ rows }: { rows: OrderOverviewRow[] }) {
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
-      <div className="mb-6">
-        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-          Central Dashboard
-        </h1>
-        <p className="text-sm text-muted">
-          Full visibility of every department&apos;s progress across all orders.
-        </p>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
+            Central Dashboard
+          </h1>
+          <p className="text-sm text-muted">
+            Full visibility of every department&apos;s progress across all
+            orders.
+          </p>
+        </div>
+
+        {/* Date range (on dispatch_target_date) + refresh. */}
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="flex flex-col">
+            <label
+              htmlFor="dash-from"
+              className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              From
+            </label>
+            <input
+              id="dash-from"
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              max={toDate || undefined}
+              className="h-9 rounded-lg border border-input-border bg-surface px-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
+            />
+          </div>
+          <div className="flex flex-col">
+            <label
+              htmlFor="dash-to"
+              className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              To
+            </label>
+            <input
+              id="dash-to"
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              min={fromDate || undefined}
+              className="h-9 rounded-lg border border-input-border bg-surface px-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
+            />
+          </div>
+          {filterActive && (
+            <button
+              type="button"
+              onClick={clearFilter}
+              className="inline-flex h-9 items-center gap-1 rounded-lg border border-input-border bg-surface px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+            >
+              <X className="h-3.5 w-3.5" />
+              Clear
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={refresh}
+            disabled={refreshing}
+            aria-label="Refresh"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-input-border bg-surface px-3 text-sm font-medium text-foreground transition-colors hover:bg-background disabled:opacity-60"
+          >
+            {refreshing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RotateCw className="h-4 w-4" />
+            )}
+            Refresh
+          </button>
+        </div>
       </div>
+
+      {filterActive && (
+        <div className="mb-4 rounded-lg border border-card-border bg-surface px-3 py-2 text-xs text-muted">
+          Showing <span className="font-semibold text-foreground">{total}</span>{" "}
+          of {allRows.length} items with a dispatch target date
+          {fromDate ? ` from ${fromDate}` : ""}
+          {toDate ? ` to ${toDate}` : ""}.
+        </div>
+      )}
 
       {/* stat cards */}
       <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">

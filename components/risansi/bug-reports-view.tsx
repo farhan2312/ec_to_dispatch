@@ -13,11 +13,21 @@ import {
 import type { BugReportRow, BugStatus } from "@/lib/bug-reports";
 import { updateBugReportStatusAction } from "@/app/risansi/bug-reports/actions";
 
+// Display-only rename: DB status "wont_fix" surfaces as "Closed" in the UI.
 const STATUS_OPTIONS: { value: BugStatus; label: string; tone: string }[] = [
   { value: "open", label: "Open", tone: "bg-rose-50 text-rose-700" },
   { value: "in_progress", label: "In progress", tone: "bg-blue-50 text-blue-700" },
   { value: "resolved", label: "Resolved", tone: "bg-emerald-50 text-emerald-700" },
-  { value: "wont_fix", label: "Won't fix", tone: "bg-slate-100 text-slate-600" },
+  { value: "wont_fix", label: "Closed", tone: "bg-slate-100 text-slate-600" },
+];
+
+type StatusFilter = "all" | BugStatus;
+const FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "open", label: "Open" },
+  { value: "in_progress", label: "In progress" },
+  { value: "resolved", label: "Resolved" },
+  { value: "wont_fix", label: "Closed" },
 ];
 
 const SEVERITY_TONES: Record<string, string> = {
@@ -48,6 +58,7 @@ export function BugReportsView({ rows }: { rows: BugReportRow[] }) {
   const router = useRouter();
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [filter, setFilter] = useState<StatusFilter>("all");
 
   function toggle(id: string) {
     setOpen((prev) => {
@@ -66,21 +77,80 @@ export function BugReportsView({ rows }: { rows: BugReportRow[] }) {
     else router.refresh();
   }
 
+  // Counts per filter for the pill badges.
+  const counts: Record<StatusFilter, number> = {
+    all: rows.length,
+    open: rows.filter((r) => r.status === "open").length,
+    in_progress: rows.filter((r) => r.status === "in_progress").length,
+    resolved: rows.filter((r) => r.status === "resolved").length,
+    wont_fix: rows.filter((r) => r.status === "wont_fix").length,
+  };
+
+  const visible =
+    filter === "all" ? rows : rows.filter((r) => r.status === filter);
+
+  const pills = (
+    <div className="mb-4 inline-flex flex-wrap gap-1 rounded-full bg-background p-1">
+      {FILTERS.map((f) => {
+        const active = f.value === filter;
+        return (
+          <button
+            key={f.value}
+            type="button"
+            onClick={() => setFilter(f.value)}
+            className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
+              active
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted hover:text-foreground"
+            }`}
+            aria-pressed={active}
+          >
+            {f.label}
+            <span
+              className={`inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold ${
+                active
+                  ? "bg-white/25 text-primary-foreground"
+                  : "bg-card-border text-muted-foreground"
+              }`}
+            >
+              {counts[f.value]}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
   if (rows.length === 0) {
     return (
-      <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
-        <p className="text-sm font-medium text-foreground">No reports yet</p>
-        <p className="mt-1 text-sm text-muted">
-          Submissions from the &ldquo;Report a Bug&rdquo; button will show here.
-        </p>
-      </div>
+      <>
+        {pills}
+        <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
+          <p className="text-sm font-medium text-foreground">No reports yet</p>
+          <p className="mt-1 text-sm text-muted">
+            Submissions from the &ldquo;Report a Bug&rdquo; button will show here.
+          </p>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className="rounded-xl border border-card-border bg-surface shadow-sm">
-      <ul className="divide-y divide-card-border">
-        {rows.map((r) => {
+    <>
+      {pills}
+      <div className="rounded-xl border border-card-border bg-surface shadow-sm">
+        {visible.length === 0 ? (
+          <div className="px-6 py-14 text-center">
+            <p className="text-sm font-medium text-foreground">
+              Nothing here
+            </p>
+            <p className="mt-1 text-sm text-muted">
+              No reports match this filter.
+            </p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-card-border">
+            {visible.map((r) => {
           const isOpen = open.has(r.id);
           const statusMeta =
             STATUS_OPTIONS.find((s) => s.value === r.status) ?? STATUS_OPTIONS[0];
@@ -202,10 +272,12 @@ export function BugReportsView({ rows }: { rows: BugReportRow[] }) {
                   </div>
                 </div>
               )}
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+              </li>
+            );
+          })}
+          </ul>
+        )}
+      </div>
+    </>
   );
 }

@@ -111,7 +111,8 @@ function ReportBugModal({ onClose }: { onClose: () => void }) {
     fd.append("kind", kind);
     fd.append("title", title);
     fd.append("description", description);
-    fd.append("severity", severity);
+    // Severity is a bug-only field; don't send it on a feature request.
+    if (kind === "bug") fd.append("severity", severity);
     fd.append("page_path", pagePath);
     if (file) fd.append("screenshot", file);
     const res = await submitBugReportAction(fd);
@@ -149,16 +150,25 @@ function ReportBugModal({ onClose }: { onClose: () => void }) {
           <X className="h-4 w-4" />
         </button>
 
-        <div className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-rose-600">
-          <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />
+        <div
+          className={`mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider ${
+            kind === "bug" ? "text-rose-600" : "text-amber-600"
+          }`}
+        >
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${
+              kind === "bug" ? "bg-rose-500" : "bg-amber-500"
+            }`}
+          />
           {kind === "bug" ? "Report a Bug" : "Feature request"}
         </div>
         <h2 className="font-display text-lg font-semibold text-foreground">
           {kind === "bug" ? "Report a Bug" : "Suggest a feature"}
         </h2>
         <p className="mb-5 text-sm text-muted">
-          Tell us what went wrong — it goes straight to the admin&apos;s Bug
-          Tracker.
+          {kind === "bug"
+            ? "Tell us what went wrong — it goes straight to the admin's Bug Tracker."
+            : "Tell us what you'd like to see — it goes straight to the admin's Bug Tracker."}
         </p>
 
         {done ? (
@@ -239,7 +249,7 @@ function ReportBugModal({ onClose }: { onClose: () => void }) {
                 htmlFor="bug-desc"
                 className="mb-1.5 block text-[13px] font-medium text-brand-label"
               >
-                What happened?
+                {kind === "bug" ? "What happened?" : "What would you like?"}
               </label>
               <textarea
                 id="bug-desc"
@@ -247,32 +257,44 @@ function ReportBugModal({ onClose }: { onClose: () => void }) {
                 maxLength={5000}
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Steps to reproduce, what you expected, what actually happened…"
+                placeholder={
+                  kind === "bug"
+                    ? "Steps to reproduce, what you expected, what actually happened…"
+                    : "Describe the feature and how it would help your workflow…"
+                }
                 className="w-full rounded-[10px] border border-input-border bg-surface p-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
               />
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label
-                  htmlFor="bug-sev"
-                  className="mb-1.5 block text-[13px] font-medium text-brand-label"
-                >
-                  Severity
-                </label>
-                <select
-                  id="bug-sev"
-                  value={severity}
-                  onChange={(e) => setSeverity(e.target.value)}
-                  className={`${inputClass} cursor-pointer`}
-                >
-                  {["Low", "Medium", "High", "Critical"].map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            {/* Severity is a bug concept — features skip it and get the full
+                width for Page / where. */}
+            <div
+              className={`grid grid-cols-1 gap-4 ${
+                kind === "bug" ? "sm:grid-cols-2" : ""
+              }`}
+            >
+              {kind === "bug" && (
+                <div>
+                  <label
+                    htmlFor="bug-sev"
+                    className="mb-1.5 block text-[13px] font-medium text-brand-label"
+                  >
+                    Severity
+                  </label>
+                  <select
+                    id="bug-sev"
+                    value={severity}
+                    onChange={(e) => setSeverity(e.target.value)}
+                    className={`${inputClass} cursor-pointer`}
+                  >
+                    {["Low", "Medium", "High", "Critical"].map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label
                   htmlFor="bug-page"

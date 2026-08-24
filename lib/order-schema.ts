@@ -139,11 +139,11 @@ export const ORDER_SECTIONS: OrderSection[] = [
     fields: [
       // Client — client_code and client_type are compulsory at creation.
       { column: "client_code", label: "Client Code", type: "text", group: "Client" },
-      { column: "party", label: "Client Name", type: "text", group: "Client" },
+      { column: "client_name", label: "Client Name", type: "text", group: "Client" },
       { column: "industry_type", label: "Industry", type: "text", group: "Client" },
       { column: "client_type", label: "Client Type", type: "text", group: "Client" },
-      { column: "nature_of_supply", label: "Market Type", type: "text", group: "Client" },
-      { column: "agent", label: "Rep(s)", type: "text", group: "Client" },
+      { column: "market_type", label: "Market Type", type: "text", group: "Client" },
+      { column: "reps", label: "Rep(s)", type: "text", group: "Client" },
 
       // Purchase Order Details — SO Order Type is inherited by every EC.
       {
@@ -465,7 +465,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
     // slip no. + date fields are exposed. Full detail (box/marking/weights)
     // gates on Packing Details Required = Yes via per-field dependsOn.
     childTable: "order_packing_slips",
-    childGate: { column: "nature_of_supply", present: true },
+    childGate: { column: "market_type", present: true },
     childKind: "tentative",
   },
   {
@@ -486,7 +486,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
     // Packing files the ACTUAL packing slips for each EC. Same gating as
     // Planning's tentative set — see above.
     childTable: "order_packing_slips",
-    childGate: { column: "nature_of_supply", present: true },
+    childGate: { column: "market_type", present: true },
     childKind: "actual",
   },
 ];

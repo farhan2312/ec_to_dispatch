@@ -31,11 +31,11 @@ const SECTIONS: Section[] = [
     title: "Client",
     fields: [
       { name: "client_code", label: "Client Code", type: "text", required: true },
-      { name: "party", label: "Client Name", type: "text" },
+      { name: "client_name", label: "Client Name", type: "text" },
       { name: "industry_type", label: "Industry", type: "text" },
       { name: "client_type", label: "Client Type", type: "text", required: true },
-      { name: "nature_of_supply", label: "Market Type", type: "text" },
-      { name: "agent", label: "Rep(s)", type: "text" },
+      { name: "market_type", label: "Market Type", type: "text" },
+      { name: "reps", label: "Rep(s)", type: "text" },
     ],
   },
   {

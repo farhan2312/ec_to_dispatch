@@ -21,7 +21,7 @@ import { Pagination, SearchInput, useTableSearch } from "./table-tools";
 type Row = Record<string, unknown>;
 
 function rowSearchText(o: BillingQueueRow): string {
-  return [o.sl_no, o.so_no, o.party].filter(Boolean).join(" ");
+  return [o.sl_no, o.so_no, o.client_name].filter(Boolean).join(" ");
 }
 
 const numberFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
@@ -242,7 +242,7 @@ export function BillingWorkspace({
                       </td>
                       <td className="px-4 py-3 font-medium tabular-nums">{row.sl_no}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{row.so_no ?? "—"}</td>
-                      <td className="px-4 py-3">{row.party ?? "—"}</td>
+                      <td className="px-4 py-3">{row.client_name ?? "—"}</td>
                       <td className="px-4 py-3">{row.bill_type ?? "—"}</td>
                       <td className="px-4 py-3">{row.payment_terms ?? "—"}</td>
                       <td className="px-4 py-3 text-right tabular-nums">

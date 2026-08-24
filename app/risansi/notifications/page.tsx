@@ -185,7 +185,7 @@ function Escalations({ alerts }: { alerts: AlertRow[] }) {
                   <p className="truncate text-xs text-muted">
                     #{alert.sl_no} · {alert.so_no ?? "—"}
                     {alert.ec_no ? ` · ${alert.ec_no}` : ""}
-                    {alert.party ? ` · ${alert.party}` : ""}
+                    {alert.client_name ? ` · ${alert.client_name}` : ""}
                     {alert.due_date ? ` · due ${formatDate(alert.due_date)}` : ""}
                   </p>
                 </div>

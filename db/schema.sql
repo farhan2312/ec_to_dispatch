@@ -87,7 +87,7 @@ CREATE INDEX IF NOT EXISTS audit_log_user_idx ON audit_log (user_id);
 -- don't fail; clear dates/money/qty use proper types for sorting and totals.
 -- ===========================================================================
 
--- Core identity — cols A–V (client/agent kept as plain text for now),
+-- Core identity — cols A–V (client/reps kept as plain text for now),
 -- plus BH Project and BP Order Value.
 CREATE TABLE IF NOT EXISTS orders (
     id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -100,10 +100,10 @@ CREATE TABLE IF NOT EXISTS orders (
     file_no                  TEXT,           -- G  FILE NO.
     client_code              TEXT,           -- H  CLIENT CODE
     client_type              TEXT,           -- I  Client Type
-    party                    TEXT,           -- J  Party
-    nature_of_supply         TEXT,           -- K  Nature of Supply
+    client_name                    TEXT,           -- J  Party
+    market_type         TEXT,           -- K  Nature of Supply
     industry_type            TEXT,           -- L  INDUSTRY TYPE
-    agent                    TEXT,           -- M  AGENT
+    reps                    TEXT,           -- M  AGENT
     item                     TEXT,           -- N  Item
     po_no                    TEXT,           -- O  PO NO.
     customer_po_date         DATE,           -- P  Customer PO Date
@@ -1458,3 +1458,31 @@ SELECT it.order_id, it.id, ps.id, it.ec_no, ps.packing_slip_no, ps.quantity
    AND NOT EXISTS (
      SELECT 1 FROM order_invoices inv WHERE inv.packing_slip_id = ps.id
    );
+
+-- Rename orders columns whose DB name diverged from the UI label:
+--   party            → client_name
+--   nature_of_supply → market_type
+--   agent            → reps
+-- Idempotent: each block only fires when the old column still exists and
+-- the new one hasn't been created yet.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'orders' AND column_name = 'party')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                      WHERE table_name = 'orders' AND column_name = 'client_name') THEN
+    ALTER TABLE orders RENAME COLUMN party TO client_name;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'orders' AND column_name = 'nature_of_supply')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                      WHERE table_name = 'orders' AND column_name = 'market_type') THEN
+    ALTER TABLE orders RENAME COLUMN nature_of_supply TO market_type;
+  END IF;
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'orders' AND column_name = 'agent')
+     AND NOT EXISTS (SELECT 1 FROM information_schema.columns
+                      WHERE table_name = 'orders' AND column_name = 'reps') THEN
+    ALTER TABLE orders RENAME COLUMN agent TO reps;
+  END IF;
+END $$;

@@ -56,9 +56,9 @@ export type OrderListRow = {
   sl_no: number;
   so_no: string | null;
   so_date: string | null;
-  party: string | null;
+  client_name: string | null;
   client_code: string | null;
-  agent: string | null;
+  reps: string | null;
   po_no: string | null;
   order_type: string | null;
   order_value: string | null;
@@ -73,9 +73,9 @@ export type NewOrderInput = {
   so_date?: string;
   client_code?: string;
   client_type?: string;
-  party?: string;
-  agent?: string;
-  nature_of_supply?: string;
+  client_name?: string;
+  reps?: string;
+  market_type?: string;
   industry_type?: string;
   order_type?: string;
   bill_type?: string;
@@ -143,8 +143,8 @@ export async function createOrder(
 ): Promise<{ id: string; sl_no: number }> {
   const result = await query<{ id: string; sl_no: number }>(
     `INSERT INTO orders (
-        so_no, so_date, client_code, client_type, party, agent,
-        nature_of_supply, industry_type, quotation_no, po_no, customer_po_date,
+        so_no, so_date, client_code, client_type, client_name, reps,
+        market_type, industry_type, quotation_no, po_no, customer_po_date,
         order_value, order_currency, qc_required, payment_terms, ld, ld_date,
         freight_terms, packing_requirement, delivery_date_as_per_so,
         order_type, bill_type, boi,
@@ -161,9 +161,9 @@ export async function createOrder(
       nullify(input.so_date),
       nullify(input.client_code),
       nullify(input.client_type),
-      nullify(input.party),
-      nullify(input.agent),
-      nullify(input.nature_of_supply),
+      nullify(input.client_name),
+      nullify(input.reps),
+      nullify(input.market_type),
       nullify(input.industry_type),
       nullify(input.quotation_no),
       nullify(input.po_no),
@@ -849,7 +849,7 @@ export type DispatchRegisterRow = {
   sl_no: number;
   so_no: string | null;
   ec_no: string | null;
-  party: string | null;
+  client_name: string | null;
   lot_no: string | null;
   lot_dispatch_date: string | null;
   invoice_date: string | null;
@@ -863,7 +863,7 @@ export async function listDispatchRegister(): Promise<DispatchRegisterRow[]> {
             o.sl_no::int AS sl_no,
             o.so_no,
             it.ec_no,
-            o.party,
+            o.client_name,
             l.lot_no,
             to_char(l.lot_dispatch_date, 'YYYY-MM-DD') AS lot_dispatch_date,
             to_char(l.invoice_date, 'YYYY-MM-DD') AS invoice_date,
@@ -888,9 +888,9 @@ export type OrderOverviewRow = {
   so_no: string | null;
   ec_no: string | null;
   item_type: string | null;
-  party: string | null;
+  client_name: string | null;
   industry_type: string | null;
-  nature_of_supply: string | null;
+  market_type: string | null;
   order_value: string | null;
   has_pi: boolean;
   payment_status: string | null;
@@ -917,9 +917,9 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             o.so_no,
             it.ec_no,
             it.item_type,
-            o.party,
+            o.client_name,
             o.industry_type,
-            o.nature_of_supply,
+            o.market_type,
             CASE WHEN it.seq = MIN(it.seq) OVER (PARTITION BY o.id)
                  THEN o.order_value::text END AS order_value,
             -- Any PI exists? (Billing progress in the pipeline: Tax Invoice
@@ -961,7 +961,7 @@ export type PaymentHoldRow = {
   id: string;
   sl_no: number;
   so_no: string | null;
-  party: string | null;
+  client_name: string | null;
   hold_reason: string | null;
   order_value: string | null;
 };
@@ -972,7 +972,7 @@ export async function listPaymentHolds(): Promise<PaymentHoldRow[]> {
     `SELECT o.id,
             o.sl_no::int AS sl_no,
             o.so_no,
-            o.party,
+            o.client_name,
             o.order_value::text AS order_value,
             a.hold_reason
        FROM orders o
@@ -1042,7 +1042,7 @@ export async function listOrdersForSection(
             o.sl_no::int AS sl_no,
             o.so_no,
             NULL::text AS ec_no,
-            o.party
+            o.client_name
             ,${detailSelects}${contextSelects}
        FROM orders o
        LEFT JOIN ${table} d ON d.order_id = o.id
@@ -1105,7 +1105,7 @@ export async function listItemsForSection(
   const slipKind = section.childKind === "tentative" ? "tentative" : "actual";
   const childSelect =
     section.childTable === "order_packing_slips"
-      ? `, o.nature_of_supply, o.packing_details_required,
+      ? `, o.market_type, o.packing_details_required,
          COALESCE((SELECT jsonb_agg(to_jsonb(ps) ORDER BY ps.seq)
                      FROM order_packing_slips ps
                     WHERE ps.item_id = it.id
@@ -1120,7 +1120,7 @@ export async function listItemsForSection(
             o.so_no,
             it.ec_no,
             it.item_type,
-            o.party
+            o.client_name
             ${childSelect}
             ,${detailSelects}${contextSelects}
        FROM order_items it
@@ -1137,7 +1137,7 @@ export type BillingQueueRow = {
   id: string;
   sl_no: number;
   so_no: string | null;
-  party: string | null;
+  client_name: string | null;
   bill_type: string | null;
   payment_terms: string | null;
   freight_terms: string | null;
@@ -1163,7 +1163,7 @@ export async function listOrdersForBilling(): Promise<BillingQueueRow[]> {
     `SELECT o.id,
             o.sl_no::int AS sl_no,
             o.so_no,
-            o.party,
+            o.client_name,
             o.bill_type,
             o.payment_terms,
             o.freight_terms,
@@ -1246,9 +1246,9 @@ export async function listOrders(): Promise<OrderListRow[]> {
             o.sl_no::int AS sl_no,
             o.so_no,
             to_char(o.so_date, 'YYYY-MM-DD') AS so_date,
-            o.party,
+            o.client_name,
             o.client_code,
-            o.agent,
+            o.reps,
             o.po_no,
             o.order_type,
             o.order_value::text AS order_value,

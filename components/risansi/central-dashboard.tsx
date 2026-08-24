@@ -539,7 +539,7 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                         {[row.ec_no, row.item_type].filter(Boolean).join(" · ")}
                       </div>
                     </td>
-                    <td className="px-4 py-3">{row.party ?? "—"}</td>
+                    <td className="px-4 py-3">{row.client_name ?? "—"}</td>
                     <td className="px-3 py-3">
                       <Chip
                         value={row.has_pi ? "PI done" : null}

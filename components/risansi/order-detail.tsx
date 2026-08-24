@@ -112,7 +112,7 @@ export function OrderDetail({
             SO · {soLabel}
           </span>
           <h1 className="font-display text-xl font-bold tracking-tight text-foreground">
-            {str(order.party) || "Order"}
+            {str(order.client_name) || "Order"}
           </h1>
         </div>
       </div>

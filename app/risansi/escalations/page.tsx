@@ -75,7 +75,7 @@ export default async function EscalationsPage() {
                   <td className="px-4 py-3 whitespace-nowrap">
                     {hold.so_no ?? "—"}
                   </td>
-                  <td className="px-4 py-3">{hold.party ?? "—"}</td>
+                  <td className="px-4 py-3">{hold.client_name ?? "—"}</td>
                   <td className="px-4 py-3 text-muted">
                     {hold.hold_reason ?? "—"}
                   </td>

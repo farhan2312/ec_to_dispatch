@@ -72,7 +72,7 @@ export async function listContacts(
 }
 
 /**
- * Existing threads for the user: the other party, the last message, and how
+ * Existing threads for the user: the other client_name, the last message, and how
  * many of their messages are still unread.
  */
 export async function listConversations(

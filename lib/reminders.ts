@@ -22,7 +22,7 @@ export type ReminderRow = {
   sl_no: number;
   so_no: string | null;
   ec_no: string | null;
-  party: string | null;
+  client_name: string | null;
   dept: ReminderDept;
   department: string;
   due_date: string;
@@ -35,7 +35,7 @@ export type ReminderRow = {
 const REMINDERS_SQL = `
   -- Drawing due to be sent (SO-level target). Fires while any EC hasn't been
   -- sent yet, and the SO's target is within a week.
-  SELECT o.id, o.sl_no::int AS sl_no, o.so_no, NULL::text AS ec_no, o.party,
+  SELECT o.id, o.sl_no::int AS sl_no, o.so_no, NULL::text AS ec_no, o.client_name,
          'drawing'::text AS dept, 'Drawing'::text AS department,
          to_char(o.drg_target_date, 'YYYY-MM-DD') AS due_date,
          (o.drg_target_date - ${TODAY_IST})::int AS days_left
@@ -51,7 +51,7 @@ const REMINDERS_SQL = `
   UNION ALL
   -- Purchase (BOI items) due to be received (SO-level target). Only when the
   -- SO needs BOI and some EC still has pending items.
-  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.client_name,
          'purchase'::text, 'Purchase'::text,
          to_char(o.purchase_target_date, 'YYYY-MM-DD'),
          (o.purchase_target_date - ${TODAY_IST})::int
@@ -71,7 +71,7 @@ const REMINDERS_SQL = `
 
   UNION ALL
   -- QC docs due to be submitted (SO-level target).
-  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.client_name,
          'qc'::text, 'Quality'::text,
          to_char(o.qc_doc_target_date, 'YYYY-MM-DD'),
          (o.qc_doc_target_date - ${TODAY_IST})::int
@@ -88,7 +88,7 @@ const REMINDERS_SQL = `
   UNION ALL
   -- Planning readiness due before dispatch (SO-level target). Planning has no
   -- target of its own, so it borrows the SO's dispatch target — revised if set.
-  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.client_name,
          'planning'::text, 'Planning'::text,
          to_char(${PLANNING_DUE}, 'YYYY-MM-DD'),
          (${PLANNING_DUE} - ${TODAY_IST})::int
@@ -104,7 +104,7 @@ const REMINDERS_SQL = `
   UNION ALL
   -- Assembly & Packing due to complete, against the dispatch team's target
   -- date (SO-level). Fires while any EC is still unpacked.
-  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.client_name,
          'dispatch'::text, 'Assembly & Packing'::text,
          to_char(o.dispatch_team_target_date, 'YYYY-MM-DD'),
          (o.dispatch_team_target_date - ${TODAY_IST})::int

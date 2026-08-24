@@ -215,7 +215,17 @@ export function AuditLogView({
             </button>
           ))}
         </div>
-        <SearchInput value={query} onChange={setQuery} placeholder="Search user, action…" />
+        {/* The 'By user' tab has no event columns — its rows are just user
+            identity + role, so the placeholder shifts to match. */}
+        <SearchInput
+          value={query}
+          onChange={setQuery}
+          placeholder={
+            isByUser
+              ? "Search email, role…"
+              : "Search user, action, target…"
+          }
+        />
       </div>
 
       <p className="mb-3 text-sm text-muted">{summary}</p>

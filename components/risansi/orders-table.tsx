@@ -25,7 +25,7 @@ function searchText(o: OrderListRow): string {
   const items = (o.items ?? [])
     .map((it) => [it.ec_no, it.item_type, it.model_no].filter(Boolean).join(" "))
     .join(" ");
-  return [o.sl_no, o.so_no, o.party, o.client_code, o.po_no, items]
+  return [o.sl_no, o.so_no, o.client_name, o.client_code, o.po_no, items]
     .filter(Boolean)
     .join(" ");
 }
@@ -258,7 +258,7 @@ export function OrdersTable({
                       <td className="px-4 py-3 whitespace-nowrap text-muted">
                         {formatDate(order.so_date)}
                       </td>
-                      <td className="px-4 py-3">{cell(order.party)}</td>
+                      <td className="px-4 py-3">{cell(order.client_name)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{cell(order.client_code)}</td>
                       <td className="px-4 py-3 text-right tabular-nums">
                         {formatValue(order.order_value)}

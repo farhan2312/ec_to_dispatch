@@ -54,7 +54,7 @@ export function OrderDetailsModal({
         {order && (
           <p className="mb-5 text-sm text-muted">
             SO {soLabel}
-            {order.party ? ` · ${String(order.party)}` : ""}
+            {order.client_name ? ` · ${String(order.client_name)}` : ""}
           </p>
         )}
 

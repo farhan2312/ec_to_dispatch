@@ -96,7 +96,7 @@ export default async function DispatchedPage() {
                     <div>{row.so_no ?? "—"}</div>
                     <div className="text-xs text-muted">{row.ec_no ?? ""}</div>
                   </td>
-                  <td className="px-4 py-3">{row.party ?? "—"}</td>
+                  <td className="px-4 py-3">{row.client_name ?? "—"}</td>
                   <td className="px-4 py-3 whitespace-nowrap">{row.lot_no ?? "—"}</td>
                   <td className="px-4 py-3 whitespace-nowrap">
                     {formatDate(row.lot_dispatch_date)}

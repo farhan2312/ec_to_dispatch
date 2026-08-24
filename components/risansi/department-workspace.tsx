@@ -79,7 +79,7 @@ function searchConfigFor(table: OrderTable): {
     words.push("EC", "item");
   }
   if (showParty) {
-    cols.push("party");
+    cols.push("client_name");
     words.push("client");
   }
   return {
@@ -216,7 +216,7 @@ export function DepartmentWorkspace({
   }
 
   const colCount = groupBySo
-    ? 3 + (showParty ? 1 : 0) + readonlyFields.length + 1 // toggle + Sl. + SO + party? + context + ECs count/edit
+    ? 3 + (showParty ? 1 : 0) + readonlyFields.length + 1 // toggle + Sl. + SO + client_name? + context + ECs count/edit
     : 2 +
       (showEcNo ? 1 : 0) +
       (showParty ? 1 : 0) +
@@ -299,7 +299,7 @@ export function DepartmentWorkspace({
                       </td>
                     )}
                     {showParty && (
-                      <td className="px-4 py-3">{toInput(order.party) || "—"}</td>
+                      <td className="px-4 py-3">{toInput(order.client_name) || "—"}</td>
                     )}
                     {readonlyFields.map((f) => (
                       <td
@@ -371,7 +371,7 @@ export function DepartmentWorkspace({
                         </td>
                         {showParty && (
                           <td className="px-4 py-3">
-                            {toInput(g.head.party) || "—"}
+                            {toInput(g.head.client_name) || "—"}
                           </td>
                         )}
                         {readonlyFields.map((f) => (
@@ -497,7 +497,7 @@ export function DepartmentWorkspace({
                                           canEdit={canEdit}
                                           kind={childKind}
                                           context={{
-                                            nature_of_supply: ec.nature_of_supply,
+                                            market_type: ec.market_type,
                                             packing_details_required:
                                               ec.packing_details_required,
                                           }}
@@ -548,7 +548,7 @@ export function DepartmentWorkspace({
           label={[
             docsPanel.row.so_no,
             docsPanel.row.ec_no,
-            showParty ? docsPanel.row.party : null,
+            showParty ? docsPanel.row.client_name : null,
           ]
             .filter(Boolean)
             .map(String)
@@ -655,7 +655,7 @@ function EditSectionModal({
         <p className="mb-5 text-sm text-muted">
           Order #{String(data.sl_no ?? "—")}
           {identity ? ` · ${identity}` : ""}
-          {showParty && data.party ? ` · ${String(data.party)}` : ""}
+          {showParty && data.client_name ? ` · ${String(data.client_name)}` : ""}
         </p>
 
         {readonlyFields.length > 0 && (

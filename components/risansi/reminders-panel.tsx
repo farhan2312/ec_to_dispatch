@@ -112,7 +112,7 @@ export function RemindersPanel({
                     <p className="truncate text-xs text-muted">
                       #{r.sl_no} · {r.so_no ?? "—"}
                       {r.ec_no ? ` · ${r.ec_no}` : ""}
-                      {r.party ? ` · ${r.party}` : ""}
+                      {r.client_name ? ` · ${r.client_name}` : ""}
                     </p>
                   </div>
                 </div>

@@ -99,7 +99,7 @@ export function ItemDetail({
             const childContext =
               child === "order_packing_slips"
                 ? {
-                    nature_of_supply: order.nature_of_supply,
+                    market_type: order.market_type,
                     packing_details_required: order.packing_details_required,
                   }
                 : undefined;

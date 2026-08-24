@@ -10,7 +10,7 @@ export type AlertRow = {
   sl_no: number;
   so_no: string | null;
   ec_no: string | null;
-  party: string | null;
+  client_name: string | null;
   department: string;
   type: "overdue" | "ld_risk" | "hold";
   due_date: string | null;
@@ -25,7 +25,7 @@ const ALERTS_SQL = `
   -- Drawing not sent by its target date. Target is SO-level; the "sent"
   -- date lives per EC on order_drawing, so an SO stays overdue while ANY EC
   -- hasn't been sent yet.
-  SELECT o.id, o.sl_no::int AS sl_no, o.so_no, NULL::text AS ec_no, o.party,
+  SELECT o.id, o.sl_no::int AS sl_no, o.so_no, NULL::text AS ec_no, o.client_name,
          'Drawing'::text AS department, 'overdue'::text AS type,
          to_char(o.drg_target_date, 'YYYY-MM-DD') AS due_date,
          (${TODAY_IST} - o.drg_target_date)::int AS days_overdue
@@ -40,7 +40,7 @@ const ALERTS_SQL = `
   UNION ALL
   -- Purchase (BOI items) not all received by the target date. SO-level target
   -- and BOI flag; SO stays overdue while any EC still has pending items.
-  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.client_name,
          'Purchase'::text, 'overdue'::text,
          to_char(o.purchase_target_date, 'YYYY-MM-DD'),
          (${TODAY_IST} - o.purchase_target_date)::int
@@ -60,7 +60,7 @@ const ALERTS_SQL = `
   UNION ALL
   -- QC docs not submitted by target date (LD risk). SO-level target; SO stays
   -- overdue while ANY EC hasn't submitted its actual date yet.
-  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.client_name,
          'Quality'::text, 'ld_risk'::text,
          to_char(o.qc_doc_target_date, 'YYYY-MM-DD'),
          (${TODAY_IST} - o.qc_doc_target_date)::int
@@ -76,7 +76,7 @@ const ALERTS_SQL = `
   UNION ALL
   -- Dispatch not done by the dispatch team's target date (SO-level target);
   -- the SO stays overdue while any EC hasn't been packed yet.
-  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.client_name,
          'Assembly & Packing'::text, 'overdue'::text,
          to_char(o.dispatch_team_target_date, 'YYYY-MM-DD'),
          (${TODAY_IST} - o.dispatch_team_target_date)::int
@@ -91,7 +91,7 @@ const ALERTS_SQL = `
 
   UNION ALL
   -- Payment on hold (escalated to Central Visibility, SO-level)
-  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.party,
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.client_name,
          'Accounts'::text, 'hold'::text,
          NULL::text, NULL::int
     FROM orders o JOIN order_accounts a ON a.order_id = o.id

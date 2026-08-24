@@ -382,7 +382,13 @@ export const ORDER_SECTIONS: OrderSection[] = [
         type: "number",
         computed: true,
       },
-      { column: "hold_reason", label: "Hold Reason (escalation)", type: "text" },
+      {
+        column: "hold_reason",
+        label: "Hold Reason (escalation)",
+        type: "text",
+        // Escalation note is only meaningful when the order is actually on hold.
+        dependsOn: [{ column: "payment_status", value: PAYMENT_HOLD_VALUE }],
+      },
     ],
   },
   {

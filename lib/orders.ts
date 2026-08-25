@@ -37,7 +37,9 @@ type Row = Record<string, unknown>;
 // SO (orders) — Client + Purchase Order Details + SO-level commercial flags
 // ---------------------------------------------------------------------------
 
-/** One EC/pump summary, embedded in the SO list and SO detail. */
+/** One EC/pump summary, embedded in the SO list and SO detail. Dispatch
+ *  status is intentionally absent — it's an SO-level value, carried on
+ *  OrderListRow, not per EC. */
 export type ItemSummary = {
   id: string;
   seq: number;
@@ -46,8 +48,8 @@ export type ItemSummary = {
   item_type: string | null;
   pump_type: string | null;
   model_no: string | null;
+  version: string | null;
   quantity: string | null;
-  dispatch_status: string | null;
 };
 
 /** A row in the master SO list — one per sales order, with its EC items. */
@@ -63,6 +65,8 @@ export type OrderListRow = {
   order_type: string | null;
   order_value: string | null;
   payment_status: string | null;
+  // SO-level, derived from this SO's invoices (see recomputeDispatchStatus).
+  dispatch_status: string | null;
   ec_count: number;
   items: ItemSummary[];
 };
@@ -326,13 +330,13 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
         COALESCE((SELECT jsonb_agg(to_jsonb(inv) ORDER BY inv.seq)
                   FROM order_invoices inv WHERE inv.order_id = o.id),
                  '[]'::jsonb) AS order_invoices,
+        -- EC items only. Dispatch status is NOT aliased in here: it's an
+        -- SO-level value (o.dispatch_status above), and copying it onto every
+        -- EC made identical values look per-EC.
         COALESCE((
-          SELECT jsonb_agg(to_jsonb(x) ORDER BY x.seq)
-            FROM (
-              SELECT it.*, o.dispatch_status
-                FROM order_items it
-               WHERE it.order_id = o.id
-            ) x
+          SELECT jsonb_agg(to_jsonb(it) ORDER BY it.seq)
+            FROM order_items it
+           WHERE it.order_id = o.id
         ), '[]'::jsonb) AS items
        FROM orders o
        LEFT JOIN order_billing b   ON b.order_id  = o.id
@@ -1259,6 +1263,7 @@ export async function listOrders(): Promise<OrderListRow[]> {
             o.order_type,
             o.order_value::text AS order_value,
             a.payment_status,
+            o.dispatch_status,
             COALESCE(ic.cnt, 0)::int AS ec_count,
             COALESCE((
               SELECT jsonb_agg(to_jsonb(x) ORDER BY x.seq)
@@ -1270,8 +1275,8 @@ export async function listOrders(): Promise<OrderListRow[]> {
                          it.item_type,
                          it.pump_type,
                          it.model_no,
-                         it.quantity::text AS quantity,
-                         o.dispatch_status
+                         it.version,
+                         it.quantity::text AS quantity
                     FROM order_items it
                    WHERE it.order_id = o.id
                 ) x

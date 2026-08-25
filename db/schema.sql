@@ -1496,3 +1496,8 @@ ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS challan_no    TEXT;
 ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS challan_date  DATE;
 ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS challan_value NUMERIC(14,2);
 ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS fr_reason     TEXT;
+
+-- Forced first-login password change. Set true when an admin/bulk-reset issues
+-- a temporary password; cleared once the user picks their own. The platform
+-- admin account is never flagged (see the reset script / layout guard).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false;

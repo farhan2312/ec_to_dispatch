@@ -15,6 +15,9 @@ export type User = {
   created_at: string;
   updated_at: string;
   notifications_seen_at: string | null;
+  // True when the user was issued a temporary password and must set their own
+  // before using the app (enforced by the /risansi layout guard).
+  must_change_password: boolean;
 };
 
 export type NewUser = {
@@ -33,7 +36,7 @@ export class EmailInUseError extends Error {
 }
 
 const PUBLIC_COLUMNS =
-  "id, full_name, email, role, status, created_at, updated_at, notifications_seen_at";
+  "id, full_name, email, role, status, created_at, updated_at, notifications_seen_at, must_change_password";
 
 /**
  * Create a user with the given status. Throws EmailInUseError if the email is
@@ -144,16 +147,20 @@ export async function verifyPasswordById(
   return bcrypt.compare(password, hash);
 }
 
-/** Update a user's password (hashes before storing). */
+/**
+ * Update a user's password (hashes before storing). Always clears the
+ * must_change_password flag — once someone sets their own password, the
+ * forced-change requirement is satisfied.
+ */
 export async function updatePassword(
   id: string,
   newPassword: string
 ): Promise<void> {
   const passwordHash = await bcrypt.hash(newPassword, 12);
-  await query(`UPDATE users SET password_hash = $2 WHERE id = $1`, [
-    id,
-    passwordHash,
-  ]);
+  await query(
+    `UPDATE users SET password_hash = $2, must_change_password = false WHERE id = $1`,
+    [id, passwordHash]
+  );
 }
 
 /** Mark the moment a user last opened their notification bell (clears unread). */

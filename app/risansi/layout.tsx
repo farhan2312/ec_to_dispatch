@@ -18,6 +18,10 @@ export default async function RisansiLayout({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
+  // Users issued a temporary password must set their own before using the app.
+  // (The platform admin is never flagged, so it's exempt by construction.)
+  if (user.must_change_password) redirect("/set-password");
+
   // Department roles see a reminder count on their own department nav item;
   // everyone gets an unread-notifications badge on the Notifications nav item.
   // Central/admin's Notifications page also shows live escalations (alertCount).

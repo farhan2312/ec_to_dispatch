@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Inter, Inter_Tight } from "next/font/google";
 import "./globals.css";
 
@@ -26,6 +26,21 @@ const interTight = Inter_Tight({
 export const metadata: Metadata = {
   title: "Pump Testing CRM",
   description: "Enterprise CRM for pump testing operations",
+};
+
+/**
+ * Without this, mobile browsers lay the page out at ~980px and zoom out,
+ * shrinking all text. `viewportFit: "cover"` lets the bottom nav paint into
+ * the iOS home-indicator area while its safe-area padding keeps taps clear.
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a1424" },
+  ],
 };
 
 export default function RootLayout({

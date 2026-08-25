@@ -7,25 +7,10 @@ import Image from "next/image";
 import logo from "@/assets/logo.png";
 import {
   Bell,
-  Bug,
-  CalendarClock,
   ChevronsUpDown,
-  ClipboardCheck,
-  ClipboardList,
-  Gauge,
   KeyRound,
-  LayoutDashboard,
   LogOut,
   MessageSquare,
-  Package,
-  PenTool,
-  Receipt,
-  ScrollText,
-  ShieldCheck,
-  Truck,
-  Wallet,
-  X,
-  type LucideIcon,
 } from "lucide-react";
 import { logout } from "@/app/risansi/actions";
 import {
@@ -35,111 +20,33 @@ import {
   reminderDeptForRole,
   reminderDeptForTable,
 } from "@/lib/roles";
-import type { OrderTable } from "@/lib/order-schema";
+import {
+  ADMIN_NAV,
+  DEPARTMENT_NAV,
+  PRIMARY_NAV,
+  activeNavHref,
+  type NavItem,
+} from "./nav-config";
 import { ThemeToggle } from "./theme-toggle";
 import { ChangePasswordModal } from "./change-password-modal";
 
-type NavItem = { label: string; href: string; icon: LucideIcon };
-type DeptNavItem = NavItem & { table: OrderTable };
-
-const PRIMARY_NAV: NavItem[] = [
-  { label: "Dashboard", href: "/risansi/dashboard", icon: LayoutDashboard },
-  { label: "Orders", href: "/risansi/orders", icon: ClipboardList },
-];
-
-const DEPARTMENT_NAV: DeptNavItem[] = [
-  {
-    label: "Billing & Operations",
-    href: "/risansi/departments/billing",
-    icon: Receipt,
-    table: "order_billing",
-  },
-  {
-    label: "Accounts",
-    href: "/risansi/departments/accounts",
-    icon: Wallet,
-    table: "order_accounts",
-  },
-  {
-    label: "Drawing",
-    href: "/risansi/departments/drawing",
-    icon: PenTool,
-    table: "order_drawing",
-  },
-  {
-    label: "Planning",
-    href: "/risansi/departments/planning",
-    icon: CalendarClock,
-    table: "order_planning",
-  },
-  {
-    label: "Purchase",
-    href: "/risansi/departments/purchase",
-    icon: Package,
-    table: "order_purchase",
-  },
-  {
-    label: "Quality",
-    href: "/risansi/departments/qc",
-    icon: ClipboardCheck,
-    table: "order_qc",
-  },
-  {
-    label: "Assembly & Packing",
-    href: "/risansi/departments/assembly-dispatch",
-    icon: Truck,
-    table: "order_assembly_dispatch",
-  },
-];
-
-const ADMIN_NAV: NavItem[] = [
-  {
-    label: "User Access Control",
-    href: "/risansi/user-access-control",
-    icon: ShieldCheck,
-  },
-  {
-    label: "Audit Log",
-    href: "/risansi/audit-log",
-    icon: ScrollText,
-  },
-  {
-    label: "Bug Tracker",
-    href: "/risansi/bug-reports",
-    icon: Bug,
-  },
-];
-
-// All nav destinations — used to resolve the single active item by longest
-// matching prefix.
-const NAV_HREFS: string[] = [
-  ...PRIMARY_NAV.map((i) => i.href),
-  ...DEPARTMENT_NAV.map((i) => i.href),
-  "/risansi/notifications",
-  "/risansi/messages",
-  "/risansi/escalations",
-  "/risansi/dispatched",
-  ...ADMIN_NAV.map((i) => i.href),
-];
-
 type SidebarUser = { name: string; email: string; role: string };
 
+/**
+ * Desktop navigation rail. Hidden below `lg`, where BottomNav takes over.
+ */
 export function Sidebar({
   user,
   alertCount = 0,
   reminderCount = 0,
   notifUnread = 0,
   messageUnread = 0,
-  drawerOpen = false,
-  onClose,
 }: {
   user: SidebarUser;
   alertCount?: number;
   reminderCount?: number;
   notifUnread?: number;
   messageUnread?: number;
-  drawerOpen?: boolean;
-  onClose?: () => void;
 }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -169,11 +76,8 @@ export function Sidebar({
   const notifBadge =
     notifUnread + (canSeeEscalations(user.role) ? alertCount : 0);
 
-  // The active item is the nav href that is the longest matching prefix of the
-  // current path, so only the most specific one highlights.
-  const activeHref = NAV_HREFS.filter(
-    (h) => pathname === h || pathname.startsWith(h + "/")
-  ).reduce((best, h) => (h.length > best.length ? h : best), "");
+  // Only the most specific matching destination highlights.
+  const activeHref = activeNavHref(pathname ?? "");
 
   function NavLink({ item, badge = 0 }: { item: NavItem; badge?: number }) {
     const active = item.href === activeHref;
@@ -199,24 +103,12 @@ export function Sidebar({
   }
 
   return (
-    <aside
-      className={`fixed inset-y-0 left-0 z-40 flex h-screen w-64 shrink-0 flex-col bg-sidebar transition-transform duration-200 lg:sticky lg:top-0 ${
-        drawerOpen ? "translate-x-0" : "-translate-x-full"
-      } lg:translate-x-0`}
-    >
+    <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col bg-sidebar lg:flex">
       {/* brand */}
       <div className="flex items-center justify-between gap-2.5 px-5 py-5">
         <div className="flex w-45 items-center justify-center overflow-hidden rounded-xl bg-white p-1">
           <Image src={logo} alt="Risansi" width={140} height={100} />
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Close menu"
-          className="rounded-lg p-1.5 text-white/70 transition-colors hover:bg-sidebar-hover lg:hidden"
-        >
-          <X className="h-5 w-5" />
-        </button>
       </div>
 
       {/* nav */}

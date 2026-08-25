@@ -131,13 +131,13 @@ function ReportBugModal({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center sm:p-4"
       // Paste anywhere inside the modal to attach a screenshot.
       onPaste={onPaste}
     >
       <div className="absolute inset-0 bg-black/50" onClick={onClose} aria-hidden />
       <div
-        className="relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-card-border bg-card p-6 shadow-xl"
+        className="relative max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-card-border bg-card p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-xl sm:rounded-2xl sm:p-6 sm:pb-6"
         onDragOver={(e) => e.preventDefault()}
         onDrop={onDrop}
       >

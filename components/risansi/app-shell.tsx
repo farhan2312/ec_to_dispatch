@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, ChevronRight, Menu, PlayCircle } from "lucide-react";
+import { Bell, ChevronRight, PlayCircle } from "lucide-react";
 import { ReportBugTrigger } from "./report-bug";
 import { Sidebar } from "./sidebar";
+import { BottomNav } from "./bottom-nav";
 import { isCentral } from "@/lib/roles";
 
 // SharePoint-hosted demo walkthrough. Opens in a new tab; noopener/noreferrer
@@ -72,16 +73,11 @@ export function AppShell({
   openBugCount: number;
   children: React.ReactNode;
 }) {
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const pathname = usePathname();
-
-  // Close the mobile drawer whenever the route changes.
-  useEffect(() => {
-    setDrawerOpen(false);
-  }, [pathname]);
-
   const crumbs = useMemo(() => crumbsFor(pathname ?? ""), [pathname]);
   const showBugBell = isCentral(user.role);
+  // On mobile the breadcrumb's last segment doubles as the page title.
+  const mobileTitle = crumbs.length > 0 ? crumbs[crumbs.length - 1].label : "Risansi";
 
   return (
     <div className="flex min-h-screen bg-background">
@@ -91,34 +87,15 @@ export function AppShell({
         reminderCount={reminderCount}
         notifUnread={notifUnread}
         messageUnread={messageUnread}
-        drawerOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
       />
 
-      {/* Mobile drawer backdrop */}
-      {drawerOpen && (
-        <div
-          className="fixed inset-0 z-30 bg-black/50 lg:hidden"
-          onClick={() => setDrawerOpen(false)}
-          aria-hidden
-        />
-      )}
-
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* Top bar — mobile shows drawer toggle + brand; desktop shows the
+        {/* Top bar — mobile shows the current page title; desktop shows the
             breadcrumb on the left and Demo / Report a Bug / Bug bell on the
             right. */}
         <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-card-border bg-surface px-4">
-          <button
-            type="button"
-            onClick={() => setDrawerOpen(true)}
-            aria-label="Open menu"
-            className="-ml-1.5 rounded-lg p-1.5 text-foreground transition-colors hover:bg-background lg:hidden"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
-          <span className="font-display text-sm font-semibold text-foreground lg:hidden">
-            Risansi
+          <span className="min-w-0 truncate font-display text-[15px] font-semibold text-foreground lg:hidden">
+            {mobileTitle}
           </span>
 
           {crumbs.length > 0 && (
@@ -193,8 +170,19 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="min-w-0 flex-1">{children}</main>
+        {/* Bottom padding clears the fixed mobile nav (plus safe-area inset). */}
+        <main className="min-w-0 flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0">
+          {children}
+        </main>
       </div>
+
+      <BottomNav
+        user={user}
+        alertCount={alertCount}
+        reminderCount={reminderCount}
+        notifUnread={notifUnread}
+        messageUnread={messageUnread}
+      />
     </div>
   );
 }

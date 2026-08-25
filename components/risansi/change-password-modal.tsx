@@ -37,7 +37,7 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
     "mb-1.5 block text-[13px] font-semibold text-brand-label";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
       {/* backdrop */}
       <div
         className="absolute inset-0 bg-black/50"
@@ -45,7 +45,7 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
         aria-hidden
       />
 
-      <div className="relative w-full max-w-md rounded-2xl border border-card-border bg-card p-6 shadow-xl">
+      <div className="relative max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-card-border bg-card p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-xl sm:rounded-2xl sm:p-6 sm:pb-6">
         <button
           type="button"
           onClick={onClose}

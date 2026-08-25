@@ -357,6 +357,9 @@ export function OrdersTable({
         <AddOnForm
           orderId={addFor.id}
           soLabel={addFor.so_no ?? `#${addFor.sl_no}`}
+          // Without this the modal always fell back to the Pump form, even
+          // when the button said "Spare Add-On".
+          orderType={addFor.order_type}
           onClose={() => setAddFor(null)}
         />
       )}

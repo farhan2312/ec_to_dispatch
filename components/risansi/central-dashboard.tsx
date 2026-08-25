@@ -1,14 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
+  ChevronDown,
   ClipboardList,
   IndianRupee,
   Loader2,
   PauseCircle,
+  Plus,
   RotateCw,
   X,
 } from "lucide-react";
@@ -150,6 +152,92 @@ function ChartCard({
   );
 }
 
+/**
+ * Donut / pie chart with a legend on the right. Slices are drawn from
+ * cumulative percentages; a hole in the middle carries the total count for
+ * quick scanning. Falls back to an empty ring when nothing is set.
+ */
+function PieChart({ items, total }: { items: BarItem[]; total: number }) {
+  const size = 176;
+  const cx = size / 2;
+  const cy = size / 2;
+  const outerR = 80;
+  const innerR = 50; // donut hole
+  const nonZero = items.filter((i) => i.count > 0);
+
+  function slicePath(startFrac: number, endFrac: number): string {
+    // A full-circle "slice" wouldn't render as a path — special-case it as
+    // two half-slices so 100% still draws.
+    if (endFrac - startFrac >= 1) {
+      return (
+        slicePath(0, 0.5) + " " + slicePath(0.5, 0.9999)
+      );
+    }
+    const s = startFrac * 2 * Math.PI - Math.PI / 2;
+    const e = endFrac * 2 * Math.PI - Math.PI / 2;
+    const largeArc = endFrac - startFrac > 0.5 ? 1 : 0;
+    const [x1, y1] = [cx + outerR * Math.cos(s), cy + outerR * Math.sin(s)];
+    const [x2, y2] = [cx + outerR * Math.cos(e), cy + outerR * Math.sin(e)];
+    const [x3, y3] = [cx + innerR * Math.cos(e), cy + innerR * Math.sin(e)];
+    const [x4, y4] = [cx + innerR * Math.cos(s), cy + innerR * Math.sin(s)];
+    return `M ${x1} ${y1} A ${outerR} ${outerR} 0 ${largeArc} 1 ${x2} ${y2} L ${x3} ${y3} A ${innerR} ${innerR} 0 ${largeArc} 0 ${x4} ${y4} Z`;
+  }
+
+  let acc = 0;
+  const slices = nonZero.map((item) => {
+    const frac = item.count / total;
+    const path = slicePath(acc, acc + frac);
+    acc += frac;
+    return { ...item, path };
+  });
+
+  if (total === 0) return <p className="text-sm text-muted">No orders yet.</p>;
+
+  return (
+    <div className="flex flex-col items-center gap-5 sm:flex-row sm:items-start sm:gap-6">
+      <div className="relative shrink-0" style={{ width: size, height: size }}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Payment status breakdown">
+          {/* faint background ring so a single-slice chart still reads as a ring */}
+          <circle cx={cx} cy={cy} r={outerR} fill="var(--card-border, #e4e7ec)" />
+          <circle cx={cx} cy={cy} r={innerR} fill="var(--surface, #ffffff)" />
+          {slices.map((s) => (
+            <path key={s.label} d={s.path} fill={s.color}>
+              <title>{`${s.label}: ${s.count} (${Math.round((s.count / total) * 100)}%)`}</title>
+            </path>
+          ))}
+        </svg>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span className="font-display text-2xl font-bold tabular-nums text-foreground">
+            {total}
+          </span>
+          <span className="text-[10px] uppercase tracking-wider text-muted">
+            Total
+          </span>
+        </div>
+      </div>
+      <ul className="grid min-w-0 flex-1 grid-cols-1 gap-1.5">
+        {items.map((item) => {
+          const pct = total ? Math.round((item.count / total) * 100) : 0;
+          return (
+            <li key={item.label} className="flex items-center justify-between gap-3 text-xs">
+              <span className="flex min-w-0 items-center gap-2 text-muted">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                  style={{ background: item.color }}
+                />
+                <span className="truncate">{item.label}</span>
+              </span>
+              <span className="shrink-0 tabular-nums text-foreground">
+                {item.count} · {pct}%
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
 /** Horizontal bars scaled to the largest count; each row is labeled. */
 function BarList({ items, total }: { items: BarItem[]; total: number }) {
   const max = Math.max(1, ...items.map((i) => i.count));
@@ -260,16 +348,59 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
     { label: "Assembly & Packing", done: rows.filter(done.dispatch).length, of: total },
   ];
 
-  // Pipeline pagination.
+  // Group the per-EC rows into SO cards so each SO is one line with its ECs
+  // nested inside. Pagination lives on SO groups so an SO's ECs never
+  // straddle two pages.
+  type SoCard = {
+    order_id: string;
+    sl_no: number;
+    so_no: string | null;
+    client_name: string | null;
+    payment_status: string | null;
+    dispatch_status: string | null;
+    order_value: string | null;
+    ecs: OrderOverviewRow[];
+  };
+  const soCards: SoCard[] = useMemo(() => {
+    const map = new Map<string, SoCard>();
+    for (const r of rows) {
+      const key = r.order_id;
+      const card = map.get(key);
+      if (card) card.ecs.push(r);
+      else map.set(key, {
+        order_id: r.order_id,
+        sl_no: r.sl_no,
+        so_no: r.so_no,
+        client_name: r.client_name,
+        payment_status: r.payment_status,
+        dispatch_status: r.dispatch_status,
+        order_value: r.order_value,
+        ecs: [r],
+      });
+    }
+    return [...map.values()].sort((a, b) => a.sl_no - b.sl_no);
+  }, [rows]);
+
+  // Expand/collapse each SO card individually.
+  const [expandedSo, setExpandedSo] = useState<Set<string>>(new Set());
+  function toggleSo(id: string) {
+    setExpandedSo((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(rows.length / PIPELINE_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(soCards.length / PIPELINE_PAGE_SIZE));
   const current = Math.min(page, totalPages);
-  const pipelineRows = rows.slice(
+  const pipelineCards = soCards.slice(
     (current - 1) * PIPELINE_PAGE_SIZE,
     current * PIPELINE_PAGE_SIZE
   );
-  const from = rows.length === 0 ? 0 : (current - 1) * PIPELINE_PAGE_SIZE + 1;
-  const to = Math.min(current * PIPELINE_PAGE_SIZE, rows.length);
+  const from = soCards.length === 0 ? 0 : (current - 1) * PIPELINE_PAGE_SIZE + 1;
+  const to = Math.min(current * PIPELINE_PAGE_SIZE, soCards.length);
 
   // Payment status — full breakdown by each dropdown value + Not set.
   const norm = (s: string | null) => (s ?? "").trim().toLowerCase();
@@ -286,7 +417,9 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
     },
   ];
 
-  // Dispatch status breakdown.
+  // Dispatch status breakdown. "Pending" is now its own bucket (recomputed
+  // status when the SO has no invoices yet); "Not set" catches any legacy
+  // rows still carrying null before the first recomputation.
   const dispatchBreakdown: BarItem[] = [
     {
       label: "Fully dispatch",
@@ -299,8 +432,13 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
       count: rows.filter((r) => norm(r.dispatch_status) === "lot dispatch").length,
     },
     {
-      label: "Not dispatched",
-      color: "#94a3b8",
+      label: "Pending",
+      color: "#f59e0b",
+      count: rows.filter((r) => norm(r.dispatch_status) === "pending").length,
+    },
+    {
+      label: "Not set",
+      color: "#d8dee9",
       count: rows.filter((r) => norm(r.dispatch_status) === "").length,
     },
   ];
@@ -473,7 +611,7 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
       {/* charts */}
       <div className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartCard title="Payment status">
-          <BarList items={paymentBreakdown} total={total} />
+          <PieChart items={paymentBreakdown} total={total} />
         </ChartCard>
 
         <ChartCard title="Dispatch status">
@@ -487,7 +625,7 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
         Order pipeline
       </h2>
 
-      {rows.length === 0 ? (
+      {soCards.length === 0 ? (
         <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
           <p className="text-sm font-medium text-foreground">No orders yet</p>
           <p className="mt-1 text-sm text-muted">
@@ -497,88 +635,178 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
       ) : (
         <div className="rounded-xl border border-card-border bg-surface shadow-sm">
           <div className="overflow-x-auto">
-          <table className="w-full min-w-[1200px] text-sm">
+          <table className="w-full min-w-[900px] text-sm">
             <thead>
               <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
+                <th className="w-8 px-2 py-3" />
                 <th className="px-4 py-3">Sl.</th>
-                <th className="px-4 py-3">SO / EC</th>
+                <th className="px-4 py-3">SO No.</th>
                 <th className="px-4 py-3">Client Name</th>
-                <th className="px-3 py-3">Billing</th>
-                <th className="px-3 py-3">Accounts</th>
-                <th className="px-3 py-3">Drawing</th>
-                <th className="px-3 py-3">Purchase</th>
-                <th className="px-3 py-3">Quality</th>
-                <th className="px-3 py-3">Planning</th>
+                <th className="px-3 py-3">Payment</th>
                 <th className="px-3 py-3">Dispatch</th>
-                <th className="px-3 py-3">Target</th>
+                <th className="px-3 py-3 text-center normal-case">ECs</th>
+                <th className="px-3 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-card-border">
-              {pipelineRows.map((row) => {
-                const overdueRow = isOverdue(row);
-                // Purchase chip: BOI not needed, or items received / pending.
-                const purchase =
-                  (row.boi ?? "") !== "Yes"
-                    ? "No BOI"
-                    : row.purchase_done
-                      ? "BOI received"
-                      : "BOI pending";
+              {pipelineCards.map((card) => {
+                const isOpen = expandedSo.has(card.order_id);
                 return (
-                  <tr key={row.id} className="text-foreground">
-                    <td className="px-4 py-3 font-medium tabular-nums">
-                      <Link
-                        href={`/risansi/orders/${row.order_id}/items/${row.id}`}
-                        className="text-primary hover:text-primary-hover"
-                      >
-                        {row.sl_no}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <div>{row.so_no ?? "—"}</div>
-                      <div className="text-xs text-muted">
-                        {[row.ec_no, row.item_type].filter(Boolean).join(" · ")}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">{row.client_name ?? "—"}</td>
-                    <td className="px-3 py-3">
-                      <Chip
-                        value={row.has_pi ? "PI done" : null}
-                        tone={row.has_pi ? "green" : "neutral"}
-                      />
-                    </td>
-                    <td className="px-3 py-3">
-                      <Chip
-                        value={row.payment_status}
-                        tone={paymentTone(row.payment_status)}
-                      />
-                    </td>
-                    <td className="px-3 py-3">
-                      <Chip value={row.drg_status} />
-                    </td>
-                    <td className="px-3 py-3">
-                      <Chip value={purchase} />
-                    </td>
-                    <td className="px-3 py-3">
-                      <Chip
-                        value={row.qc_submitted ? "Submitted" : null}
-                        tone={row.qc_submitted ? "green" : "neutral"}
-                      />
-                    </td>
-                    <td className="px-3 py-3">
-                      <Chip value={row.planning_status} />
-                    </td>
-                    <td className="px-3 py-3">
-                      <Chip
-                        value={row.dispatch_status}
-                        tone={row.dispatch_status ? "green" : "neutral"}
-                      />
-                    </td>
-                    <td className="px-3 py-3 whitespace-nowrap">
-                      <span className={overdueRow ? "font-medium text-rose-600" : "text-muted"}>
-                        {formatDate(row.dispatch_target_date)}
-                      </span>
-                    </td>
-                  </tr>
+                  <Fragment key={card.order_id}>
+                    <tr className="text-foreground transition-colors hover:bg-background/60">
+                      <td className="px-2 py-3 text-center">
+                        <button
+                          type="button"
+                          onClick={() => toggleSo(card.order_id)}
+                          aria-label={isOpen ? "Collapse" : "Expand"}
+                          aria-expanded={isOpen}
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-input-border text-muted-foreground transition-colors hover:bg-background"
+                        >
+                          {isOpen ? (
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          ) : (
+                            <Plus className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 font-medium tabular-nums">
+                        <Link
+                          href={`/risansi/orders/${card.order_id}`}
+                          className="text-primary hover:text-primary-hover"
+                        >
+                          {card.sl_no}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap font-medium">
+                        {card.so_no ?? "—"}
+                      </td>
+                      <td className="px-4 py-3">{card.client_name ?? "—"}</td>
+                      <td className="px-3 py-3">
+                        <Chip
+                          value={card.payment_status}
+                          tone={paymentTone(card.payment_status)}
+                        />
+                      </td>
+                      <td className="px-3 py-3">
+                        <Chip
+                          value={card.dispatch_status}
+                          tone={
+                            (card.dispatch_status ?? "").toLowerCase() === "fully dispatch"
+                              ? "green"
+                              : (card.dispatch_status ?? "").toLowerCase() === "lot dispatch"
+                                ? "blue"
+                                : (card.dispatch_status ?? "").toLowerCase() === "pending"
+                                  ? "amber"
+                                  : "neutral"
+                          }
+                        />
+                      </td>
+                      <td className="px-3 py-3 text-center tabular-nums">
+                        {card.ecs.length}
+                      </td>
+                      <td className="px-3 py-3" />
+                    </tr>
+
+                    {isOpen && (
+                      <tr className="bg-background/40">
+                        <td colSpan={8} className="p-0">
+                          <div className="px-4 py-3">
+                            <div className="overflow-x-auto rounded-lg border border-card-border bg-surface">
+                              <table className="w-full min-w-[900px] text-sm">
+                                <thead>
+                                  <tr className="border-b border-card-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
+                                    <th className="px-3 py-2">EC · Type</th>
+                                    <th className="px-3 py-2">Billing</th>
+                                    <th className="px-3 py-2">Accounts</th>
+                                    <th className="px-3 py-2">Drawing</th>
+                                    <th className="px-3 py-2">Purchase</th>
+                                    <th className="px-3 py-2">Quality</th>
+                                    <th className="px-3 py-2">Planning</th>
+                                    <th className="px-3 py-2">Dispatch</th>
+                                    <th className="px-3 py-2">Target</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-card-border">
+                                  {card.ecs.map((row) => {
+                                    const overdueRow = isOverdue(row);
+                                    const purchase =
+                                      (row.boi ?? "") !== "Yes"
+                                        ? "No BOI"
+                                        : row.purchase_done
+                                          ? "BOI received"
+                                          : "BOI pending";
+                                    return (
+                                      <tr key={row.id} className="text-foreground">
+                                        <td className="px-3 py-2 whitespace-nowrap">
+                                          <Link
+                                            href={`/risansi/orders/${row.order_id}/items/${row.id}`}
+                                            className="text-primary hover:text-primary-hover"
+                                          >
+                                            {row.ec_no ?? "—"}
+                                          </Link>
+                                          {row.item_type && (
+                                            <div className="text-[11px] text-muted">
+                                              {row.item_type}
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <Chip
+                                            value={row.has_pi ? "PI done" : null}
+                                            tone={row.has_pi ? "green" : "neutral"}
+                                          />
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <Chip
+                                            value={row.payment_status}
+                                            tone={paymentTone(row.payment_status)}
+                                          />
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <Chip value={row.drg_status} />
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <Chip value={purchase} />
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <Chip
+                                            value={row.qc_submitted ? "Submitted" : null}
+                                            tone={row.qc_submitted ? "green" : "neutral"}
+                                          />
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <Chip value={row.planning_status} />
+                                        </td>
+                                        <td className="px-3 py-2">
+                                          <Chip
+                                            value={row.dispatch_status}
+                                            tone={
+                                              (row.dispatch_status ?? "").toLowerCase() === "fully dispatch"
+                                                ? "green"
+                                                : (row.dispatch_status ?? "").toLowerCase() === "lot dispatch"
+                                                  ? "blue"
+                                                  : (row.dispatch_status ?? "").toLowerCase() === "pending"
+                                                    ? "amber"
+                                                    : "neutral"
+                                            }
+                                          />
+                                        </td>
+                                        <td className="px-3 py-2 whitespace-nowrap">
+                                          <span className={overdueRow ? "font-medium text-rose-600" : "text-muted"}>
+                                            {formatDate(row.dispatch_target_date)}
+                                          </span>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -590,7 +818,7 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
             setPage={setPage}
             from={from}
             to={to}
-            total={rows.length}
+            total={soCards.length}
           />
         </div>
       )}

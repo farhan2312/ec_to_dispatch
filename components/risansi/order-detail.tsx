@@ -226,70 +226,84 @@ export function OrderDetail({
                 : ""}
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
-                <thead>
-                  <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
-                    <th className="px-3 py-2">EC No.</th>
-                    <th className="px-3 py-2">EC Date</th>
-                    <th className="px-3 py-2">Pump Type</th>
-                    <th className="px-3 py-2">Model</th>
-                    <th className="px-3 py-2">Qty</th>
-                    <th className="px-3 py-2">Dispatch Status</th>
-                    <th className="px-3 py-2" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-card-border">
-                  {items.map((item) => {
-                    const id = str(item.id);
-                    return (
-                      <tr key={id} className="text-foreground">
-                        <td className="px-3 py-2 whitespace-nowrap font-medium">
-                          {str(item.ec_no) || "—"}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-muted">
-                          {formatDate(item.ec_date)}
-                        </td>
-                        <td className="px-3 py-2">{str(item.pump_type) || "—"}</td>
-                        <td className="px-3 py-2">{str(item.model_no) || "—"}</td>
-                        <td className="px-3 py-2 tabular-nums">{str(item.quantity) || "—"}</td>
-                        <td className="px-3 py-2">
-                          {str(item.dispatch_status) || (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 whitespace-nowrap text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <Link
-                              href={`/risansi/orders/${orderId}/items/${id}`}
-                              className="inline-flex h-8 items-center gap-1 rounded-lg border border-input-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
-                            >
-                              Open
-                              <ChevronRight className="h-3.5 w-3.5" />
-                            </Link>
-                            {canManageItems && (
-                              <button
-                                type="button"
-                                onClick={() => removeItem(item)}
-                                disabled={deletingId === id}
-                                aria-label="Delete EC"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
-                              >
-                                {deletingId === id ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                )}
-                              </button>
-                            )}
-                          </div>
-                        </td>
+            (() => {
+              // Columns follow the SO's order type: a Spare has no Pump Type /
+              // Series Version (matching the Spare Add-On form), while a Pump
+              // shows both, plus Model.
+              const isSpareSo = str(order.order_type).trim().toLowerCase() === "spare";
+              return (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] text-sm">
+                    <thead>
+                      <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
+                        <th className="px-3 py-2">EC No.</th>
+                        <th className="px-3 py-2">EC Date</th>
+                        {!isSpareSo && <th className="px-3 py-2">Pump Type</th>}
+                        <th className="px-3 py-2">Model No.</th>
+                        {!isSpareSo && <th className="px-3 py-2">Version</th>}
+                        <th className="px-3 py-2">Qty</th>
+                        <th className="px-3 py-2">Dispatch Status</th>
+                        <th className="px-3 py-2" />
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody className="divide-y divide-card-border">
+                      {items.map((item) => {
+                        const id = str(item.id);
+                        return (
+                          <tr key={id} className="text-foreground">
+                            <td className="px-3 py-2 whitespace-nowrap font-medium">
+                              {str(item.ec_no) || "—"}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap text-muted">
+                              {formatDate(item.ec_date)}
+                            </td>
+                            {!isSpareSo && (
+                              <td className="px-3 py-2">{str(item.pump_type) || "—"}</td>
+                            )}
+                            <td className="px-3 py-2">{str(item.model_no) || "—"}</td>
+                            {!isSpareSo && (
+                              <td className="px-3 py-2">{str(item.version) || "—"}</td>
+                            )}
+                            <td className="px-3 py-2 tabular-nums">{str(item.quantity) || "—"}</td>
+                            <td className="px-3 py-2">
+                              {str(item.dispatch_status) || (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap text-right">
+                              <div className="flex items-center justify-end gap-2">
+                                <Link
+                                  href={`/risansi/orders/${orderId}/items/${id}`}
+                                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-input-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                                >
+                                  Open
+                                  <ChevronRight className="h-3.5 w-3.5" />
+                                </Link>
+                                {canManageItems && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeItem(item)}
+                                    disabled={deletingId === id}
+                                    aria-label="Delete EC"
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                                  >
+                                    {deletingId === id ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })()
           )}
         </section>
             );

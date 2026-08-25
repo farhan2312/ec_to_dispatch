@@ -2,11 +2,20 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Gauge, Loader2 } from "lucide-react";
+import {
+  Briefcase,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Lock,
+  Mail,
+  User,
+} from "lucide-react";
 import { requestAccess } from "@/app/signup/actions";
 import { REQUESTABLE_ROLES, roleLabel } from "@/lib/roles";
 import Image from "next/image";
 import logo from "@/assets/logo.png";
+
 const ROLES = REQUESTABLE_ROLES.map((value) => ({
   value,
   label: roleLabel(value),
@@ -88,21 +97,22 @@ export function SignupForm() {
   }
 
   const inputClass =
-    "h-11 w-full rounded-[10px] border border-input-border bg-dark px-[15px] text-[14px] text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
+    "h-12 w-full rounded-xl border border-input-border bg-surface pl-11 pr-4 text-[14px] text-foreground placeholder:text-muted-foreground transition-shadow focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10";
   const labelClass = "mb-1.5 block text-[13px] font-semibold text-brand-label";
+  const iconClass =
+    "pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground";
 
   return (
-    <div className="w-full max-w-[380px]">
-      {/* mobile logo (brand panel hidden on small screens) */}
-       <div className="relative flex items-center gap-3">
-        <Image src={logo} alt="Risansi" width={200} height={100} className="rounded-xl bg-dark/10 p-2" />
+    <div className="w-full max-w-[400px]">
+      <div className="mb-6 flex justify-center">
+        <Image src={logo} alt="Risansi" width={190} height={95} priority />
       </div>
 
-      <div className="mb-5">
-        <h1 className="mb-1.5 font-display text-[26px] font-bold tracking-[-0.02em] text-foreground">
+      <div className="mb-6 text-center">
+        <h1 className="font-display text-[28px] font-bold tracking-[-0.02em] text-foreground">
           Request access
         </h1>
-        <p className="text-sm text-muted">
+        <p className="mt-1.5 text-sm text-muted">
           Create your account to join the Risansi platform.
         </p>
       </div>
@@ -111,7 +121,7 @@ export function SignupForm() {
         {formError && (
           <div
             role="alert"
-            className="mb-5 rounded-[10px] border border-danger-border bg-danger-bg px-4 py-2.5 text-sm text-danger"
+            className="mb-5 rounded-xl border border-danger-border bg-danger-bg px-4 py-2.5 text-sm text-danger"
           >
             {formError}
           </div>
@@ -122,18 +132,21 @@ export function SignupForm() {
           Full name
         </label>
         <div className="mb-3.5">
-          <input
-            id="fullName"
-            name="fullName"
-            type="text"
-            autoComplete="name"
-            value={values.fullName}
-            onChange={(event) => update("fullName", event.target.value)}
-            aria-invalid={Boolean(errors.fullName)}
-            aria-describedby={errors.fullName ? "fullName-error" : undefined}
-            className={inputClass}
-            placeholder="Full Name"
-          />
+          <div className="relative">
+            <User className={iconClass} />
+            <input
+              id="fullName"
+              name="fullName"
+              type="text"
+              autoComplete="name"
+              value={values.fullName}
+              onChange={(event) => update("fullName", event.target.value)}
+              aria-invalid={Boolean(errors.fullName)}
+              aria-describedby={errors.fullName ? "fullName-error" : undefined}
+              className={inputClass}
+              placeholder="Full name"
+            />
+          </div>
           {errors.fullName && (
             <p id="fullName-error" className="mt-1.5 text-xs text-danger">
               {errors.fullName}
@@ -146,18 +159,21 @@ export function SignupForm() {
           Email address
         </label>
         <div className="mb-3.5">
-          <input
-            id="email"
-            name="email"
-            type="email"
-            autoComplete="email"
-            value={values.email}
-            onChange={(event) => update("email", event.target.value)}
-            aria-invalid={Boolean(errors.email)}
-            aria-describedby={errors.email ? "email-error" : undefined}
-            className={inputClass}
-            placeholder="name@risansi.com"
-          />
+          <div className="relative">
+            <Mail className={iconClass} />
+            <input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="email"
+              value={values.email}
+              onChange={(event) => update("email", event.target.value)}
+              aria-invalid={Boolean(errors.email)}
+              aria-describedby={errors.email ? "email-error" : undefined}
+              className={inputClass}
+              placeholder="name@risansi.com"
+            />
+          </div>
           {errors.email && (
             <p id="email-error" className="mt-1.5 text-xs text-danger">
               {errors.email}
@@ -170,18 +186,21 @@ export function SignupForm() {
           Password
         </label>
         <div className="mb-3.5">
-          <input
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            value={values.password}
-            onChange={(event) => update("password", event.target.value)}
-            aria-invalid={Boolean(errors.password)}
-            aria-describedby={errors.password ? "password-error" : undefined}
-            className={inputClass}
-            placeholder="At least 6 characters"
-          />
+          <div className="relative">
+            <Lock className={iconClass} />
+            <input
+              id="password"
+              name="password"
+              type="password"
+              autoComplete="new-password"
+              value={values.password}
+              onChange={(event) => update("password", event.target.value)}
+              aria-invalid={Boolean(errors.password)}
+              aria-describedby={errors.password ? "password-error" : undefined}
+              className={inputClass}
+              placeholder="At least 6 characters"
+            />
+          </div>
           {errors.password && (
             <p id="password-error" className="mt-1.5 text-xs text-danger">
               {errors.password}
@@ -194,20 +213,23 @@ export function SignupForm() {
           Confirm password
         </label>
         <div className="mb-3.5">
-          <input
-            id="confirmPassword"
-            name="confirmPassword"
-            type="password"
-            autoComplete="new-password"
-            value={values.confirmPassword}
-            onChange={(event) => update("confirmPassword", event.target.value)}
-            aria-invalid={Boolean(errors.confirmPassword)}
-            aria-describedby={
-              errors.confirmPassword ? "confirmPassword-error" : undefined
-            }
-            className={inputClass}
-            placeholder="Re-enter your password"
-          />
+          <div className="relative">
+            <Lock className={iconClass} />
+            <input
+              id="confirmPassword"
+              name="confirmPassword"
+              type="password"
+              autoComplete="new-password"
+              value={values.confirmPassword}
+              onChange={(event) => update("confirmPassword", event.target.value)}
+              aria-invalid={Boolean(errors.confirmPassword)}
+              aria-describedby={
+                errors.confirmPassword ? "confirmPassword-error" : undefined
+              }
+              className={inputClass}
+              placeholder="Re-enter your password"
+            />
+          </div>
           {errors.confirmPassword && (
             <p id="confirmPassword-error" className="mt-1.5 text-xs text-danger">
               {errors.confirmPassword}
@@ -219,8 +241,9 @@ export function SignupForm() {
         <label htmlFor="role" className={labelClass}>
           Role
         </label>
-        <div className="mb-4">
+        <div className="mb-5">
           <div className="relative">
+            <Briefcase className={iconClass} />
             <select
               id="role"
               name="role"
@@ -228,7 +251,7 @@ export function SignupForm() {
               onChange={(event) => update("role", event.target.value)}
               aria-invalid={Boolean(errors.role)}
               aria-describedby={errors.role ? "role-error" : undefined}
-              className={`${inputClass} cursor-pointer appearance-none pr-[42px] ${
+              className={`${inputClass} cursor-pointer appearance-none pr-11 ${
                 values.role ? "" : "text-muted-foreground"
               }`}
             >
@@ -236,12 +259,12 @@ export function SignupForm() {
                 Select your role
               </option>
               {ROLES.map((role) => (
-                <option key={role.value} value={role.value} className="text-foreground bg-background">
+                <option key={role.value} value={role.value} className="bg-background text-foreground">
                   {role.label}
                 </option>
               ))}
             </select>
-            <ChevronDown className="pointer-events-none absolute right-[14px] top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <ChevronDown className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           </div>
           {errors.role && (
             <p id="role-error" className="mt-1.5 text-xs text-danger">
@@ -254,14 +277,23 @@ export function SignupForm() {
         <button
           type="submit"
           disabled={isSubmitting}
-          className="flex h-11 w-full items-center justify-center gap-2 rounded-[10px] bg-primary font-display text-[15px] font-semibold tracking-[0.01em] text-primary-foreground shadow-[0_8px_22px_rgba(26,95,208,0.28)] transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-70"
+          className="group flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary font-display text-[15px] font-semibold tracking-[0.01em] text-primary-foreground shadow-[0_10px_24px_-6px_rgba(26,95,208,0.5)] transition-all hover:bg-primary-hover hover:shadow-[0_12px_28px_-6px_rgba(26,95,208,0.55)] disabled:cursor-not-allowed disabled:opacity-70"
         >
-          {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-          {isSubmitting ? "Submitting..." : "Request access"}
+          {isSubmitting ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Submitting…
+            </>
+          ) : (
+            <>
+              Request access
+              <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+            </>
+          )}
         </button>
       </form>
 
-      <p className="mt-4 text-center text-[13.5px] text-muted">
+      <p className="mt-6 text-center text-[13.5px] text-muted">
         Already have access?{" "}
         <a
           href="/login"
@@ -270,7 +302,9 @@ export function SignupForm() {
           Sign in
         </a>
       </p>
-      <p className="mt-4 text-center text-[11.5px] text-muted">Risansi Industries Ltd · Internal use only</p>
+      <p className="mt-5 text-center text-[11.5px] text-muted-foreground">
+        Risansi Industries Ltd · Internal use only
+      </p>
     </div>
   );
 }

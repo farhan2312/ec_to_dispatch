@@ -20,8 +20,9 @@ export default async function SignupPage() {
       {/* LEFT: brand panel */}
       <BrandPanel />
 
-      {/* RIGHT: form panel */}
-      <section className="flex flex-1 basis-[46%] items-center justify-center bg-card px-6 py-8 sm:px-10">
+      {/* RIGHT: form panel — floating rounded card overlapping the brand
+          panel on large screens (matches the sign-in mockup). */}
+      <section className="relative z-10 flex flex-1 basis-[40%] items-center justify-center bg-card px-6 py-10 sm:px-10 lg:-ml-8 lg:rounded-l-[32px] lg:shadow-[-24px_0_60px_-30px_rgba(10,42,94,0.45)]">
         <SignupForm />
       </section>
     </main>

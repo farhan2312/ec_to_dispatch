@@ -1,17 +1,9 @@
 "use client";
 
-import { Fragment, useEffect, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
-import { ChevronDown, ClipboardList, Loader2, Plus } from "lucide-react";
+import { Fragment, useEffect, useState } from "react";
+import { ChevronDown, ClipboardList, Plus } from "lucide-react";
 import type { BillingQueueRow } from "@/lib/orders";
-import {
-  BILLING_DOC_FIELDS,
-  FR_REASON_OPTIONS,
-  INVOICE_FIELDS,
-  selectOptionsFor,
-  type OrderField,
-} from "@/lib/order-schema";
-import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
+import { BILLING_DOC_FIELDS, INVOICE_FIELDS } from "@/lib/order-schema";
 import { OrderChildList } from "./order-children";
 import { OrderDetailsModal } from "./order-details-modal";
 import { InvoiceLrCell } from "./invoice-lr-cell";
@@ -29,122 +21,6 @@ function formatValue(v: string | null): string {
   if (!v || v.trim() === "") return "—";
   const n = Number(v);
   return Number.isFinite(n) ? numberFmt.format(n) : v;
-}
-
-function str(v: unknown): string {
-  return v === null || v === undefined ? "" : String(v);
-}
-
-// Challan fields on order_billing (flat, single per SO).
-const CHALLAN_FIELDS: OrderField[] = [
-  { column: "challan_no", label: "Challan No.", type: "text" },
-  { column: "challan_date", label: "Challan Date", type: "date" },
-  { column: "challan_value", label: "Challan Value", type: "number" },
-  {
-    column: "fr_reason",
-    label: "FR Reason",
-    type: "select",
-    options: FR_REASON_OPTIONS,
-  },
-];
-
-/** Inline editor for the flat challan fields of one Challan SO. */
-function ChallanInlineForm({
-  row,
-  canEdit,
-}: {
-  row: BillingQueueRow;
-  canEdit: boolean;
-}) {
-  const router = useRouter();
-  const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(CHALLAN_FIELDS.map((f) => [
-      f.column,
-      str(row[f.column as keyof BillingQueueRow]),
-    ]))
-  );
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState<number | null>(null);
-
-  async function save(e: FormEvent) {
-    e.preventDefault();
-    setSaving(true);
-    setError(null);
-    const res = await updateOrderSectionAction(row.id, "order_billing", values);
-    setSaving(false);
-    if (!res.ok) {
-      setError(res.error);
-      return;
-    }
-    setSavedAt(Date.now());
-    router.refresh();
-  }
-
-  const inputClass =
-    "h-9 w-full min-w-[140px] rounded-lg border border-input-border bg-surface px-2.5 text-[13px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-70";
-
-  return (
-    <form onSubmit={save} className="px-4 py-3">
-      {error && (
-        <div className="mb-3 rounded-[10px] border border-danger-border bg-danger-bg px-3 py-2 text-xs text-danger">
-          {error}
-        </div>
-      )}
-      <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
-        {CHALLAN_FIELDS.map((f) => (
-          <div key={f.column}>
-            <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              {f.label}
-            </label>
-            {f.type === "select" ? (
-              <select
-                value={values[f.column] ?? ""}
-                disabled={!canEdit}
-                onChange={(e) =>
-                  setValues((v) => ({ ...v, [f.column]: e.target.value }))
-                }
-                className={`${inputClass} cursor-pointer`}
-              >
-                <option value="">—</option>
-                {selectOptionsFor(f, values[f.column] ?? "").map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <input
-                type={f.type === "date" ? "date" : f.type === "text" ? "text" : "number"}
-                step={f.type === "number" ? "any" : undefined}
-                value={values[f.column] ?? ""}
-                disabled={!canEdit}
-                onChange={(e) =>
-                  setValues((v) => ({ ...v, [f.column]: e.target.value }))
-                }
-                className={inputClass}
-              />
-            )}
-          </div>
-        ))}
-      </div>
-      {canEdit && (
-        <div className="mt-3 flex items-center gap-3">
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex h-8 items-center justify-center gap-1 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-70"
-          >
-            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {saving ? "Saving…" : "Save challan"}
-          </button>
-          {savedAt && !saving && (
-            <span className="text-xs text-muted">Saved.</span>
-          )}
-        </div>
-      )}
-    </form>
-  );
 }
 
 export function BillingWorkspace({
@@ -273,9 +149,11 @@ export function BillingWorkspace({
                       <tr className="bg-background/40">
                         <td colSpan={9} className="p-0">
                           <div className="space-y-4 px-4 py-3">
-                            {isChallan ? (
-                              <ChallanInlineForm row={row} canEdit={canEdit} />
-                            ) : (
+                            {/* Challan orders skip the Operation card — their
+                                challan fields live inside each Billing &
+                                Dispatch card. Tax Invoice orders keep the
+                                PI list. */}
+                            {!isChallan && (
                               <OrderChildList
                                 orderId={row.id}
                                 table="order_billing_docs"
@@ -287,7 +165,9 @@ export function BillingWorkspace({
                             )}
 
                             {/* Stage 5 — invoice, dispatch and docket details.
-                                Dispatch Status derives from these. */}
+                                Dispatch Status derives from these. For Challan
+                                orders the "Invoice" phase collects challan
+                                fields instead (bill_type context gates it). */}
                             <OrderChildList
                               orderId={row.id}
                               table="order_invoices"
@@ -296,6 +176,7 @@ export function BillingWorkspace({
                               rows={(row.invoices ?? []) as Row[]}
                               canEdit={canEdit}
                               canAdd={false}
+                              context={{ bill_type: row.bill_type }}
                               rowHeader={invoiceRowHeader}
                               renderExtra={{
                                 label: "LR Attachment",

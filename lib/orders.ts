@@ -571,9 +571,15 @@ export async function recomputeDispatchStatus(orderId: string): Promise<void> {
               ELSE 'LOT dispatch'
             END
        FROM (
-         SELECT COUNT(*) AS n,
-                SUM(invoice_quantity) AS qty,
-                SUM(invoice_value) AS val
+         -- Count a row as "started" if EITHER the invoice or the challan
+         -- side has been filled in — Challan orders don't carry
+         -- invoice_no/qty/value, they carry challan_value instead.
+         SELECT COUNT(*) FILTER (
+                  WHERE invoice_no IS NOT NULL OR challan_no IS NOT NULL
+                        OR invoice_value IS NOT NULL OR challan_value IS NOT NULL
+                ) AS n,
+                SUM(COALESCE(invoice_quantity, packing_quantity, 0)) AS qty,
+                SUM(COALESCE(invoice_value, challan_value, 0)) AS val
            FROM order_invoices WHERE order_id = $1
        ) inv
       WHERE o.id = $1`,

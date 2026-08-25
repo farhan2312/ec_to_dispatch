@@ -124,23 +124,14 @@ export function OrderDetail({
           const renderSection = (section: typeof SO_SECTIONS[number]) => {
             if (section.table === "order_billing") {
               const isChallan = String(order.bill_type ?? "") === "Challan";
-              const canEdit = canAccessDepartment(role, section.table);
               const billingCanEditChild = canEditChild(role, "order_billing_docs");
               const invoicesCanEditChild = canEditChild(role, "order_invoices");
               return (
                 <div key={section.key} className="space-y-6">
-                  {isChallan ? (
-                    <EditableSection
-                      targetId={orderId}
-                      section={section}
-                      data={{
-                        ...((detail.order_billing as Row | null) ?? {}),
-                        bill_type: order.bill_type,
-                      }}
-                      canEdit={canEdit}
-                      canEditCentral={central}
-                    />
-                  ) : (
+                  {/* Challan orders skip the Operation card entirely — their
+                      challan fields sit inside each Billing & Dispatch card.
+                      Tax Invoice orders keep the PI list here. */}
+                  {!isChallan && (
                     <OrderChildList
                       orderId={orderId}
                       table="order_billing_docs"
@@ -158,6 +149,10 @@ export function OrderDetail({
                     rows={(detail.order_invoices ?? []) as Row[]}
                     canEdit={invoicesCanEditChild}
                     canAdd={false}
+                    // The parent SO's bill_type decides whether each invoice
+                    // card shows invoice_* or challan_* fields — pass it as
+                    // context so per-field dependsOn can gate the correct set.
+                    context={{ bill_type: order.bill_type }}
                     rowHeader={invoiceRowHeader}
                     renderExtra={{
                       label: "LR Attachment",

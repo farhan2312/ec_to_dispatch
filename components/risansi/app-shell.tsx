@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bug, ChevronRight, Menu, PlayCircle } from "lucide-react";
+import { Bell, ChevronRight, Menu, PlayCircle } from "lucide-react";
 import { ReportBugTrigger } from "./report-bug";
 import { Sidebar } from "./sidebar";
 import { isCentral } from "@/lib/roles";
@@ -182,7 +182,7 @@ export function AppShell({
                 }
                 className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg border border-card-border bg-surface text-foreground transition-colors hover:bg-background"
               >
-                <Bug className="h-4 w-4 text-rose-600" />
+                <Bell className="h-4 w-4 text-amber-600" />
                 {openBugCount > 0 && (
                   <span className="absolute -right-1.5 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-semibold text-white">
                     {openBugCount > 99 ? "99+" : openBugCount}

@@ -124,8 +124,19 @@ export function DepartmentWorkspace({
 
   const { match: rowSearchText, placeholder: searchPlaceholder } =
     searchConfigFor(table);
-  const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
-    useTableSearch(orders, rowSearchText);
+  const SO_GROUP_PAGE_SIZE = 30;
+  const {
+    query,
+    setQuery,
+    pageRows: rowPageRows,
+    page: rowPage,
+    setPage: setRowPage,
+    totalPages: rowTotalPages,
+    filteredRows,
+    total: rowTotal,
+    from: rowFrom,
+    to: rowTo,
+  } = useTableSearch(orders, rowSearchText);
 
   useEffect(() => {
     if (!openOrderId || !canEdit) return;
@@ -181,10 +192,16 @@ export function DepartmentWorkspace({
 
   // Item-scope layout: one row per SO (with the SO's readonly context) + a
   // nested EC subtable for that SO's department fields.
+  //
+  // Pagination lives on SO groups here, not on ECs — otherwise an SO whose
+  // ECs straddle two pages would appear as different card counts on each
+  // page (page 1 with fewer cards, page 2 with more). We build groups from
+  // the full filtered row set and page over those. The row-level pagination
+  // returned by useTableSearch is still used for the SO-scope path below.
   type SoGroup = { key: string; head: Row; ecs: Row[] };
-  const soGroups: SoGroup[] = groupBySo
+  const allSoGroups: SoGroup[] = groupBySo
     ? Array.from(
-        pageRows.reduce((map, r) => {
+        filteredRows.reduce((map, r) => {
           const key = String(r.so_no ?? r.sl_no ?? "");
           const g = map.get(key);
           if (g) g.ecs.push(r);
@@ -193,6 +210,29 @@ export function DepartmentWorkspace({
         }, new Map<string, SoGroup>())
       ).map(([, g]) => g)
     : [];
+  const [soPage, setSoPage] = useState(1);
+  // Reset the SO page whenever the underlying set shrinks/grows (search).
+  const groupTotal = allSoGroups.length;
+  const groupTotalPages = Math.max(1, Math.ceil(groupTotal / SO_GROUP_PAGE_SIZE));
+  const soCurrent = Math.min(soPage, groupTotalPages);
+  const soGroups = groupBySo
+    ? allSoGroups.slice(
+        (soCurrent - 1) * SO_GROUP_PAGE_SIZE,
+        soCurrent * SO_GROUP_PAGE_SIZE
+      )
+    : [];
+  const groupFrom = groupTotal === 0 ? 0 : (soCurrent - 1) * SO_GROUP_PAGE_SIZE + 1;
+  const groupTo = Math.min(soCurrent * SO_GROUP_PAGE_SIZE, groupTotal);
+
+  // Which pagination the Pagination footer + row map should use.
+  const page = groupBySo ? soCurrent : rowPage;
+  const setPage = groupBySo ? setSoPage : setRowPage;
+  const totalPages = groupBySo ? groupTotalPages : rowTotalPages;
+  const total = groupBySo ? groupTotal : rowTotal;
+  const from = groupBySo ? groupFrom : rowFrom;
+  const to = groupBySo ? groupTo : rowTo;
+  // SO-scope path uses this for its own map; item-scope path iterates soGroups.
+  const pageRows = rowPageRows;
 
   // Per-EC child list carried by this section (packing slips), plus its gate
   // against the SO and the label/kind it files rows under.
@@ -274,7 +314,7 @@ export function DepartmentWorkspace({
               </tr>
             </thead>
             <tbody className="divide-y divide-card-border">
-              {pageRows.length === 0 && (
+              {(groupBySo ? soGroups.length === 0 : pageRows.length === 0) && (
                 <tr>
                   <td
                     colSpan={colCount}

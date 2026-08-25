@@ -337,25 +337,14 @@ export const ORDER_SECTIONS: OrderSection[] = [
     ],
   },
   {
-    // Billing shape depends on the SO's Bill Type:
-    //  • Tax Invoice → PI list (order_billing_docs, add-on to create more).
-    //  • Challan     → one flat set of challan fields on order_billing.
+    // Tax Invoice orders keep the PI list here (the "Operation" card).
+    // Challan orders skip Operation entirely — their challan fields live
+    // inside each Billing & Dispatch invoice card (see INVOICE_FIELDS).
     key: "billing",
     title: "Billing & Operations",
     table: "order_billing",
     scope: "so",
-    fields: [
-      { column: "challan_no", label: "Challan No.", type: "text", dependsOn: [{ column: "bill_type", value: "Challan" }] },
-      { column: "challan_date", label: "Challan Date", type: "date", dependsOn: [{ column: "bill_type", value: "Challan" }] },
-      { column: "challan_value", label: "Challan Value", type: "number", dependsOn: [{ column: "bill_type", value: "Challan" }] },
-      {
-        column: "fr_reason",
-        label: "FR Reason",
-        type: "select",
-        options: FR_REASON_OPTIONS,
-        dependsOn: [{ column: "bill_type", value: "Challan" }],
-      },
-    ],
+    fields: [],
     childTable: "order_billing_docs",
     childGate: { column: "bill_type", value: "Tax Invoice" },
   },
@@ -580,11 +569,19 @@ export const PACKING_SLIP_KINDS = {
 // `rowHeader`); they mirror the packing slip and Billing can't edit them,
 // so they don't appear in the invoice form itself.
 export const INVOICE_FIELDS: OrderField[] = [
-  // Phase 1 — invoice details Billing fills.
-  { column: "invoice_no", label: "Invoice No.", type: "text", group: "Invoice" },
-  { column: "invoice_date", label: "Invoice Date", type: "date", group: "Invoice" },
-  { column: "invoice_value", label: "Invoice Value", type: "number", group: "Invoice" },
-  { column: "invoice_quantity", label: "Invoice Qty", type: "int", group: "Invoice" },
+  // Phase 1 — the "Invoice" phase. Two field sets share this slot:
+  //   • Tax Invoice orders → invoice_no / _date / _value / _quantity
+  //   • Challan orders     → challan_no / _date / _value / fr_reason
+  // The correct set is chosen at render time via `bill_type` in the parent
+  // SO's context (passed to OrderChildList as `context.bill_type`).
+  { column: "invoice_no",       label: "Invoice No.",   type: "text",   group: "Invoice", dependsOn: [{ column: "bill_type", value: "Tax Invoice" }] },
+  { column: "invoice_date",     label: "Invoice Date",  type: "date",   group: "Invoice", dependsOn: [{ column: "bill_type", value: "Tax Invoice" }] },
+  { column: "invoice_value",    label: "Invoice Value", type: "number", group: "Invoice", dependsOn: [{ column: "bill_type", value: "Tax Invoice" }] },
+  { column: "invoice_quantity", label: "Invoice Qty",   type: "int",    group: "Invoice", dependsOn: [{ column: "bill_type", value: "Tax Invoice" }] },
+  { column: "challan_no",       label: "Challan No.",   type: "text",   group: "Invoice", dependsOn: [{ column: "bill_type", value: "Challan" }] },
+  { column: "challan_date",     label: "Challan Date",  type: "date",   group: "Invoice", dependsOn: [{ column: "bill_type", value: "Challan" }] },
+  { column: "challan_value",    label: "Challan Value", type: "number", group: "Invoice", dependsOn: [{ column: "bill_type", value: "Challan" }] },
+  { column: "fr_reason",        label: "FR Reason",     type: "select", options: FR_REASON_OPTIONS, group: "Invoice", dependsOn: [{ column: "bill_type", value: "Challan" }] },
 
   // Phase 2 — dispatch details.
   {

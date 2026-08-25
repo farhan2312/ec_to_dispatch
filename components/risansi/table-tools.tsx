@@ -17,7 +17,7 @@ import {
 export function useTableSearch<T>(
   rows: T[],
   getText: (row: T) => string,
-  pageSize = 15
+  pageSize = 30
 ) {
   const [query, setQueryRaw] = useState("");
   const [page, setPage] = useState(1);
@@ -48,6 +48,10 @@ export function useTableSearch<T>(
     setPage,
     totalPages,
     pageRows,
+    // Full post-search row list, for callers that need to re-paginate on a
+    // different unit (e.g. department-workspace groups rows into SO cards and
+    // paginates on those, so an SO's ECs never straddle two pages).
+    filteredRows: filtered,
     total,
     from,
     to,
@@ -76,7 +80,7 @@ export function useTableFilters<T>(
   getText: (row: T) => string,
   filters: FilterDef<T>[],
   textFilters: FilterDef<T>[] = [],
-  pageSize = 15
+  pageSize = 30
 ) {
   const [query, setQueryRaw] = useState("");
   const [selected, setSelected] = useState<Record<string, string>>({});

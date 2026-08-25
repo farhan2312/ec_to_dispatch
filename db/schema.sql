@@ -1486,3 +1486,13 @@ BEGIN
     ALTER TABLE orders RENAME COLUMN agent TO reps;
   END IF;
 END $$;
+
+-- For Challan bill types, the "Invoice" phase inside each Billing & Dispatch
+-- card carries challan fields instead of invoice fields (per-slip challan
+-- number/date/value + FR reason). Field-level dependsOn on bill_type decides
+-- which set is collected — both live on the invoice row so a single
+-- order_invoices table serves both bill types.
+ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS challan_no    TEXT;
+ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS challan_date  DATE;
+ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS challan_value NUMERIC(14,2);
+ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS fr_reason     TEXT;

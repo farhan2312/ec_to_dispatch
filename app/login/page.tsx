@@ -26,13 +26,16 @@ export default async function LoginPage({
       : undefined;
 
   return (
-    <main className="flex min-h-screen w-full bg-background">
+    // lg:h-screen + per-panel scrolling keeps the desktop layout inside the
+    // viewport — the page itself never scrolls, and a short viewport scrolls
+    // the form panel rather than pushing the whole page down.
+    <main className="flex min-h-screen w-full bg-background lg:h-screen lg:overflow-hidden">
       {/* LEFT: brand panel */}
       <BrandPanel />
 
       {/* RIGHT: form panel — a floating rounded card that overlaps the brand
           panel slightly on large screens (matches the sign-in mockup). */}
-      <section className="relative z-10 flex flex-1 basis-[40%] items-center justify-center bg-card px-6 py-10 sm:px-10 lg:-ml-8 lg:rounded-l-[32px] lg:shadow-[-24px_0_60px_-30px_rgba(10,42,94,0.45)]">
+      <section className="relative z-10 flex flex-1 basis-[40%] items-center justify-center overflow-y-auto bg-card px-6 py-10 sm:px-10 lg:-ml-8 lg:rounded-l-[32px] lg:py-8 lg:shadow-[-24px_0_60px_-30px_rgba(10,42,94,0.45)]">
         <LoginForm notice={notice} />
       </section>
     </main>

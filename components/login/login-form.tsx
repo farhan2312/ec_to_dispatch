@@ -67,15 +67,22 @@ export function LoginForm({ notice }: { notice?: string }) {
   return (
     <div className="w-full max-w-[400px]">
       {/* logo — centered, matching the brand panel */}
-      <div className="mb-6 flex justify-center">
-        <Image src={logo} alt="Risansi" width={190} height={95} priority />
+      <div className="mb-4 flex justify-center [@media(min-height:880px)]:mb-5">
+        <Image
+          src={logo}
+          alt="Risansi"
+          width={190}
+          height={95}
+          priority
+          className="h-auto w-[150px] [@media(min-height:880px)]:w-[175px]"
+        />
       </div>
 
-      <div className="mb-7 text-center">
-        <h1 className="font-display text-[28px] font-bold tracking-[-0.02em] text-foreground">
+      <div className="mb-5 text-center [@media(min-height:880px)]:mb-6">
+        <h1 className="font-display text-[26px] font-bold tracking-[-0.02em] text-foreground">
           Welcome back
         </h1>
-        <p className="mt-1.5 text-sm text-muted">
+        <p className="mt-1 text-sm text-muted">
           Sign in to continue to the Risansi platform.
         </p>
       </div>
@@ -195,13 +202,13 @@ export function LoginForm({ notice }: { notice?: string }) {
         </button>
       </form>
 
-      <p className="mt-6 text-center text-[13.5px] text-muted">
+      <p className="mt-5 text-center text-[13.5px] text-muted">
         Need access?{" "}
         <a href="/signup" className="font-semibold text-primary hover:text-primary-hover">
           Request Access
         </a>
       </p>
-      <p className="mt-5 text-center text-[11.5px] text-muted-foreground">
+      <p className="mt-3.5 text-center text-[11.5px] text-muted-foreground">
         Risansi Industries Ltd · Internal use only
       </p>
     </div>

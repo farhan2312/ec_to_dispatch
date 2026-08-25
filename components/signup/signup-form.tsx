@@ -97,22 +97,29 @@ export function SignupForm() {
   }
 
   const inputClass =
-    "h-12 w-full rounded-xl border border-input-border bg-surface pl-11 pr-4 text-[14px] text-foreground placeholder:text-muted-foreground transition-shadow focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10";
+    "h-11 w-full rounded-xl border border-input-border bg-surface pl-11 pr-4 text-[14px] text-foreground placeholder:text-muted-foreground transition-shadow focus:border-primary focus:outline-none focus:ring-4 focus:ring-primary/10";
   const labelClass = "mb-1.5 block text-[13px] font-semibold text-brand-label";
   const iconClass =
     "pointer-events-none absolute left-3.5 top-1/2 h-[18px] w-[18px] -translate-y-1/2 text-muted-foreground";
 
   return (
     <div className="w-full max-w-[400px]">
-      <div className="mb-6 flex justify-center">
-        <Image src={logo} alt="Risansi" width={190} height={95} priority />
+      <div className="mb-3 flex justify-center [@media(min-height:880px)]:mb-4">
+        <Image
+          src={logo}
+          alt="Risansi"
+          width={190}
+          height={95}
+          priority
+          className="h-auto w-[140px] [@media(min-height:880px)]:w-[165px]"
+        />
       </div>
 
-      <div className="mb-6 text-center">
-        <h1 className="font-display text-[28px] font-bold tracking-[-0.02em] text-foreground">
+      <div className="mb-4 text-center [@media(min-height:880px)]:mb-5">
+        <h1 className="font-display text-[26px] font-bold tracking-[-0.02em] text-foreground">
           Request access
         </h1>
-        <p className="mt-1.5 text-sm text-muted">
+        <p className="mt-1 text-sm text-muted">
           Create your account to join the Risansi platform.
         </p>
       </div>
@@ -131,7 +138,7 @@ export function SignupForm() {
         <label htmlFor="fullName" className={labelClass}>
           Full name
         </label>
-        <div className="mb-3.5">
+        <div className="mb-3">
           <div className="relative">
             <User className={iconClass} />
             <input
@@ -158,7 +165,7 @@ export function SignupForm() {
         <label htmlFor="email" className={labelClass}>
           Email address
         </label>
-        <div className="mb-3.5">
+        <div className="mb-3">
           <div className="relative">
             <Mail className={iconClass} />
             <input
@@ -185,7 +192,7 @@ export function SignupForm() {
         <label htmlFor="password" className={labelClass}>
           Password
         </label>
-        <div className="mb-3.5">
+        <div className="mb-3">
           <div className="relative">
             <Lock className={iconClass} />
             <input
@@ -212,7 +219,7 @@ export function SignupForm() {
         <label htmlFor="confirmPassword" className={labelClass}>
           Confirm password
         </label>
-        <div className="mb-3.5">
+        <div className="mb-3">
           <div className="relative">
             <Lock className={iconClass} />
             <input
@@ -293,7 +300,7 @@ export function SignupForm() {
         </button>
       </form>
 
-      <p className="mt-6 text-center text-[13.5px] text-muted">
+      <p className="mt-4 text-center text-[13.5px] text-muted">
         Already have access?{" "}
         <a
           href="/login"
@@ -302,7 +309,7 @@ export function SignupForm() {
           Sign in
         </a>
       </p>
-      <p className="mt-5 text-center text-[11.5px] text-muted-foreground">
+      <p className="mt-3 text-center text-[11.5px] text-muted-foreground">
         Risansi Industries Ltd · Internal use only
       </p>
     </div>

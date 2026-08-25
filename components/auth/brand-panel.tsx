@@ -10,7 +10,7 @@ const features = [
 
 export function BrandPanel() {
   return (
-    <section className="relative hidden basis-[60%] flex-col justify-between overflow-hidden bg-gradient-to-br from-brand-navy-1 via-brand-navy-2 to-brand-navy-3 px-12 py-12 text-[#eaf1fb] lg:flex">
+    <section className="relative hidden h-screen basis-[60%] flex-col justify-between overflow-hidden bg-gradient-to-br from-brand-navy-1 via-brand-navy-2 to-brand-navy-3 px-10 py-8 text-[#eaf1fb] lg:flex [@media(min-height:880px)]:px-12 [@media(min-height:880px)]:py-10">
       {/* dotted texture, top-right */}
       <div
         className="pointer-events-none absolute right-10 top-10 h-40 w-56 opacity-40"
@@ -51,37 +51,44 @@ export function BrandPanel() {
       </svg>
 
       {/* logo */}
-      <div className="relative">
-        <Image src={logo} alt="Risansi" width={210} height={105} priority />
+      <div className="relative shrink-0">
+        <Image
+          src={logo}
+          alt="Risansi"
+          width={210}
+          height={105}
+          priority
+          className="h-auto w-[150px] [@media(min-height:880px)]:w-[190px]"
+        />
       </div>
 
       {/* headline + copy */}
-      <div className="relative max-w-lg">
-        <h1 className="mb-5 font-display text-[46px] font-bold leading-[1.05] tracking-[-0.02em] text-white">
+      <div className="relative min-h-0 max-w-lg py-4">
+        <h1 className="mb-4 font-display text-[34px] font-bold leading-[1.06] tracking-[-0.02em] text-white [@media(min-height:880px)]:text-[42px]">
           From Sales Order
           <br />
           straight to <span className="text-[#5aa9ff]">Dispatch.</span>
         </h1>
-        <p className="max-w-md text-[16.5px] leading-relaxed text-[#b9cbe6]">
+        <p className="max-w-md text-[15px] leading-relaxed text-[#b9cbe6] [@media(min-height:880px)]:text-[16.5px]">
           Track every sales order from EC to dispatch — across drawing,
           purchase, quality, planning, packing and billing. One connected
           workspace, every hand-off in view.
         </p>
 
         {/* feature cards */}
-        <div className="mt-10 grid max-w-lg grid-cols-3 gap-4">
+        <div className="mt-6 grid max-w-lg grid-cols-3 gap-3 [@media(min-height:880px)]:mt-8 [@media(min-height:880px)]:gap-4">
           {features.map(({ icon: Icon, value, label }) => (
             <div
               key={label}
-              className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-sm transition-colors hover:border-white/20 hover:bg-white/[0.07]"
+              className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 backdrop-blur-sm transition-colors hover:border-white/20 hover:bg-white/[0.07] [@media(min-height:880px)]:p-4"
             >
-              <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-[#7fc2ff]">
-                <Icon className="h-5 w-5" />
+              <div className="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-[#7fc2ff] [@media(min-height:880px)]:mb-3 [@media(min-height:880px)]:h-10 [@media(min-height:880px)]:w-10">
+                <Icon className="h-[18px] w-[18px] [@media(min-height:880px)]:h-5 [@media(min-height:880px)]:w-5" />
               </div>
-              <div className="font-display text-xl font-bold text-white">
+              <div className="font-display text-lg font-bold text-white [@media(min-height:880px)]:text-xl">
                 {value}
               </div>
-              <div className="mt-0.5 text-[13px] leading-snug text-[#9db6d6]">
+              <div className="mt-0.5 text-[12px] leading-snug text-[#9db6d6] [@media(min-height:880px)]:text-[13px]">
                 {label}
               </div>
             </div>
@@ -90,7 +97,7 @@ export function BrandPanel() {
       </div>
 
       {/* footer */}
-      <div className="relative flex items-center gap-2 text-[12.5px] text-[#8aa2c4]">
+      <div className="relative flex shrink-0 items-center gap-2 text-[12.5px] text-[#8aa2c4]">
         <ShieldCheck className="h-4 w-4 text-[#7fc2ff]" />
         Risansi Industries Ltd · Internal use only
       </div>

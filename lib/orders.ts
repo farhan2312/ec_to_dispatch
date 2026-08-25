@@ -48,6 +48,7 @@ export type ItemSummary = {
   item_type: string | null;
   pump_type: string | null;
   model_no: string | null;
+  internal_model: string | null;
   version: string | null;
   quantity: string | null;
 };
@@ -113,6 +114,7 @@ export type NewItemInput = {
   item_type?: string;
   pump_type?: string;
   model_no?: string;
+  internal_model?: string;
   quantity?: string;
   orientation?: string;
   suction?: string;
@@ -208,10 +210,10 @@ export async function createItem(
 ): Promise<{ id: string; seq: number }> {
   const result = await query<{ id: string; seq: number }>(
     `INSERT INTO order_items (
-        order_id, ec_no, ec_date, item_type, pump_type, model_no, quantity,
-        orientation, suction, delivery, pump_sno, application, version
+        order_id, ec_no, ec_date, item_type, pump_type, model_no, internal_model,
+        quantity, orientation, suction, delivery, pump_sno, application, version
      ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14
      )
      RETURNING id, seq::int AS seq`,
     [
@@ -221,6 +223,7 @@ export async function createItem(
       nullify(input.item_type),
       nullify(input.pump_type),
       nullify(input.model_no),
+      nullify(input.internal_model),
       toInt(input.quantity),
       nullify(input.orientation),
       nullify(input.suction),
@@ -1275,6 +1278,7 @@ export async function listOrders(): Promise<OrderListRow[]> {
                          it.item_type,
                          it.pump_type,
                          it.model_no,
+                         it.internal_model,
                          it.version,
                          it.quantity::text AS quantity
                     FROM order_items it

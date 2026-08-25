@@ -249,7 +249,8 @@ export function OrderDetail({
                         <th className="px-3 py-2">EC Date</th>
                         {!isSpareSo && <th className="px-3 py-2">Pump Type</th>}
                         <th className="px-3 py-2">Model No.</th>
-                        {!isSpareSo && <th className="px-3 py-2">Version</th>}
+                        <th className="px-3 py-2">Internal Model</th>
+                        <th className="px-3 py-2">Version</th>
                         <th className="px-3 py-2">Qty</th>
                         <th className="px-3 py-2" />
                       </tr>
@@ -269,9 +270,8 @@ export function OrderDetail({
                               <td className="px-3 py-2">{str(item.pump_type) || "—"}</td>
                             )}
                             <td className="px-3 py-2">{str(item.model_no) || "—"}</td>
-                            {!isSpareSo && (
-                              <td className="px-3 py-2">{str(item.version) || "—"}</td>
-                            )}
+                            <td className="px-3 py-2">{str(item.internal_model) || "—"}</td>
+                            <td className="px-3 py-2">{str(item.version) || "—"}</td>
                             <td className="px-3 py-2 tabular-nums">{str(item.quantity) || "—"}</td>
                             <td className="px-3 py-2 whitespace-nowrap text-right">
                               <div className="flex items-center justify-end gap-2">

@@ -1501,3 +1501,7 @@ ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS fr_reason     TEXT;
 -- a temporary password; cleared once the user picks their own. The platform
 -- admin account is never flagged (see the reset script / layout guard).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false;
+
+-- Internal model reference, captured on both Pump and Spare Add-On forms
+-- (alongside the customer-facing Model No.).
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS internal_model TEXT;

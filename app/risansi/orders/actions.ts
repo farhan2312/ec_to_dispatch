@@ -204,6 +204,8 @@ export async function createSpareItemAction(
     ec_no: (formData.get("ec_no") as string | null) ?? undefined,
     ec_date: (formData.get("ec_date") as string | null) ?? undefined,
     model_no: (formData.get("model_no") as string | null) ?? undefined,
+    internal_model: (formData.get("internal_model") as string | null) ?? undefined,
+    version: (formData.get("version") as string | null) ?? undefined,
     quantity: (formData.get("quantity") as string | null) ?? undefined,
   };
 

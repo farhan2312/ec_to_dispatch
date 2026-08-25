@@ -328,12 +328,14 @@ export const ORDER_SECTIONS: OrderSection[] = [
         dependsOn: [{ column: "item_type", value: "Pump" }],
       },
       { column: "model_no", label: "Model No.", type: "text" },
+      // Captured on both Pump and Spare Add-On forms, so not gated.
+      { column: "internal_model", label: "Internal Model", type: "text" },
+      { column: "version", label: "Series Version", type: "text" },
       { column: "quantity", label: "Quantity", type: "int" },
       { column: "suction", label: "Suction", type: "text", dependsOn: [{ column: "item_type", value: "Pump" }] },
       { column: "delivery", label: "Delivery", type: "text", dependsOn: [{ column: "item_type", value: "Pump" }] },
       { column: "pump_sno", label: "Pump Serial No.", type: "text", dependsOn: [{ column: "item_type", value: "Pump" }] },
       { column: "application", label: "Application", type: "text", dependsOn: [{ column: "item_type", value: "Pump" }] },
-      { column: "version", label: "Series Version", type: "text", dependsOn: [{ column: "item_type", value: "Pump" }] },
     ],
   },
   {

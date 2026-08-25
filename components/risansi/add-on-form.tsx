@@ -26,6 +26,7 @@ const PUMP_FIELDS: OrderField[] = [
     options: PUMP_TYPE_OPTIONS,
   },
   { column: "model_no", label: "Model No.", type: "text" },
+  { column: "internal_model", label: "Internal Model", type: "text" },
   { column: "quantity", label: "Quantity", type: "int" },
   { column: "suction", label: "Suction", type: "text" },
   { column: "delivery", label: "Delivery", type: "text" },
@@ -34,11 +35,13 @@ const PUMP_FIELDS: OrderField[] = [
   { column: "version", label: "Series Version", type: "text" },
 ];
 
-// Spare Add-On: EC identity + model + quantity + Order Copy file upload.
+// Spare Add-On: EC identity + model/version + quantity + Order Copy upload.
 const SPARE_FIELDS: OrderField[] = [
   { column: "ec_no", label: "EC No.", type: "text" },
   { column: "ec_date", label: "EC Date", type: "date" },
   { column: "model_no", label: "Model No.", type: "text" },
+  { column: "internal_model", label: "Internal Model", type: "text" },
+  { column: "version", label: "Series Version", type: "text" },
   { column: "quantity", label: "Quantity", type: "int" },
 ];
 

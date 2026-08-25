@@ -96,7 +96,8 @@ function ItemRows({
             <th className="px-3 py-1.5">EC Date</th>
             {!isSpareSo && <th className="px-3 py-1.5">Pump Type</th>}
             <th className="px-3 py-1.5">Model No.</th>
-            {!isSpareSo && <th className="px-3 py-1.5">Version</th>}
+            <th className="px-3 py-1.5">Internal Model</th>
+            <th className="px-3 py-1.5">Version</th>
             <th className="px-3 py-1.5">Qty</th>
             <th className="px-3 py-1.5" />
           </tr>
@@ -110,7 +111,8 @@ function ItemRows({
               </td>
               {!isSpareSo && <td className="px-3 py-1.5">{cell(it.pump_type)}</td>}
               <td className="px-3 py-1.5">{cell(it.model_no)}</td>
-              {!isSpareSo && <td className="px-3 py-1.5">{cell(it.version)}</td>}
+              <td className="px-3 py-1.5">{cell(it.internal_model)}</td>
+              <td className="px-3 py-1.5">{cell(it.version)}</td>
               <td className="px-3 py-1.5 tabular-nums">{cell(it.quantity)}</td>
               <td className="px-3 py-1.5 whitespace-nowrap text-right">
                 <Link

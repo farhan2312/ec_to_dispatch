@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ClipboardList,
+  FileText,
   IndianRupee,
   Loader2,
   PauseCircle,
@@ -157,7 +158,15 @@ function ChartCard({
  * cumulative percentages; a hole in the middle carries the total count for
  * quick scanning. Falls back to an empty ring when nothing is set.
  */
-function PieChart({ items, total }: { items: BarItem[]; total: number }) {
+function PieChart({
+  items,
+  total,
+  totalLabel = "Total",
+}: {
+  items: BarItem[];
+  total: number;
+  totalLabel?: string;
+}) {
   const size = 176;
   const cx = size / 2;
   const cy = size / 2;
@@ -211,7 +220,7 @@ function PieChart({ items, total }: { items: BarItem[]; total: number }) {
             {total}
           </span>
           <span className="text-[10px] uppercase tracking-wider text-muted">
-            Total
+            {totalLabel}
           </span>
         </div>
       </div>
@@ -329,8 +338,9 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
   }
 
   const total = rows.length;
-  const holds = rows.filter((r) => isHold(r.payment_status)).length;
   const overdue = rows.filter(isOverdue).length;
+  // order_value is only emitted on the SO's first EC (see listOrdersOverview),
+  // so summing across all rows gives the true book value.
   const totalValue = rows.reduce((sum, r) => sum + (Number(r.order_value) || 0), 0);
 
   // Share of orders each department has completed. QC's denominator excludes
@@ -402,44 +412,48 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
   const from = soCards.length === 0 ? 0 : (current - 1) * PIPELINE_PAGE_SIZE + 1;
   const to = Math.min(current * PIPELINE_PAGE_SIZE, soCards.length);
 
-  // Payment status — full breakdown by each dropdown value + Not set.
+  // Payment + dispatch status live on the SO, not the EC — so both charts
+  // count one per SO card (deduped). Otherwise a 5-EC SO would show up
+  // five times in its payment slice and skew the picture.
   const norm = (s: string | null) => (s ?? "").trim().toLowerCase();
+  const soTotal = soCards.length;
+  const soHolds = soCards.filter((c) => isHold(c.payment_status)).length;
   const paymentBreakdown: BarItem[] = [
     ...PAYMENT_STATUS_OPTIONS.map((o) => ({
       label: o.label,
       color: PAYMENT_COLORS[o.value] ?? "#94a3b8",
-      count: rows.filter((r) => norm(r.payment_status) === norm(o.value)).length,
+      count: soCards.filter((c) => norm(c.payment_status) === norm(o.value)).length,
     })),
     {
       label: "Not set",
       color: "#d8dee9",
-      count: rows.filter((r) => norm(r.payment_status) === "").length,
+      count: soCards.filter((c) => norm(c.payment_status) === "").length,
     },
   ];
 
-  // Dispatch status breakdown. "Pending" is now its own bucket (recomputed
-  // status when the SO has no invoices yet); "Not set" catches any legacy
-  // rows still carrying null before the first recomputation.
+  // Dispatch status breakdown, per SO. "Pending" is its own bucket
+  // (recomputed status when the SO has no invoices yet); "Not set" catches
+  // any legacy SOs still carrying null before the first recomputation.
   const dispatchBreakdown: BarItem[] = [
     {
       label: "Fully dispatch",
       color: "#10b981",
-      count: rows.filter((r) => norm(r.dispatch_status) === "fully dispatch").length,
+      count: soCards.filter((c) => norm(c.dispatch_status) === "fully dispatch").length,
     },
     {
       label: "LOT dispatch",
       color: "#3b82f6",
-      count: rows.filter((r) => norm(r.dispatch_status) === "lot dispatch").length,
+      count: soCards.filter((c) => norm(c.dispatch_status) === "lot dispatch").length,
     },
     {
       label: "Pending",
       color: "#f59e0b",
-      count: rows.filter((r) => norm(r.dispatch_status) === "pending").length,
+      count: soCards.filter((c) => norm(c.dispatch_status) === "pending").length,
     },
     {
       label: "Not set",
       color: "#d8dee9",
-      count: rows.filter((r) => norm(r.dispatch_status) === "").length,
+      count: soCards.filter((c) => norm(c.dispatch_status) === "").length,
     },
   ];
 
@@ -550,7 +564,13 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
       )}
 
       {/* stat cards */}
-      <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="mb-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+        <StatCard
+          icon={FileText}
+          label="Total SOs"
+          value={numberFmt.format(soTotal)}
+          accent="bg-indigo-100 text-indigo-700"
+        />
         <StatCard
           icon={ClipboardList}
           label="Total ECs"
@@ -560,7 +580,7 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
         <StatCard
           icon={PauseCircle}
           label="Payment holds"
-          value={numberFmt.format(holds)}
+          value={numberFmt.format(soHolds)}
           accent="bg-amber-100 text-amber-700"
         />
         <StatCard
@@ -608,14 +628,15 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
         </ChartCard>
       </div>
      */}
-      {/* charts */}
+      {/* charts — both keyed off SO count, since payment_status and
+          dispatch_status live on the SO. */}
       <div className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <ChartCard title="Payment status">
-          <PieChart items={paymentBreakdown} total={total} />
+          <PieChart items={paymentBreakdown} total={soTotal} totalLabel="SOs" />
         </ChartCard>
 
         <ChartCard title="Dispatch status">
-          <BarList items={dispatchBreakdown} total={total} />
+          <BarList items={dispatchBreakdown} total={soTotal} />
         </ChartCard>
 
       </div>

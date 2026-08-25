@@ -1,10 +1,8 @@
 "use server";
 
 import { getCurrentUser } from "@/lib/session";
-import { updatePassword } from "@/lib/users";
+import { updatePassword, verifyPasswordById } from "@/lib/users";
 import { logAudit } from "@/lib/audit";
-
-const TEMP_PASSWORD = "Risansi@2026";
 
 export type SetPasswordResult = { ok: true } | { ok: false; error: string };
 
@@ -30,10 +28,13 @@ export async function forceSetPassword(input: {
     return { ok: false, error: "New password must be at least 6 characters." };
   if (next !== input.confirmPassword)
     return { ok: false, error: "Passwords do not match." };
-  if (next === TEMP_PASSWORD)
+  // Reject reusing the password they're currently on. Compared against the
+  // stored hash rather than a hardcoded literal, so no shared credential ever
+  // lives in source — and this holds for any temporary password an admin issues.
+  if (await verifyPasswordById(user.id, next))
     return {
       ok: false,
-      error: "Choose a password different from the temporary one.",
+      error: "Choose a password different from your current one.",
     };
 
   await updatePassword(user.id, next); // also clears must_change_password

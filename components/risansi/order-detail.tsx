@@ -199,9 +199,18 @@ export function OrderDetail({
         <section className="rounded-xl border border-card-border bg-surface p-6 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
             <div>
-              <h2 className="font-display text-base font-semibold text-foreground">
-                EC orders
-              </h2>
+              <div className="flex flex-wrap items-center gap-2.5">
+                <h2 className="font-display text-base font-semibold text-foreground">
+                  EC orders
+                </h2>
+                {/* Dispatch status is an SO-level value (derived from this SO's
+                    invoices), so it's shown once here — not per EC. */}
+                {str(order.dispatch_status) && (
+                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                    Dispatch: {str(order.dispatch_status)}
+                  </span>
+                )}
+              </div>
               <p className="text-sm text-muted">
                 {items.length} {items.length === 1 ? "item" : "items"} under this SO.
               </p>
@@ -242,7 +251,6 @@ export function OrderDetail({
                         <th className="px-3 py-2">Model No.</th>
                         {!isSpareSo && <th className="px-3 py-2">Version</th>}
                         <th className="px-3 py-2">Qty</th>
-                        <th className="px-3 py-2">Dispatch Status</th>
                         <th className="px-3 py-2" />
                       </tr>
                     </thead>
@@ -265,11 +273,6 @@ export function OrderDetail({
                               <td className="px-3 py-2">{str(item.version) || "—"}</td>
                             )}
                             <td className="px-3 py-2 tabular-nums">{str(item.quantity) || "—"}</td>
-                            <td className="px-3 py-2">
-                              {str(item.dispatch_status) || (
-                                <span className="text-muted-foreground">—</span>
-                              )}
-                            </td>
                             <td className="px-3 py-2 whitespace-nowrap text-right">
                               <div className="flex items-center justify-end gap-2">
                                 <Link

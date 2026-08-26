@@ -20,6 +20,7 @@ import {
   type FilterDef,
 } from "./table-tools";
 import { AddOnForm } from "./add-on-form";
+import { ClientLookup } from "./client-lookup";
 
 function searchText(o: OrderListRow): string {
   const items = (o.items ?? [])
@@ -197,6 +198,10 @@ export function OrdersTable({
 
   return (
     <div>
+      {/* Create an SO straight from the Market Intell client directory. Only
+          shown to roles that may create orders (same gate as Add-On/delete). */}
+      {canDelete && <ClientLookup />}
+
       <FilterBar
         filters={ORDER_FILTERS}
         options={options}

@@ -34,6 +34,11 @@ import {
   type OrderTable,
 } from "@/lib/order-schema";
 import {
+  getClientByCode,
+  searchClients,
+  type MarketIntellClient,
+} from "@/lib/market-intell";
+import {
   canAccessDepartment,
   canCreateOrders,
   canEditChild,
@@ -92,6 +97,64 @@ export async function createOrderAction(
     console.error("createOrder failed:", error);
     return { ok: false, error: "Could not create the order. Please try again." };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Client lookup from the Market Intell database (READ-ONLY — see
+// lib/market-intell.ts). Powers the debounced client search on the orders page.
+// ---------------------------------------------------------------------------
+
+export type ClientSearchResult =
+  | { ok: true; clients: MarketIntellClient[] }
+  | { ok: false; error: string };
+
+/** Debounced type-ahead over Market Intell clients (code or legal name). */
+export async function searchClientsAction(
+  term: string
+): Promise<ClientSearchResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canCreateOrders(user.role)) {
+    return { ok: false, error: "You don't have permission to create orders." };
+  }
+  try {
+    return { ok: true, clients: await searchClients(term) };
+  } catch (error) {
+    console.error("searchClients failed:", error);
+    return { ok: false, error: "Could not reach the client directory." };
+  }
+}
+
+/**
+ * Create an SO seeded from a Market Intell client. Only the client CODE comes
+ * from the browser — the stored details are re-read server-side, so a tampered
+ * request can't inject arbitrary client data.
+ */
+export async function createOrderFromClientAction(
+  clientCode: string
+): Promise<CreateOrderResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canCreateOrders(user.role)) {
+    return { ok: false, error: "You don't have permission to create orders." };
+  }
+
+  let client: MarketIntellClient | null;
+  try {
+    client = await getClientByCode(clientCode);
+  } catch (error) {
+    console.error("getClientByCode failed:", error);
+    return { ok: false, error: "Could not reach the client directory." };
+  }
+  if (!client) return { ok: false, error: "That client was not found." };
+
+  return createOrderAction({
+    client_code: client.code,
+    client_name: client.legal_name ?? undefined,
+    market_type: client.market_type ?? undefined,
+    client_type: client.client_type ?? undefined,
+    industry_type: client.industry ?? undefined,
+  });
 }
 
 export type ViewPisPayload = {

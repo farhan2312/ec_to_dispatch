@@ -8,6 +8,7 @@ import {
   ArrowRight,
   CheckCircle2,
   FileSpreadsheet,
+  Download,
   Loader2,
   RotateCcw,
   Upload,
@@ -18,6 +19,7 @@ import {
   parseImportAction,
 } from "@/app/risansi/orders/import/actions";
 import type { ImportRow, ParsedImport } from "@/lib/order-import";
+import { TEMPLATE_HEADERS } from "@/lib/order-import-headers";
 
 // Preview columns, in sheet order. Values that came from the client directory
 // rather than the sheet are marked so it's obvious they were filled in.
@@ -61,22 +63,6 @@ function formatCell(value: string | undefined, format?: "date" | "number"): stri
   }
   return value;
 }
-
-// Shown as chips on the empty state so the sheet's shape is obvious at a glance.
-const EXPECTED_HEADERS = [
-  "Client code",
-  "Quotation No",
-  "So No",
-  "SO Date",
-  "Payment Terms",
-  "LD (yes/no)",
-  "LD Date",
-  "Cust Po no",
-  "Po Date",
-  "Order Quantity",
-  "Order Value",
-  "Order Type",
-];
 
 type Summary = { created: number; failures: { rowNo: number; error: string }[] };
 
@@ -227,14 +213,25 @@ export function OrderImport() {
           </p>
 
           {!parsing && (
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="mt-5 inline-flex h-11 items-center gap-2 rounded-[10px] bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
-            >
-              <Upload className="h-4 w-4" />
-              Choose file
-            </button>
+            <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                className="inline-flex h-11 items-center gap-2 rounded-[10px] bg-primary px-6 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
+              >
+                <Upload className="h-4 w-4" />
+                Choose file
+              </button>
+              {/* Blank workbook with just the header row, so the daily sheet
+                  always starts from the columns the parser expects. */}
+              <a
+                href="/risansi/orders/import/template"
+                className="inline-flex h-11 items-center gap-2 rounded-[10px] border border-input-border bg-surface px-5 text-sm font-semibold text-foreground transition-colors hover:bg-background"
+              >
+                <Download className="h-4 w-4" />
+                Download sample headers
+              </a>
+            </div>
           )}
 
           <div className="mx-auto mt-8 max-w-3xl border-t border-card-border pt-5">
@@ -242,7 +239,7 @@ export function OrderImport() {
               Expected columns
             </p>
             <div className="flex flex-wrap justify-center gap-1.5">
-              {EXPECTED_HEADERS.map((h) => (
+              {TEMPLATE_HEADERS.map((h) => (
                 <span
                   key={h}
                   className="rounded-full border border-card-border bg-background px-2.5 py-1 text-xs text-muted"

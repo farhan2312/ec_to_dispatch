@@ -181,6 +181,9 @@ export function OrderDetail({
                 data={data ?? null}
                 canEdit={canAccessDepartment(role, section.table)}
                 canEditCentral={central}
+                // Order details carries the client columns — offer the
+                // directory search there so a wrong client can be corrected.
+                clientLookup={section.table === "orders" && canManageItems}
               />
             );
           };

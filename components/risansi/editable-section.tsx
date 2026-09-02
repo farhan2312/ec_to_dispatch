@@ -12,7 +12,9 @@ import {
   type OrderSection,
 } from "@/lib/order-schema";
 import type { QcDocTable } from "@/lib/orders";
+import type { MarketIntellClient } from "@/lib/market-intell";
 import { QcDocumentsModal } from "./qc-documents-modal";
+import { ClientLookup } from "./client-lookup";
 
 export type DocumentsConfig = {
   table: QcDocTable;
@@ -78,6 +80,7 @@ export function EditableSection({
   canEdit,
   canEditCentral,
   documents = [],
+  clientLookup = false,
 }: {
   targetId: string;
   section: OrderSection;
@@ -85,6 +88,9 @@ export function EditableSection({
   canEdit: boolean;
   canEditCentral: boolean;
   documents?: DocumentsConfig[];
+  // Offers the Market Intell directory search while editing, to overwrite the
+  // client columns of this section.
+  clientLookup?: boolean;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -101,6 +107,28 @@ export function EditableSection({
     );
     setError(null);
     setEditing(true);
+  }
+
+  // Overwrite the client columns from a directory pick. Only columns this
+  // section actually has are touched — everything else stays as edited.
+  function applyClient(client: MarketIntellClient) {
+    const next: Record<string, string> = {
+      client_code: client.code,
+      client_name: client.legal_name ?? "",
+      market_type: client.market_type ?? "",
+      client_type: client.client_type ?? "",
+      industry_type: client.industry ?? "",
+      zone: client.zone ?? "",
+      reps: client.rep_name ?? "",
+    };
+    setValues((prev) => {
+      const merged = { ...prev };
+      for (const [col, val] of Object.entries(next)) {
+        if (col in merged) merged[col] = val;
+      }
+      return merged;
+    });
+    setError(null);
   }
 
   async function save() {
@@ -165,6 +193,13 @@ export function EditableSection({
         >
           {error}
         </div>
+      )}
+
+      {editing && clientLookup && (
+        <ClientLookup
+          onSelect={applyClient}
+          label="Replace client details from directory"
+        />
       )}
 
       {(() => {

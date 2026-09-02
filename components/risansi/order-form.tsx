@@ -6,6 +6,8 @@ import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { createOrderAction } from "@/app/risansi/orders/actions";
 import type { NewOrderInput } from "@/lib/orders";
+import type { MarketIntellClient } from "@/lib/market-intell";
+import { ClientLookup } from "./client-lookup";
 import {
   BILL_TYPE_OPTIONS,
   CURRENCY_OPTIONS,
@@ -35,6 +37,7 @@ const SECTIONS: Section[] = [
       { name: "industry_type", label: "Industry", type: "text" },
       { name: "client_type", label: "Client Type", type: "text" },
       { name: "market_type", label: "Market Type", type: "text" },
+      { name: "zone", label: "Zone", type: "text" },
       { name: "reps", label: "Rep(s)", type: "text" },
     ],
   },
@@ -217,6 +220,22 @@ export function OrderForm() {
     setValues((prev) => ({ ...prev, [name]: value }));
   }
 
+  // Picking a client from the Market Intell directory fills the Client
+  // section; everything else on the form is left untouched.
+  function applyClient(client: MarketIntellClient) {
+    setValues((prev) => ({
+      ...prev,
+      client_code: client.code,
+      client_name: client.legal_name ?? "",
+      market_type: client.market_type ?? "",
+      client_type: client.client_type ?? "",
+      industry_type: client.industry ?? "",
+      zone: client.zone ?? "",
+      reps: client.rep_name ?? "",
+    }));
+    setError(null);
+  }
+
   function firstMissingRequired(): Field | null {
     for (const section of SECTIONS) {
       for (const field of section.fields) {
@@ -248,7 +267,9 @@ export function OrderForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-4xl">
+    <div className="max-w-4xl">
+      <ClientLookup onSelect={applyClient} label="Fill client details from directory" />
+      <form onSubmit={handleSubmit}>
       {error && (
         <div
           role="alert"
@@ -333,6 +354,7 @@ export function OrderForm() {
           Cancel
         </Link>
       </div>
-    </form>
+      </form>
+    </div>
   );
 }

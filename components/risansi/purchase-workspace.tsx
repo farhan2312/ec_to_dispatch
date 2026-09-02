@@ -1,11 +1,12 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
-import { ChevronDown, Plus } from "lucide-react";
+import { ChevronDown, MessageSquare, Plus } from "lucide-react";
 import type { PurchaseQueueRow } from "@/lib/orders";
 import { BOI_ITEM_FIELDS } from "@/lib/order-schema";
 import { OrderChildList } from "./order-children";
 import { Pagination, SearchInput, useTableSearch } from "./table-tools";
+import { OrderThreadModal } from "./order-thread-modal";
 
 type Row = Record<string, unknown>;
 
@@ -28,12 +29,22 @@ export function PurchaseWorkspace({
   rows,
   canEdit,
   openItemId,
+  role,
+  unreadThreads = {},
 }: {
   rows: PurchaseQueueRow[];
   canEdit: boolean;
   openItemId?: string;
+  // The viewer's role — decides which discussion lane they get.
+  role: string;
+  // Unread discussion messages keyed by order id, for the row badge.
+  unreadThreads?: Record<string, number>;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [threadFor, setThreadFor] = useState<{
+    orderId: string;
+    soLabel: string;
+  } | null>(null);
   const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
     useTableSearch(rows, rowSearchText);
 
@@ -94,6 +105,7 @@ export function PurchaseWorkspace({
                 <th className="w-8 px-2 py-3" />
                 <th className="px-4 py-3">Sl.</th>
                 <th className="px-4 py-3">SO No.</th>
+                <th className="px-4 py-3">Chat</th>
                 <th className="px-4 py-3">SO Date</th>
                 <th className="px-4 py-3">Order Type</th>
                 <th className="px-4 py-3">BOI</th>
@@ -106,7 +118,7 @@ export function PurchaseWorkspace({
             <tbody className="divide-y divide-card-border">
               {soGroups.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-10 text-center text-sm text-muted">
+                  <td colSpan={11} className="px-4 py-10 text-center text-sm text-muted">
                     No orders match your search.
                   </td>
                 </tr>
@@ -134,6 +146,23 @@ export function PurchaseWorkspace({
                       </td>
                       <td className="px-4 py-3 font-medium tabular-nums">{g.head.sl_no}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{g.head.so_no ?? "—"}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setThreadFor({ orderId: String(g.head.order_id), soLabel: g.head.so_no ?? String(g.head.sl_no) })
+                          }
+                          className="relative inline-flex h-8 items-center gap-1.5 rounded-lg border border-input-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          Chat
+                          {(unreadThreads[String(g.head.order_id)] ?? 0) > 0 && (
+                            <span className="absolute -right-1.5 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
+                              {unreadThreads[String(g.head.order_id)]}
+                            </span>
+                          )}
+                        </button>
+                      </td>
                       <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDate(g.head.so_date)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{g.head.order_type ?? "—"}</td>
                       <td className="px-4 py-3">{g.head.boi ?? "—"}</td>
@@ -150,7 +179,7 @@ export function PurchaseWorkspace({
                     </tr>
                     {isOpen && (
                       <tr className="bg-background/40">
-                        <td colSpan={10} className="p-0">
+                        <td colSpan={11} className="p-0">
                           <div className="space-y-4 px-4 py-3">
                             {g.ecs.map((row) => (
                               <div
@@ -199,6 +228,15 @@ export function PurchaseWorkspace({
           total={total}
         />
       </div>
+
+      {threadFor && (
+        <OrderThreadModal
+          orderId={threadFor.orderId}
+          role={role}
+          soLabel={threadFor.soLabel}
+          onClose={() => setThreadFor(null)}
+        />
+      )}
     </div>
   );
 }

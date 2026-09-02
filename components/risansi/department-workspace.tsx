@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ClipboardList,
   Loader2,
+  MessageSquare,
   Paperclip,
   Pencil,
   Plus,
@@ -26,6 +27,7 @@ import { Pagination, SearchInput, useTableSearch } from "./table-tools";
 import { QcDocumentsModal } from "./qc-documents-modal";
 import { OrderDetailsModal } from "./order-details-modal";
 import { ViewPisModal } from "./view-pis-modal";
+import { OrderThreadModal } from "./order-thread-modal";
 import type { QcDocTable } from "@/lib/orders";
 
 // Only the QC workspace passes this today; kept generic (a list, so more than
@@ -103,6 +105,8 @@ export function DepartmentWorkspace({
   canEditCentral = true,
   documents = [],
   openOrderId,
+  role,
+  unreadThreads = {},
 }: {
   table: OrderTable;
   fields: OrderField[];
@@ -115,12 +119,20 @@ export function DepartmentWorkspace({
   documents?: DocumentsConfig[];
   // Deep-link from a notification: open this order's edit modal on load.
   openOrderId?: string;
+  // The viewer's role — decides which discussion lane they get.
+  role: string;
+  // Unread discussion messages keyed by order id, for the row badge.
+  unreadThreads?: Record<string, number>;
 }) {
   const [editRow, setEditRow] = useState<Row | null>(null);
   const [docsPanel, setDocsPanel] = useState<{ row: Row; config: DocumentsConfig } | null>(
     null
   );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [threadFor, setThreadFor] = useState<{
+    orderId: string;
+    soLabel: string;
+  } | null>(null);
 
   const { match: rowSearchText, placeholder: searchPlaceholder } =
     searchConfigFor(table);
@@ -264,9 +276,31 @@ export function DepartmentWorkspace({
     return (ec.child_rows ?? []) as Row[];
   }
 
+  // Opens this SO's discussion. Department users see only their own lane;
+  // Central sees every department's.
+  function ChatButton({ orderId, soLabel }: { orderId: string; soLabel: string }) {
+    const unread = unreadThreads[orderId] ?? 0;
+    return (
+      <button
+        type="button"
+        onClick={() => setThreadFor({ orderId, soLabel })}
+        aria-label={`Discussion for SO ${soLabel}`}
+        className="relative inline-flex h-8 items-center gap-1.5 rounded-lg border border-input-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+      >
+        <MessageSquare className="h-3.5 w-3.5" />
+        Chat
+        {unread > 0 && (
+          <span className="absolute -right-1.5 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
+            {unread}
+          </span>
+        )}
+      </button>
+    );
+  }
+
   const colCount = groupBySo
-    ? 3 + (showParty ? 1 : 0) + readonlyFields.length + 1 // toggle + Sl. + SO + client_name? + context + ECs count/edit
-    : 2 +
+    ? 4 + (showParty ? 1 : 0) + readonlyFields.length + 1 // toggle + Sl. + SO + client_name? + context + ECs + chat
+    : 3 +
       (showEcNo ? 1 : 0) +
       (showParty ? 1 : 0) +
       readonlyFields.length +
@@ -293,6 +327,7 @@ export function DepartmentWorkspace({
                 {groupBySo && <th className="w-8 px-2 py-3" />}
                 <th className="px-4 py-3">Sl.</th>
                 <th className="px-4 py-3">SO No.</th>
+                <th className="px-4 py-3">Chat</th>
                 {!groupBySo && showEcNo && <th className="px-4 py-3">EC No.</th>}
                 {showParty && <th className="px-4 py-3">Client Name</th>}
                 {readonlyFields.map((f) => (
@@ -341,6 +376,12 @@ export function DepartmentWorkspace({
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       {toInput(order.so_no) || "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <ChatButton
+                        orderId={String(order.order_id ?? order.id)}
+                        soLabel={toInput(order.so_no) || String(order.sl_no ?? "")}
+                      />
                     </td>
                     {showEcNo && (
                       <td className="px-4 py-3 whitespace-nowrap">
@@ -417,6 +458,12 @@ export function DepartmentWorkspace({
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           {toInput(g.head.so_no) || "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          <ChatButton
+                            orderId={String(g.head.order_id ?? g.head.id)}
+                            soLabel={toInput(g.head.so_no) || String(g.head.sl_no ?? "")}
+                          />
                         </td>
                         {showParty && (
                           <td className="px-4 py-3">
@@ -609,6 +656,15 @@ export function DepartmentWorkspace({
             .join(" · ")}
           canEdit={docsPanel.config.canEdit}
           onClose={() => setDocsPanel(null)}
+        />
+      )}
+
+      {threadFor && (
+        <OrderThreadModal
+          orderId={threadFor.orderId}
+          role={role}
+          soLabel={threadFor.soLabel}
+          onClose={() => setThreadFor(null)}
         />
       )}
     </div>

@@ -1151,6 +1151,7 @@ export async function listItemsForSection(
 
   const result = await query<Row>(
     `SELECT it.id,
+            it.order_id,
             it.seq::int AS seq,
             o.sl_no::int AS sl_no,
             o.so_no,
@@ -1229,6 +1230,7 @@ export async function listOrdersForBilling(): Promise<BillingQueueRow[]> {
 
 export type PurchaseQueueRow = {
   id: string;
+  order_id: string;
   sl_no: number;
   so_no: string | null;
   so_date: string | null;
@@ -1249,8 +1251,11 @@ export async function listItemsForPurchase(): Promise<PurchaseQueueRow[]> {
   // BOI = No SOs don't need Purchase involvement — hide them from the queue.
   const result = await query<PurchaseQueueRow>(
     `SELECT it.id,
+            it.order_id,
             o.sl_no::int AS sl_no,
             o.so_no,
+            to_char(o.so_date, 'YYYY-MM-DD') AS so_date,
+            o.order_type,
             it.ec_no,
             o.boi,
             o.ld,

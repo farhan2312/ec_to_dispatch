@@ -4,6 +4,7 @@ import { Receipt } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditChild, canEditSection } from "@/lib/roles";
 import { listOrdersForBilling } from "@/lib/orders";
+import { unreadByOrder } from "@/lib/order-messages";
 import { BillingWorkspace } from "@/components/risansi/billing-workspace";
 
 export const metadata: Metadata = {
@@ -26,6 +27,12 @@ export default async function BillingWorkspacePage({
   const { edit } = await searchParams;
   const orders = await listOrdersForBilling();
 
+  // Unread discussion messages per SO, for the row badge.
+  const unreadThreads = await unreadByOrder(
+    [...new Set(orders.map((r) => String(r.id)))],
+    user
+  );
+
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
       <div className="mb-6 flex items-center gap-3">
@@ -45,6 +52,8 @@ export default async function BillingWorkspacePage({
       </div>
 
       <BillingWorkspace
+        role={user.role}
+        unreadThreads={unreadThreads}
         rows={orders}
         canEdit={canEditChild(user.role, "order_billing_docs")}
         openOrderId={edit}

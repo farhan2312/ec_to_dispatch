@@ -1548,3 +1548,45 @@ CREATE INDEX IF NOT EXISTS order_drawing_revisions_item_id_idx
 DROP TRIGGER IF EXISTS order_drawing_revisions_set_updated_at ON order_drawing_revisions;
 CREATE TRIGGER order_drawing_revisions_set_updated_at BEFORE UPDATE ON order_drawing_revisions
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ---------------------------------------------------------------------------
+-- order_messages
+-- Per-SO discussion, used to record progress notes and (from Phase 2) delay
+-- reasons against an order.
+--
+-- Visibility mirrors the DM rule in lib/chat.ts: there is NO cross-department
+-- visibility. Every message belongs to a *lane* — `dept_role` — which is the
+-- department side of that conversation. A department user sees only the lane
+-- for their own role; Admin / Central Visibility see every lane. A department
+-- user's own posts always land in their own lane; when Central posts they pick
+-- the lane they are replying in.
+--
+-- Append-only by design: no update/delete path, so the thread stands as a
+-- record of what was said and when.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS order_messages (
+    id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id     UUID        NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    dept_role    TEXT        NOT NULL,  -- lane: the department side of the thread
+    author_id    UUID        REFERENCES users(id) ON DELETE SET NULL,
+    author_name  TEXT        NOT NULL,  -- snapshot, so a removed user still renders
+    author_role  TEXT        NOT NULL,
+    -- 'note' today; Phase 2 adds 'delay' / 'resolution' alongside the
+    -- reason/owner/expected-date columns.
+    kind         TEXT        NOT NULL DEFAULT 'note',
+    body         TEXT        NOT NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Thread fetch: one lane of one SO, oldest first.
+CREATE INDEX IF NOT EXISTS order_messages_lane_idx
+    ON order_messages (order_id, dept_role, created_at);
+
+-- Per-user, per-lane read marker — unread = messages newer than this. Mirrors
+-- users.notifications_seen_at, but scoped to a single SO lane.
+CREATE TABLE IF NOT EXISTS order_message_reads (
+    user_id      UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    order_id     UUID        NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    dept_role    TEXT        NOT NULL,
+    last_read_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, order_id, dept_role)
+);

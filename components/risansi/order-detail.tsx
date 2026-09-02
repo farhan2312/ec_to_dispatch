@@ -17,6 +17,7 @@ import { EditableSection } from "./editable-section";
 import { AddOnForm } from "./add-on-form";
 import { OrderChildList } from "./order-children";
 import { InvoiceLrCell } from "./invoice-lr-cell";
+import { OrderThread } from "./order-thread";
 
 type Row = Record<string, unknown>;
 
@@ -118,6 +119,16 @@ export function OrderDetail({
       </div>
 
       <div className="max-w-6xl space-y-6">
+        {/* Per-SO discussion. One lane per department, no cross-department
+            visibility — Central picks who they are replying to. */}
+        <OrderThread
+          orderId={orderId}
+          role={role}
+          soLabel={soLabel}
+          collapsible
+          defaultOpen={false}
+        />
+
         {(() => {
           // Render a single SO-scope section — Billing is a compound view
           // (Challan fields or PI list + the Stage-5 invoices list).
@@ -315,6 +326,7 @@ export function OrderDetail({
             );
           }
         })()}
+
       </div>
 
       {addOpen && (

@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { canEditChild, canEditSection, reminderDeptForTable } from "@/lib/roles";
 import { listItemsForPurchase } from "@/lib/orders";
 import { listRemindersForDepartment } from "@/lib/reminders";
+import { unreadByOrder } from "@/lib/order-messages";
 import { PurchaseWorkspace } from "@/components/risansi/purchase-workspace";
 import { RemindersPanel } from "@/components/risansi/reminders-panel";
 
@@ -31,6 +32,12 @@ export default async function PurchaseWorkspacePage({
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);
 
+  // Unread discussion messages per SO, for the row badge.
+  const unreadThreads = await unreadByOrder(
+    [...new Set(items.map((r) => String(r.order_id)))],
+    user
+  );
+
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
       <div className="mb-6 flex items-center gap-3">
@@ -52,6 +59,8 @@ export default async function PurchaseWorkspacePage({
       <RemindersPanel reminders={reminders} />
 
       <PurchaseWorkspace
+        role={user.role}
+        unreadThreads={unreadThreads}
         rows={items}
         canEdit={canEditChild(user.role, "order_boi_items")}
         openItemId={edit}

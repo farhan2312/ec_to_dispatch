@@ -6,6 +6,7 @@ import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
 import { listItemsForSection } from "@/lib/orders";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import { PLANNING_CONTEXT_FIELDS, SECTION_BY_TABLE } from "@/lib/order-schema";
+import { unreadByOrder } from "@/lib/order-messages";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
 import { RemindersPanel } from "@/components/risansi/reminders-panel";
 
@@ -40,6 +41,13 @@ export default async function PlanningWorkspacePage({
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);
 
+  // Unread discussion messages per SO, for the row badge. Rows are ECs in
+  // the item-scope workspaces (order_id) and SOs in the SO-scope ones (id).
+  const unreadThreads = await unreadByOrder(
+    [...new Set(orders.map((o) => String(o.order_id ?? o.id)))],
+    user
+  );
+
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
       <div className="mb-6 flex items-center gap-3">
@@ -60,6 +68,8 @@ export default async function PlanningWorkspacePage({
       <RemindersPanel reminders={reminders} />
 
       <DepartmentWorkspace
+        role={user.role}
+        unreadThreads={unreadThreads}
         table={TABLE}
         fields={section.fields}
         orders={orders}

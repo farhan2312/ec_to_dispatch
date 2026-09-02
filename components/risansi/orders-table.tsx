@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
   ChevronDown,
   ChevronRight,
-  Download,
   Loader2,
   Plus,
   Trash2,
@@ -152,7 +151,6 @@ export function OrdersTable({
     options,
     activeCount,
     pageRows,
-    filtered,
     page,
     setPage,
     totalPages,
@@ -164,8 +162,6 @@ export function OrdersTable({
   // expand-toggle + 9 data columns + open + optional Add-On/delete.
   const baseCols = 11;
   const colSpan = baseCols + (canDelete ? 1 : 0);
-  const isFiltered = activeCount > 0 || query.trim() !== "";
-
   function toggle(id: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -173,15 +169,6 @@ export function OrdersTable({
       else next.add(id);
       return next;
     });
-  }
-
-  function handleExport() {
-    const url = isFiltered
-      ? `/api/orders/export?ids=${filtered.map((o) => o.id).join(",")}`
-      : "/api/orders/export";
-    const a = document.createElement("a");
-    a.href = url;
-    a.click();
   }
 
   async function handleDelete(order: OrderListRow) {
@@ -214,17 +201,6 @@ export function OrdersTable({
         total={total}
         searchPlaceholder="Search SO, client name, client code, EC…"
       />
-
-      <div className="mb-3 flex justify-end">
-        <button
-          type="button"
-          onClick={handleExport}
-          className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-blue-900 border border-blue-900 px-3 text-sm font-medium text-white transition-colors hover:bg-blue-800 disabled:opacity-50"
-        >
-          <Download className="h-4 w-4" />
-          {isFiltered ? `Export ${total} filtered` : "Export all"}
-        </button>
-      </div>
 
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">
         <div className="overflow-x-auto">

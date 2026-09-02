@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ClipboardList, Plus } from "lucide-react";
+import { ClipboardList, Plus, Upload } from "lucide-react";
 import { listOrders } from "@/lib/orders";
 import { getCurrentUser } from "@/lib/session";
 import { canCreateOrders, isCentral } from "@/lib/roles";
@@ -44,6 +44,13 @@ export default async function OrdersPage() {
 
         {canCreate && (
           <div className="flex shrink-0 items-center gap-2">
+            <Link
+              href="/risansi/orders/import"
+              className="inline-flex h-10 items-center gap-2 rounded-lg border border-input-border bg-surface px-4 text-sm font-semibold text-foreground transition-colors hover:bg-background"
+            >
+              <Upload className="h-4 w-4" />
+              Import orders
+            </Link>
             <Link
               href="/risansi/orders/new"
               className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"

@@ -57,7 +57,10 @@ export const INDUSTRY_TYPE_OPTIONS = opts(["Sugar", "Non Sugar"]);
 export const CURRENCY_OPTIONS = opts(["INR", "USD"]);
 export const ITEM_OPTIONS = opts(["Pump", "Spare", "ROLB"]);
 // SO-level Order Type; each EC/Add-On inherits it as its item_type.
-export const ORDER_TYPE_OPTIONS = opts(["Pump", "Spare"]);
+export const ORDER_TYPE_OPTIONS = opts(["Pump", "Spare", "ROLB"]);
+// ROLB is handled exactly like a Pump (same Add-On form, same per-EC fields);
+// only the name differs. Pump-only gates accept either.
+export const PUMP_LIKE = ["Pump", "ROLB"];
 // Per-EC pump family, only shown on Pump Add-Ons.
 export const PUMP_TYPE_OPTIONS = opts(["PCP", "MMP", "RBL", "OLB"]);
 // Bill Type (SO-level) — decides which billing document fields apply to each
@@ -143,6 +146,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "industry_type", label: "Industry", type: "text", group: "Client" },
       { column: "client_type", label: "Client Type", type: "text", group: "Client" },
       { column: "market_type", label: "Market Type", type: "text", group: "Client" },
+      { column: "zone", label: "Zone", type: "text", group: "Client" },
       { column: "reps", label: "Rep(s)", type: "text", group: "Client" },
 
       // Purchase Order Details — SO Order Type is inherited by every EC.
@@ -325,17 +329,17 @@ export const ORDER_SECTIONS: OrderSection[] = [
         label: "Pump Type",
         type: "select",
         options: PUMP_TYPE_OPTIONS,
-        dependsOn: [{ column: "item_type", value: "Pump" }],
+        dependsOn: [{ column: "item_type", value: PUMP_LIKE }],
       },
       { column: "model_no", label: "Model No.", type: "text" },
       // Captured on both Pump and Spare Add-On forms, so not gated.
       { column: "internal_model", label: "Internal Model", type: "text" },
       { column: "version", label: "Series Version", type: "text" },
       { column: "quantity", label: "Quantity", type: "int" },
-      { column: "suction", label: "Suction", type: "text", dependsOn: [{ column: "item_type", value: "Pump" }] },
-      { column: "delivery", label: "Delivery", type: "text", dependsOn: [{ column: "item_type", value: "Pump" }] },
-      { column: "pump_sno", label: "Pump Serial No.", type: "text", dependsOn: [{ column: "item_type", value: "Pump" }] },
-      { column: "application", label: "Application", type: "text", dependsOn: [{ column: "item_type", value: "Pump" }] },
+      { column: "suction", label: "Suction", type: "text", dependsOn: [{ column: "item_type", value: PUMP_LIKE }] },
+      { column: "delivery", label: "Delivery", type: "text", dependsOn: [{ column: "item_type", value: PUMP_LIKE }] },
+      { column: "pump_sno", label: "Pump Serial No.", type: "text", dependsOn: [{ column: "item_type", value: PUMP_LIKE }] },
+      { column: "application", label: "Application", type: "text", dependsOn: [{ column: "item_type", value: PUMP_LIKE }] },
     ],
   },
   {
@@ -387,16 +391,11 @@ export const ORDER_SECTIONS: OrderSection[] = [
     title: "Drawing",
     table: "order_drawing",
     scope: "item",
-    fields: [
-      {
-        column: "drg_status",
-        label: "DRG Status",
-        type: "select",
-        options: opts(["Drg. Not issued", "Drg Not Approved", "Drg approved"]),
-      },
-      { column: "drg_sent_to_client_date", label: "DRG Sent to Client", type: "date" },
-      { column: "drg_approval_date", label: "DRG Approval Date", type: "date" },
-    ],
+    // Drawing is tracked as a list of revisions (add-on) rather than flat
+    // fields — see DRAWING_REVISION_FIELDS. The legacy drg_* columns are
+    // retained in the DB but no longer surfaced.
+    fields: [],
+    childTable: "order_drawing_revisions",
   },
   {
     // Purchase is now a per-EC list of bought-out items (order_boi_items),
@@ -438,7 +437,20 @@ export const ORDER_SECTIONS: OrderSection[] = [
       // "Packing Details Required" in Purchase Order Details.)
       // Filled by Planning. (Purchase target date moved to the SO — Central
       // Visibility sets it in Purchase Order Details.)
-      { column: "pump_readiness_remarks", label: "Pump Readiness Remarks", type: "text" },
+      // Readiness remarks — one field per item type, gated so only the
+      // relevant one shows on an EC.
+      {
+        column: "pump_readiness_remarks",
+        label: "Pump Readiness Remarks",
+        type: "text",
+        dependsOn: [{ column: "item_type", value: PUMP_LIKE }],
+      },
+      {
+        column: "spare_readiness_remarks",
+        label: "Spare Readiness Remarks",
+        type: "text",
+        dependsOn: [{ column: "item_type", value: "Spare" }],
+      },
       { column: "planning_readiness_date", label: "Readiness Date Rcvd from Planning", type: "date" },
       { column: "planning_status", label: "Planning Status", type: "text" },
       {
@@ -453,6 +465,21 @@ export const ORDER_SECTIONS: OrderSection[] = [
           "Assembled",
           "Packed",
         ]),
+        dependsOn: [{ column: "item_type", value: PUMP_LIKE }],
+      },
+      {
+        column: "actual_spare_status",
+        label: "Actual Spare Status",
+        type: "select",
+        options: opts([
+          "Date awaited",
+          "EC under preparation",
+          "Partial ready",
+          "In plan",
+          "Ready",
+          "Packed",
+        ]),
+        dependsOn: [{ column: "item_type", value: "Spare" }],
       },
       { column: "assembled_packed_qty", label: "Assembled / Packed Qty", type: "text" },
       { column: "assembly_date", label: "Assembly Date", type: "date" },
@@ -537,7 +564,8 @@ export type ChildTable =
   | "order_boi_items"
   | "order_billing_docs"
   | "order_packing_slips"
-  | "order_invoices";
+  | "order_invoices"
+  | "order_drawing_revisions";
 
 // A packing slip under an EC. Planning files the tentative set, Packing files
 // the actual set (same shape, different `kind` — see PACKING_SLIP_KINDS).
@@ -707,7 +735,61 @@ export const BOI_ITEM_FIELDS: OrderField[] = [
   { column: "remarks", label: "Remarks", type: "text" },
 ];
 
+// One drawing revision for an EC. Each of the three hand-offs is a Yes/No
+// plus its date — "No" reads as "not issued / not approved". Approval is
+// Central Visibility's call, so Drawing sees those two read-only.
+export const DRAWING_REVISION_FIELDS: OrderField[] = [
+  // `group` renders each hand-off as its own labelled subsection with a
+  // divider between them (same card layout the invoice phases use).
+  { column: "revision_no", label: "Revision No.", type: "text", group: "Revision" },
+
+  {
+    column: "issued_to_client",
+    label: "Drg. issued to Client",
+    type: "select",
+    options: YES_NO,
+    group: "Issued to Client",
+  },
+  {
+    column: "issued_to_client_date",
+    label: "Issued to Client Dt.",
+    type: "date",
+    group: "Issued to Client",
+  },
+
+  {
+    column: "approved",
+    label: "Drg. Approved",
+    type: "select",
+    options: YES_NO,
+    centralOnly: true,
+    group: "Approval",
+  },
+  {
+    column: "approved_date",
+    label: "Approved Dt.",
+    type: "date",
+    centralOnly: true,
+    group: "Approval",
+  },
+
+  {
+    column: "issued_to_production",
+    label: "Drg. issued to Production",
+    type: "select",
+    options: YES_NO,
+    group: "Issued to Production",
+  },
+  {
+    column: "issued_to_production_date",
+    label: "Issued to Production Dt.",
+    type: "date",
+    group: "Issued to Production",
+  },
+];
+
 export const CHILD_FIELDS: Record<ChildTable, OrderField[]> = {
+  order_drawing_revisions: DRAWING_REVISION_FIELDS,
   order_lots: LOT_FIELDS,
   order_boi_items: BOI_ITEM_FIELDS,
   order_billing_docs: BILLING_DOC_FIELDS,
@@ -715,9 +797,23 @@ export const CHILD_FIELDS: Record<ChildTable, OrderField[]> = {
   order_invoices: INVOICE_FIELDS,
 };
 
+// SO-level context every department sees read-only, so each team knows when
+// the order was raised and whether it's a Pump or Spare order. Prepended to
+// each department's own context fields below.
+export const SO_CONTEXT_FIELDS: OrderField[] = [
+  { column: "so_date", label: "Sales Order Date", type: "date" },
+  {
+    column: "order_type",
+    label: "Order Type",
+    type: "select",
+    options: ORDER_TYPE_OPTIONS,
+  },
+];
+
 // Payment Terms (owned by Central Visibility) shown read-only in the Accounts
 // workspace.
 export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
+  ...SO_CONTEXT_FIELDS,
   { column: "payment_terms", label: "Payment Terms", type: "text" },
 ];
 
@@ -725,6 +821,7 @@ export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
 // Packing. bill_type is what each PI's document fields gate on. (Amount
 // Received / Balance are per-PI now — see BILLING_DOC_FIELDS.)
 export const BILLING_CONTEXT_FIELDS: OrderField[] = [
+  ...SO_CONTEXT_FIELDS,
   { column: "payment_terms", label: "Payment Terms", type: "text" },
   {
     column: "bill_type",
@@ -749,18 +846,21 @@ export const BILLING_CONTEXT_FIELDS: OrderField[] = [
 // Target Date for Drawing — an EC attribute (order_items) shown read-only in
 // the Drawing workspace.
 export const DRAWING_CONTEXT_FIELDS: OrderField[] = [
+  ...SO_CONTEXT_FIELDS,
   { column: "drg_target_date", label: "Target Date for Drawing", type: "date" },
 ];
 
 // QC target date — SO-level, in Purchase Order Details. Shown read-only in
 // the QC workspace.
 export const QC_CONTEXT_FIELDS: OrderField[] = [
+  ...SO_CONTEXT_FIELDS,
   { column: "qc_doc_target_date", label: "Quality Target Date", type: "date" },
 ];
 
 // BOI, Purchase target, and LD / LD Date (all SO-level, on orders) shown
 // read-only in the Purchase workspace.
 export const PURCHASE_CONTEXT_FIELDS: OrderField[] = [
+  ...SO_CONTEXT_FIELDS,
   { column: "boi", label: "BOI", type: "select", options: YES_NO },
   { column: "purchase_target_date", label: "Target Date for Purchase", type: "date" },
   { column: "ld", label: "LD", type: "select", options: YES_NO },
@@ -770,6 +870,7 @@ export const PURCHASE_CONTEXT_FIELDS: OrderField[] = [
 // Target Date for Packing Team (SO-level) shown read-only in the Assembly &
 // Packing workspace.
 export const DISPATCH_CONTEXT_FIELDS: OrderField[] = [
+  ...SO_CONTEXT_FIELDS,
   {
     column: "dispatch_team_target_date",
     label: "Target Date for Packing Team",
@@ -780,6 +881,7 @@ export const DISPATCH_CONTEXT_FIELDS: OrderField[] = [
 // Dispatch dates (SO-level, on orders) shown read-only in the Planning
 // workspace, so Planning sees the dates it must schedule to.
 export const PLANNING_CONTEXT_FIELDS: OrderField[] = [
+  ...SO_CONTEXT_FIELDS,
   { column: "dispatch_target_date", label: "Dispatch Target Date", type: "date" },
   {
     column: "dispatch_target_revised_date",

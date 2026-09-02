@@ -154,6 +154,8 @@ export async function createOrderFromClientAction(
     market_type: client.market_type ?? undefined,
     client_type: client.client_type ?? undefined,
     industry_type: client.industry ?? undefined,
+    zone: client.zone ?? undefined,
+    reps: client.rep_name ?? undefined,
   });
 }
 
@@ -513,13 +515,20 @@ export async function updateOrderSectionAction(
 
 export type ChildActionResult = { ok: true } | { ok: false; error: string };
 
-const CHILD_TABLES: readonly ChildTable[] = [
-  "order_lots",
-  "order_boi_items",
-  "order_billing_docs",
-  "order_packing_slips",
-  "order_invoices",
-];
+// Runtime allow-list for the `table` argument, which crosses a server-action
+// boundary. Keep in sync with the ChildTable union — the `Record` type below
+// makes a missing entry a compile error rather than a silent "Unknown list."
+const CHILD_TABLES_SET: Record<ChildTable, true> = {
+  order_lots: true,
+  order_boi_items: true,
+  order_billing_docs: true,
+  order_packing_slips: true,
+  order_invoices: true,
+  order_drawing_revisions: true,
+};
+const CHILD_TABLES: readonly ChildTable[] = Object.keys(
+  CHILD_TABLES_SET
+) as ChildTable[];
 
 function isChildTable(table: string): table is ChildTable {
   return (CHILD_TABLES as readonly string[]).includes(table);
@@ -578,8 +587,14 @@ export async function updateOrderChildAction(
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
   const tbl = table as ChildTable;
-  // Ignore any keys not in the child schema.
-  const allowed = new Set(CHILD_FIELDS[tbl].map((f) => f.column));
+  // Ignore any keys not in the child schema, and drop `centralOnly` fields
+  // when the caller isn't Central Visibility — the UI renders those read-only,
+  // but the action is a public endpoint so it must enforce it too.
+  const allowed = new Set(
+    CHILD_FIELDS[tbl]
+      .filter((f) => !f.centralOnly || isCentral(user.role))
+      .map((f) => f.column)
+  );
   const clean = Object.fromEntries(
     Object.entries(values).filter(([k]) => allowed.has(k))
   );
@@ -616,7 +631,9 @@ export async function updateOrderChildAction(
     // so we must resolve the real SO id — otherwise the INSERT hits an FK
     // violation and the notification is silently dropped.
     const isPerEc =
-      tbl === "order_boi_items" || tbl === "order_packing_slips";
+      tbl === "order_boi_items" ||
+      tbl === "order_packing_slips" ||
+      tbl === "order_drawing_revisions";
     const soOrderId = isPerEc
       ? (await getChildOrderId(tbl, id)) ?? null
       : orderId;

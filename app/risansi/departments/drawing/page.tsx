@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { PenTool } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canEditSection, reminderDeptForTable } from "@/lib/roles";
+import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
 import { listItemsForSection } from "@/lib/orders";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import {
@@ -54,8 +54,9 @@ export default async function DrawingWorkspacePage({
             Drawing
           </h1>
           <p className="text-sm text-muted">
-            Update drawing status and approval dates. Target Date for DRG is set
-            by Central Visibility.
+            Record a revision per drawing issue. You fill the issued-to-Client
+            and issued-to-Production hand-offs; approval is recorded by Central
+            Visibility and shown here read-only.
           </p>
         </div>
       </div>
@@ -67,6 +68,10 @@ export default async function DrawingWorkspacePage({
         fields={section.fields}
         orders={orders}
         readonlyFields={DRAWING_CONTEXT_FIELDS}
+        // Approval on a revision is Central Visibility's to set — Drawing sees
+        // it read-only. Without this the prop defaults to true and Drawing
+        // could edit it.
+        canEditCentral={isCentral(user.role)}
         openOrderId={edit}
       />
     </div>

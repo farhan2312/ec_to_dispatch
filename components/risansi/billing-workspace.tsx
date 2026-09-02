@@ -16,6 +16,17 @@ function rowSearchText(o: BillingQueueRow): string {
   return [o.sl_no, o.so_no, o.client_name].filter(Boolean).join(" ");
 }
 
+function formatDate(value: string | null): string {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 const numberFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 function formatValue(v: string | null): string {
   if (!v || v.trim() === "") return "—";
@@ -79,6 +90,8 @@ export function BillingWorkspace({
                 <th className="w-8 px-2 py-3" />
                 <th className="px-4 py-3">Sl.</th>
                 <th className="px-4 py-3">SO No.</th>
+                <th className="px-4 py-3">SO Date</th>
+                <th className="px-4 py-3">Order Type</th>
                 <th className="px-4 py-3">Client Name</th>
                 <th className="px-4 py-3">Bill Type</th>
                 <th className="px-4 py-3">Payment Terms</th>
@@ -90,7 +103,7 @@ export function BillingWorkspace({
             <tbody className="divide-y divide-card-border">
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-sm text-muted">
+                  <td colSpan={11} className="px-4 py-10 text-center text-sm text-muted">
                     No orders match your search.
                   </td>
                 </tr>
@@ -118,6 +131,8 @@ export function BillingWorkspace({
                       </td>
                       <td className="px-4 py-3 font-medium tabular-nums">{row.sl_no}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{row.so_no ?? "—"}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDate(row.so_date)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{row.order_type ?? "—"}</td>
                       <td className="px-4 py-3">{row.client_name ?? "—"}</td>
                       <td className="px-4 py-3">{row.bill_type ?? "—"}</td>
                       <td className="px-4 py-3">{row.payment_terms ?? "—"}</td>
@@ -147,7 +162,7 @@ export function BillingWorkspace({
                     </tr>
                     {isOpen && (
                       <tr className="bg-background/40">
-                        <td colSpan={9} className="p-0">
+                        <td colSpan={11} className="p-0">
                           <div className="space-y-4 px-4 py-3">
                             {/* Challan orders skip the Operation card — their
                                 challan fields live inside each Billing &

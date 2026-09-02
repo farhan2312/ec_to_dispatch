@@ -111,7 +111,9 @@ export function ItemDetail({
                       ? "Tentative packing Details"
                       : "Actual packing Details"
                   }`
-                : `${section.title} — BOI Items`;
+                : child === "order_drawing_revisions"
+                  ? `${section.title} — Revisions`
+                  : `${section.title} — BOI Items`;
 
             return (
               <div key={section.key} className="space-y-6">
@@ -137,6 +139,7 @@ export function ItemDetail({
                     fields={CHILD_FIELDS[child]}
                     rows={rows}
                     canEdit={canEditChild(role, child)}
+                    canEditCentral={central}
                     kind={section.childKind}
                     context={childContext}
                   />
@@ -156,7 +159,11 @@ export function ItemDetail({
             );
           }
 
-          const data =
+          // Department rows don't carry item_type, but some of their fields
+          // gate on it (e.g. Planning's pump-only fields). Merge it in so
+          // dependsOn resolves the same way it does in the dept workspace,
+          // whose queue rows already include item_type.
+          const rawData =
             section.table === "order_items"
               ? detail.item
               : (detail[
@@ -166,6 +173,10 @@ export function ItemDetail({
                     | "order_planning"
                     | "order_assembly_dispatch"
                 ] as Row | null);
+          const data: Row | null =
+            section.table === "order_items"
+              ? rawData
+              : { ...(rawData ?? {}), item_type: item.item_type };
 
           const documents: DocumentsConfig[] | undefined =
             section.table === "order_qc"

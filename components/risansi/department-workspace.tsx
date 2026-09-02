@@ -189,6 +189,9 @@ export function DepartmentWorkspace({
   const visibleFields = fields.filter(
     (f) => !f.dependsOn || orders.some((o) => fieldApplies(f, o))
   );
+  // A section can be purely a child list (Drawing → revisions). Then the flat
+  // per-EC table and its Edit button carry nothing, so we skip them entirely.
+  const hasFlatColumns = visibleFields.length > 0 || documents.length > 0;
 
   // Item-scope layout: one row per SO (with the SO's readonly context) + a
   // nested EC subtable for that SO's department fields.
@@ -240,7 +243,13 @@ export function DepartmentWorkspace({
   const childTable = section?.childTable;
   const childKind = section?.childKind;
   const childTitle =
-    childKind === "tentative" ? "Tentative packing Details" : "Actual packing Details";
+    childTable === "order_drawing_revisions"
+      ? "Drawing Revisions"
+      : childTable === "order_boi_items"
+        ? "Bought-out items"
+        : childKind === "tentative"
+          ? "Tentative packing Details"
+          : "Actual packing Details";
   // The gate is a property of each SO (e.g. its Market Type), so it's
   // evaluated against that SO's own row, not the queue as a whole.
   function childGateOkFor(head: Row): boolean {
@@ -429,6 +438,7 @@ export function DepartmentWorkspace({
                       {isOpen && (
                         <tr className="bg-background/40">
                           <td colSpan={colCount} className="p-0">
+                            {hasFlatColumns && (
                             <div className="overflow-x-auto px-4 py-3">
                               <table className="w-full text-sm">
                                 <thead>
@@ -507,7 +517,10 @@ export function DepartmentWorkspace({
                                   ))}
                                 </tbody>
                               </table>
+                            </div>
+                            )}
 
+                            <div className="px-4 py-3">
                               {/* Sections with a per-EC child list (Planning /
                                   Packing → packing slips) render it per EC. */}
                               {childTable && (
@@ -535,6 +548,7 @@ export function DepartmentWorkspace({
                                           fields={CHILD_FIELDS[childTable]}
                                           rows={childRowsFor(ec)}
                                           canEdit={canEdit}
+                                          canEditCentral={canEditCentral}
                                           kind={childKind}
                                           context={{
                                             market_type: ec.market_type,

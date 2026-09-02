@@ -61,10 +61,25 @@ export type MarketIntellClient = {
   market_type: string | null;
   client_type: string | null;
   industry: string | null;
+  /** Territory, from the client's tour route (clients.tour_id → tour_routes). */
+  zone: string | null;
+  /** Primary rep's display name (clients.primary_rep_id → users). */
+  rep_name: string | null;
 };
 
-const SELECT_COLUMNS =
-  "code, legal_name, market_type, client_type, industry";
+// Zone comes from the client's tour route, not from the rep — `users.zone` is
+// the rep's own zone, and `clients.zone` is unpopulated upstream.
+const SELECT_COLUMNS = `c.code,
+        c.legal_name,
+        c.market_type,
+        c.client_type,
+        c.industry,
+        tr.zone      AS zone,
+        u.name       AS rep_name`;
+
+const FROM_JOINS = `FROM public.clients c
+       LEFT JOIN public.tour_routes tr ON tr.id = c.tour_id
+       LEFT JOIN public.users u        ON u.id  = c.primary_rep_id`;
 
 /**
  * Search live clients by code or legal name. Prefix matches rank first, then
@@ -82,18 +97,18 @@ export async function searchClients(
 
   const result = await getPool().query<MarketIntellClient>(
     `SELECT ${SELECT_COLUMNS}
-       FROM public.clients
-      WHERE deleted_at IS NULL
-        AND code IS NOT NULL
-        AND (code ILIKE $1 OR legal_name ILIKE $1)
+       ${FROM_JOINS}
+      WHERE c.deleted_at IS NULL
+        AND c.code IS NOT NULL
+        AND (c.code ILIKE $1 OR c.legal_name ILIKE $1)
       ORDER BY
         CASE
-          WHEN code ILIKE $2 THEN 0
-          WHEN legal_name ILIKE $2 THEN 1
+          WHEN c.code ILIKE $2 THEN 0
+          WHEN c.legal_name ILIKE $2 THEN 1
           ELSE 2
         END,
-        legal_name NULLS LAST,
-        code
+        c.legal_name NULLS LAST,
+        c.code
       LIMIT $3`,
     [contains, prefix, limit]
   );
@@ -109,8 +124,8 @@ export async function getClientByCode(
   if (!c) return null;
   const result = await getPool().query<MarketIntellClient>(
     `SELECT ${SELECT_COLUMNS}
-       FROM public.clients
-      WHERE deleted_at IS NULL AND code = $1
+       ${FROM_JOINS}
+      WHERE c.deleted_at IS NULL AND c.code = $1
       LIMIT 1`,
     [c]
   );

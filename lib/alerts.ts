@@ -33,8 +33,12 @@ const ALERTS_SQL = `
    WHERE o.drg_target_date < ${TODAY_IST}
      AND EXISTS (
        SELECT 1 FROM order_items it
-        LEFT JOIN order_drawing dr ON dr.item_id = it.id
-        WHERE it.order_id = o.id AND dr.drg_sent_to_client_date IS NULL
+        WHERE it.order_id = o.id
+          AND NOT EXISTS (
+            SELECT 1 FROM order_drawing_revisions rv
+             WHERE rv.item_id = it.id
+               AND lower(coalesce(rv.issued_to_client, '')) = 'yes'
+          )
      )
 
   UNION ALL

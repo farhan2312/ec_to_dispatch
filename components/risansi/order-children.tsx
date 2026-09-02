@@ -28,6 +28,7 @@ export function OrderChildList({
   fields,
   rows,
   canEdit,
+  canEditCentral = true,
   canAdd,
   kind,
   context,
@@ -40,6 +41,9 @@ export function OrderChildList({
   fields: OrderField[];
   rows: Row[];
   canEdit: boolean;
+  // Whether the viewer may edit `centralOnly` fields (Central Visibility).
+  // Non-central owners see those read-only, mirroring EditableSection.
+  canEditCentral?: boolean;
   // Whether new rows may be added — defaults to canEdit. Set false to keep
   // existing rows editable/deletable while retiring new additions (e.g.
   // Dispatch Lots, now superseded by Billing's per-SO invoices).
@@ -100,6 +104,14 @@ export function OrderChildList({
     // Otherwise the column appears once some row qualifies (e.g. Item = Others).
     return rows.some((r) => applies(f, r));
   });
+
+  // Editable unless derived, explicitly read-only, or a centralOnly field
+  // the viewer does not own.
+  function fieldEditable(f: OrderField): boolean {
+    if (f.computed || f.readOnly) return false;
+    if (f.centralOnly && !canEditCentral) return false;
+    return true;
+  }
 
   function update(row: Row, column: string, value: string) {
     const id = String(row.id);
@@ -178,6 +190,7 @@ export function OrderChildList({
               groups={groupBuckets}
               renderExtra={renderExtra}
               canEdit={canEdit}
+              fieldEditable={fieldEditable}
               busy={busyId === String(row.id)}
               saved={savedId === String(row.id)}
               dirty={!!edits[String(row.id)]}
@@ -217,7 +230,7 @@ export function OrderChildList({
                       <td key={f.column} className="px-3 py-2">
                         {!applies(f, row) ? (
                           <span className="text-muted-foreground">—</span>
-                        ) : !canEdit ? (
+                        ) : !canEdit || !fieldEditable(f) ? (
                           <span>{valueFor(row, f.column) || "—"}</span>
                         ) : f.type === "select" ? (
                           <select
@@ -306,6 +319,7 @@ function RowCard({
   groups,
   renderExtra,
   canEdit,
+  fieldEditable,
   busy,
   saved,
   dirty,
@@ -320,6 +334,7 @@ function RowCard({
   groups: Bucket[];
   renderExtra?: { label: string; render: (row: Row) => React.ReactNode };
   canEdit: boolean;
+  fieldEditable: (f: OrderField) => boolean;
   busy: boolean;
   saved: boolean;
   dirty: boolean;
@@ -388,7 +403,8 @@ function RowCard({
           .map((g) => ({ label: g.label, fields: g.fields.filter((f) => applies(f, row)) }))
           .filter((g) => g.fields.length > 0)
           .map((g, i) => (
-          <div key={i}>
+          // A rule above every group but the first separates the phases.
+          <div key={i} className={i > 0 ? "border-t border-card-border pt-5" : ""}>
             {g.label && (
               <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-primary">
                 {g.label}
@@ -400,7 +416,7 @@ function RowCard({
                   <label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     {f.label}
                   </label>
-                  {!canEdit ? (
+                  {!canEdit || !fieldEditable(f) ? (
                     <div className="flex h-10 items-center px-1 text-[14px] text-foreground">
                       {valueFor(row, f.column) || "—"}
                     </div>

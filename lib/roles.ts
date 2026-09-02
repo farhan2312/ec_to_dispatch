@@ -98,7 +98,13 @@ export function canEditChild(
     | "order_billing_docs"
     | "order_packing_slips"
     | "order_invoices"
+    | "order_drawing_revisions"
 ): boolean {
+  // Drawing owns the revision rows; Central Visibility also edits them so it
+  // can record approval (the two approval fields are `centralOnly`).
+  if (table === "order_drawing_revisions") {
+    return canEditSection(role, "order_drawing") || isCentral(role);
+  }
   if (table === "order_boi_items") return canEditSection(role, "order_purchase");
   if (table === "order_billing_docs" || table === "order_invoices") {
     return canEditSection(role, "order_billing");

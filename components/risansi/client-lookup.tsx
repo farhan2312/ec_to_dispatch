@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, Search, X } from "lucide-react";
+import { Loader2, Plus, Search, UserPlus, X } from "lucide-react";
 import {
   createOrderFromClientAction,
   searchClientsAction,
@@ -17,7 +17,15 @@ const MIN_CHARS = 2;
  * result's "Add" creates a new SO pre-filled with that client's details.
  * The directory is read-only — nothing here writes to Market Intell.
  */
-export function ClientLookup() {
+export function ClientLookup({
+  onSelect,
+  label = "New order from client directory",
+}: {
+  // When given, picking a client hands it back instead of creating an order —
+  // used by the New order form to prefill its Client section.
+  onSelect?: (client: MarketIntellClient) => void;
+  label?: string;
+} = {}) {
   const router = useRouter();
   const [term, setTerm] = useState("");
   const [results, setResults] = useState<MarketIntellClient[] | null>(null);
@@ -55,6 +63,14 @@ export function ClientLookup() {
   }, [term]);
 
   async function add(client: MarketIntellClient) {
+    // Prefill mode: hand the client back, don't create anything.
+    if (onSelect) {
+      onSelect(client);
+      setTerm("");
+      setResults(null);
+      setError(null);
+      return;
+    }
     setAddingCode(client.code);
     setError(null);
     const res = await createOrderFromClientAction(client.code);
@@ -76,19 +92,29 @@ export function ClientLookup() {
   }
 
   return (
-    <div className="mb-3 rounded-xl border border-card-border bg-surface p-3 shadow-sm">
+    // Tinted + labelled so it reads as "create an order" rather than another
+    // filter for the table below it.
+    <div className="mb-3 rounded-xl border border-primary/25 bg-primary/[0.04] p-3 shadow-sm">
+      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-primary">
+        <UserPlus className="h-3.5 w-3.5" />
+        {label}
+      </div>
       <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-primary/70" />
         <input
           type="search"
           value={term}
           onChange={(e) => setTerm(e.target.value)}
-          placeholder="Add an order — search client code or name…"
-          aria-label="Search client directory by code or name"
-          className="h-10 w-full rounded-lg border border-input-border bg-surface pl-9 pr-9 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
+          placeholder={
+            onSelect
+              ? "Search client code or name to fill these details…"
+              : "Search client code or name to create an order…"
+          }
+          aria-label="Search client directory by code or name to create an order"
+          className="h-10 w-full rounded-lg border border-primary/30 bg-surface pl-9 pr-9 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
         />
         {searching ? (
-          <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+          <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-primary" />
         ) : (
           term !== "" && (
             <button
@@ -122,13 +148,15 @@ export function ClientLookup() {
       )}
 
       {results && results.length > 0 && (
-        <div className="mt-2 max-h-80 overflow-y-auto rounded-lg border border-card-border">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead className="sticky top-0 bg-background">
+        <div className="mt-2 max-h-80 overflow-y-auto rounded-lg border border-primary/25 bg-surface">
+          <table className="w-full min-w-[900px] text-sm">
+            <thead className="sticky top-0 bg-primary/[0.06]">
               <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                 <th className="px-3 py-2">Client Code</th>
                 <th className="px-3 py-2">Client Name</th>
                 <th className="px-3 py-2">Market Type</th>
+                <th className="px-3 py-2">Zone</th>
+                <th className="px-3 py-2">Rep</th>
                 <th className="px-3 py-2">Client Type</th>
                 <th className="px-3 py-2">Industry</th>
                 <th className="px-3 py-2" />
@@ -143,6 +171,12 @@ export function ClientLookup() {
                   <td className="px-3 py-2">{c.legal_name ?? "—"}</td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {c.market_type ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {c.zone ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {c.rep_name ?? "—"}
                   </td>
                   <td className="px-3 py-2 whitespace-nowrap">
                     {c.client_type ?? "—"}
@@ -162,7 +196,7 @@ export function ClientLookup() {
                       ) : (
                         <Plus className="h-3.5 w-3.5" />
                       )}
-                      Add
+                      {onSelect ? "Use" : "Add"}
                     </button>
                   </td>
                 </tr>

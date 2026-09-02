@@ -306,9 +306,7 @@ export function OrdersTable({
                               className="inline-flex h-8 items-center gap-1 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
                             >
                               <Plus className="h-3.5 w-3.5" />
-                              {order.order_type === "Spare"
-                                ? "Spare Add-On"
-                                : "Pump Add-On"}
+                              {`${order.order_type ?? "Pump"} Add-On`}
                             </button>
                           )}
                         </div>

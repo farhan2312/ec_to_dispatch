@@ -77,9 +77,13 @@ const SELECT_COLUMNS = `c.code,
         tr.zone      AS zone,
         u.name       AS rep_name`;
 
-const FROM_JOINS = `FROM public.clients c
+// Soft-deleted clients must never surface in this app. The predicate lives
+// in the shared FROM clause — every reader below starts from `LIVE_CLIENTS`
+// and appends its own `AND ...`, so a new query cannot forget it.
+const LIVE_CLIENTS = `FROM public.clients c
        LEFT JOIN public.tour_routes tr ON tr.id = c.tour_id
-       LEFT JOIN public.users u        ON u.id  = c.primary_rep_id`;
+       LEFT JOIN public.users u        ON u.id  = c.primary_rep_id
+      WHERE c.deleted_at IS NULL`;
 
 /**
  * Search live clients by code or legal name. Prefix matches rank first, then
@@ -97,8 +101,7 @@ export async function searchClients(
 
   const result = await getPool().query<MarketIntellClient>(
     `SELECT ${SELECT_COLUMNS}
-       ${FROM_JOINS}
-      WHERE c.deleted_at IS NULL
+       ${LIVE_CLIENTS}
         AND c.code IS NOT NULL
         AND (c.code ILIKE $1 OR c.legal_name ILIKE $1)
       ORDER BY
@@ -124,8 +127,8 @@ export async function getClientByCode(
   if (!c) return null;
   const result = await getPool().query<MarketIntellClient>(
     `SELECT ${SELECT_COLUMNS}
-       ${FROM_JOINS}
-      WHERE c.deleted_at IS NULL AND c.code = $1
+       ${LIVE_CLIENTS}
+        AND c.code = $1
       LIMIT 1`,
     [c]
   );

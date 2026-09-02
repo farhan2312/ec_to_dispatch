@@ -20,13 +20,13 @@ const TABLE = "order_purchase" as const;
 export default async function PurchaseWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string }>;
+  searchParams: Promise<{ edit?: string; thread?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit } = await searchParams;
+  const { edit, thread } = await searchParams;
   const [items, reminders] = await Promise.all([
     listItemsForPurchase(),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
@@ -59,6 +59,7 @@ export default async function PurchaseWorkspacePage({
       <RemindersPanel reminders={reminders} />
 
       <PurchaseWorkspace
+        openThreadId={thread}
         role={user.role}
         unreadThreads={unreadThreads}
         rows={items}

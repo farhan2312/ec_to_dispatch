@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Bell, ChevronRight, PlayCircle } from "lucide-react";
 import { ReportBugTrigger } from "./report-bug";
+import { DiscussionBell } from "./discussion-bell";
 import { Sidebar } from "./sidebar";
 import { BottomNav } from "./bottom-nav";
 import { isCentral } from "@/lib/roles";
@@ -63,6 +64,7 @@ export function AppShell({
   notifUnread,
   messageUnread,
   openBugCount,
+  discussionUnread,
   children,
 }: {
   user: ShellUser;
@@ -71,6 +73,8 @@ export function AppShell({
   notifUnread: number;
   messageUnread: number;
   openBugCount: number;
+  // Unread SO-discussion messages — its own icon, not the bug bell.
+  discussionUnread: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -149,6 +153,10 @@ export function AppShell({
               <span className="hidden sm:inline">Demo</span>
             </a>
             <ReportBugTrigger />
+            <DiscussionBell
+              role={user.role}
+              initialUnread={discussionUnread}
+            />
             {showBugBell && (
               <Link
                 href="/risansi/bug-reports"

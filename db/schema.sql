@@ -1590,3 +1590,20 @@ CREATE TABLE IF NOT EXISTS order_message_reads (
     last_read_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, order_id, dept_role)
 );
+
+-- ---------------------------------------------------------------------------
+-- A discussion entry is either a note or a delay (order_messages.kind). A
+-- delay carries no extra structure — it is the same message, flagged, and
+-- dated by created_at. An earlier draft added reason / blocking owner /
+-- target / expected-date / resolve columns; those are dropped here so the
+-- table matches what the app actually writes.
+-- ---------------------------------------------------------------------------
+DROP INDEX IF EXISTS order_messages_open_delays_idx;
+ALTER TABLE order_messages DROP COLUMN IF EXISTS delay_reason;
+ALTER TABLE order_messages DROP COLUMN IF EXISTS blocking_owner;
+ALTER TABLE order_messages DROP COLUMN IF EXISTS target_field;
+ALTER TABLE order_messages DROP COLUMN IF EXISTS expected_date;
+ALTER TABLE order_messages DROP COLUMN IF EXISTS resolved_at;
+ALTER TABLE order_messages DROP COLUMN IF EXISTS resolved_by;
+ALTER TABLE order_messages DROP COLUMN IF EXISTS resolved_name;
+ALTER TABLE order_messages DROP COLUMN IF EXISTS resolves_id;

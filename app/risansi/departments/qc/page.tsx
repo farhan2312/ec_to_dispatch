@@ -28,13 +28,13 @@ const TABLE = "order_qc" as const;
 export default async function QcWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string }>;
+  searchParams: Promise<{ edit?: string; thread?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canAccessDepartment(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit } = await searchParams;
+  const { edit, thread } = await searchParams;
   // QC fills its own submission fields; Required QC Documents / Target Date
   // stay centralOnly (Mitali fills those, read-only to QC — see order-schema.ts).
   const canEdit = canEditSection(user.role, TABLE);
@@ -82,6 +82,7 @@ export default async function QcWorkspacePage({
       <RemindersPanel reminders={reminders} />
 
       <DepartmentWorkspace
+        openThreadId={thread}
         role={user.role}
         unreadThreads={unreadThreads}
         table={TABLE}

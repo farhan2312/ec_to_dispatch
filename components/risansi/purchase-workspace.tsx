@@ -29,12 +29,15 @@ export function PurchaseWorkspace({
   rows,
   canEdit,
   openItemId,
+  openThreadId,
   role,
   unreadThreads = {},
 }: {
   rows: PurchaseQueueRow[];
   canEdit: boolean;
   openItemId?: string;
+  // Deep-link from the discussion icon: open this SO's thread on load.
+  openThreadId?: string;
   // The viewer's role — decides which discussion lane they get.
   role: string;
   // Unread discussion messages keyed by order id, for the row badge.
@@ -45,6 +48,18 @@ export function PurchaseWorkspace({
     orderId: string;
     soLabel: string;
   } | null>(null);
+
+  // Deep link from the discussion icon: open that SO's thread on arrival.
+  useEffect(() => {
+    if (!openThreadId) return;
+    const row = rows.find((r) => String(r.order_id) === openThreadId);
+    if (!row) return;
+    setThreadFor({
+      orderId: openThreadId,
+      soLabel: String(row.so_no ?? row.sl_no ?? ""),
+    });
+  }, [openThreadId, rows]);
+
   const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
     useTableSearch(rows, rowSearchText);
 

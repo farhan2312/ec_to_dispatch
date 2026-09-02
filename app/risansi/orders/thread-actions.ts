@@ -1,17 +1,18 @@
 "use server";
 
 import { getCurrentUser } from "@/lib/session";
-import { getOrderLabel } from "@/lib/orders";
-import { emitNotification } from "@/lib/notifications";
-import { roleLabel } from "@/lib/roles";
+
 import {
   canUseLane,
   insertMessage,
+  isMessageKind,
+  listDiscussionInbox,
   listLanes,
   listMessages,
   markLaneRead,
   resolveLane,
   MAX_MESSAGE_LENGTH,
+  type InboxEntry,
   type LaneSummary,
   type OrderMessage,
 } from "@/lib/order-messages";
@@ -69,7 +70,8 @@ export async function listLanesAction(orderId: string): Promise<LanesResult> {
 export async function postMessageAction(
   orderId: string,
   requestedLane: string,
-  body: string
+  body: string,
+  kind = "note"
 ): Promise<ThreadResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
@@ -94,28 +96,30 @@ export async function postMessageAction(
       authorName: user.full_name,
       authorRole: user.role,
       body: text,
+      kind: isMessageKind(kind) ? kind : "note",
     });
     await markLaneRead(user.id, orderId, lane);
-
-    // Notify the far side of this lane: the department when Central posts,
-    // Central when the department posts. Never a third department — the lane
-    // is the whole audience.
-    const isFromCentral = user.role === "admin" || user.role === "central_visibility";
-    const recipients = isFromCentral ? [lane] : ["central_visibility", "admin"];
-    const label = (await getOrderLabel(orderId)) ?? "an order";
-    await emitNotification({
-      roles: recipients,
-      orderId,
-      type: "dept_update",
-      message: `${user.full_name} (${roleLabel(user.role)}) commented on ${label}: ${
-        text.length > 120 ? `${text.slice(0, 120)}…` : text
-      }`,
-    });
 
     const messages = await listMessages(orderId, lane, user.id);
     return { ok: true, messages };
   } catch (error) {
     console.error("postMessageAction failed:", error);
     return { ok: false, error: "Could not send that message." };
+  }
+}
+
+export type InboxResult =
+  | { ok: true; entries: InboxEntry[] }
+  | { ok: false; error: string };
+
+/** Unread discussion entries for the header icon. */
+export async function discussionInboxAction(): Promise<InboxResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  try {
+    return { ok: true, entries: await listDiscussionInbox(user) };
+  } catch (error) {
+    console.error("discussionInboxAction failed:", error);
+    return { ok: false, error: "Could not load your discussions." };
   }
 }

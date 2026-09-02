@@ -6,6 +6,7 @@ import { countRemindersForRole } from "@/lib/reminders";
 import { countUnread, recipientRolesForUser } from "@/lib/notifications";
 import { countUnreadMessages } from "@/lib/chat";
 import { countOpenBugReports } from "@/lib/bug-reports";
+import { countDiscussionUnread } from "@/lib/order-messages";
 import { AppShell } from "@/components/risansi/app-shell";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +35,8 @@ export default async function RisansiLayout({
       isCentral(user.role) ? countOpenBugReports() : Promise.resolve(0),
     ]);
 
+  const discussionUnread = await countDiscussionUnread(user);
+
   return (
     <AppShell
       user={{ name: user.full_name, email: user.email, role: user.role }}
@@ -42,6 +45,7 @@ export default async function RisansiLayout({
       notifUnread={notifUnread}
       messageUnread={messageUnread}
       openBugCount={openBugCount}
+      discussionUnread={discussionUnread}
     >
       {children}
     </AppShell>

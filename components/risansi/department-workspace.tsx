@@ -105,6 +105,7 @@ export function DepartmentWorkspace({
   canEditCentral = true,
   documents = [],
   openOrderId,
+  openThreadId,
   role,
   unreadThreads = {},
 }: {
@@ -119,6 +120,8 @@ export function DepartmentWorkspace({
   documents?: DocumentsConfig[];
   // Deep-link from a notification: open this order's edit modal on load.
   openOrderId?: string;
+  // Deep-link from the discussion icon: open this SO's thread on load.
+  openThreadId?: string;
   // The viewer's role — decides which discussion lane they get.
   role: string;
   // Unread discussion messages keyed by order id, for the row badge.
@@ -133,6 +136,18 @@ export function DepartmentWorkspace({
     orderId: string;
     soLabel: string;
   } | null>(null);
+
+  // Deep link from the discussion icon: open that SO's thread on arrival.
+  useEffect(() => {
+    if (!openThreadId) return;
+    const row = orders.find((r) => String(r.order_id ?? r.id) === openThreadId);
+    if (!row) return;
+    setThreadFor({
+      orderId: openThreadId,
+      soLabel: String(row.so_no ?? row.sl_no ?? ""),
+    });
+  }, [openThreadId, orders]);
+
 
   const { match: rowSearchText, placeholder: searchPlaceholder } =
     searchConfigFor(table);

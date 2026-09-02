@@ -23,6 +23,13 @@ export type OrderMessage = {
   mine: boolean;
 };
 
+/** A discussion entry is a plain note or a flagged delay. */
+export type MessageKind = "note" | "delay";
+
+export function isMessageKind(value: string): value is MessageKind {
+  return value === "note" || value === "delay";
+}
+
 /** One department lane on an SO, with its activity summary. */
 export type LaneSummary = {
   dept_role: Role;
@@ -33,6 +40,12 @@ export type LaneSummary = {
 };
 
 const ISO = `'YYYY-MM-DD"T"HH24:MI:SS"Z"'`;
+
+// Every column the UI renders for a message, aliased consistently so the
+// read and the insert-returning share one shape.
+const MESSAGE_COLUMNS = `m.id, m.dept_role, m.author_id, m.author_name,
+            m.author_role, m.kind, m.body,
+            to_char(m.created_at AT TIME ZONE 'UTC', ${ISO}) AS created_at`;
 
 export const MAX_MESSAGE_LENGTH = 2000;
 
@@ -76,9 +89,7 @@ export async function listMessages(
   viewerId: string
 ): Promise<OrderMessage[]> {
   const result = await query<OrderMessage>(
-    `SELECT m.id, m.dept_role, m.author_id, m.author_name, m.author_role,
-            m.kind, m.body,
-            to_char(m.created_at AT TIME ZONE 'UTC', ${ISO}) AS created_at,
+    `SELECT ${MESSAGE_COLUMNS},
             (m.author_id = $3) AS mine
        FROM order_messages m
       WHERE m.order_id = $1 AND m.dept_role = $2
@@ -168,6 +179,73 @@ export async function unreadByOrder(
   return counts;
 }
 
+/** One unread discussion entry, for the header inbox. */
+export type InboxEntry = {
+  id: string;
+  order_id: string;
+  so_no: string | null;
+  sl_no: number;
+  dept_role: string;
+  author_name: string;
+  author_role: string;
+  kind: string;
+  body: string;
+  created_at: string;
+};
+
+/**
+ * Unread discussion entries across every SO, newest first — what the
+ * header's discussion icon shows. Same lane rule as everywhere else, and a
+ * user never sees their own messages here.
+ */
+export async function listDiscussionInbox(
+  viewer: { id: string; role: string },
+  limit = 20
+): Promise<InboxEntry[]> {
+  const lanes = lanesFor(viewer.role);
+  if (lanes.length === 0) return [];
+  const result = await query<InboxEntry>(
+    `SELECT m.id, m.order_id, o.so_no, o.sl_no::int AS sl_no, m.dept_role,
+            m.author_name, m.author_role, m.kind, m.body,
+            to_char(m.created_at AT TIME ZONE 'UTC', ${ISO}) AS created_at
+       FROM order_messages m
+       JOIN orders o ON o.id = m.order_id
+       LEFT JOIN order_message_reads r
+              ON r.user_id = $1
+             AND r.order_id = m.order_id
+             AND r.dept_role = m.dept_role
+      WHERE m.dept_role = ANY($2)
+        AND m.author_id <> $1
+        AND (r.last_read_at IS NULL OR m.created_at > r.last_read_at)
+      ORDER BY m.created_at DESC
+      LIMIT $3`,
+    [viewer.id, lanes, limit]
+  );
+  return result.rows;
+}
+
+/** How many unread discussion entries the viewer has, in total. */
+export async function countDiscussionUnread(viewer: {
+  id: string;
+  role: string;
+}): Promise<number> {
+  const lanes = lanesFor(viewer.role);
+  if (lanes.length === 0) return 0;
+  const result = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n
+       FROM order_messages m
+       LEFT JOIN order_message_reads r
+              ON r.user_id = $1
+             AND r.order_id = m.order_id
+             AND r.dept_role = m.dept_role
+      WHERE m.dept_role = ANY($2)
+        AND m.author_id <> $1
+        AND (r.last_read_at IS NULL OR m.created_at > r.last_read_at)`,
+    [viewer.id, lanes]
+  );
+  return Number(result.rows[0]?.n ?? 0);
+}
+
 // ---------------------------------------------------------------------------
 // Writes
 // ---------------------------------------------------------------------------
@@ -179,11 +257,14 @@ export async function insertMessage(input: {
   authorName: string;
   authorRole: string;
   body: string;
+  // 'delay' flags the entry as a delay; the date it happened is its
+  // created_at, so nothing else is stored.
+  kind?: MessageKind;
 }): Promise<OrderMessage> {
   const result = await query<OrderMessage>(
     `INSERT INTO order_messages
-        (order_id, dept_role, author_id, author_name, author_role, body)
-     VALUES ($1, $2, $3, $4, $5, $6)
+        (order_id, dept_role, author_id, author_name, author_role, body, kind)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING id, dept_role, author_id, author_name, author_role, kind, body,
                to_char(created_at AT TIME ZONE 'UTC', ${ISO}) AS created_at,
                true AS mine`,
@@ -194,11 +275,11 @@ export async function insertMessage(input: {
       input.authorName,
       input.authorRole,
       input.body,
+      input.kind ?? "note",
     ]
   );
   return result.rows[0];
 }
-
 /** Mark one lane read up to now for this user. */
 export async function markLaneRead(
   userId: string,

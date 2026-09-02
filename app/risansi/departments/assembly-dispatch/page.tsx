@@ -21,13 +21,13 @@ const TABLE = "order_assembly_dispatch" as const;
 export default async function AssemblyDispatchWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string }>;
+  searchParams: Promise<{ edit?: string; thread?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit } = await searchParams;
+  const { edit, thread } = await searchParams;
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const [orders, reminders] = await Promise.all([
     listItemsForSection(
@@ -67,6 +67,7 @@ export default async function AssemblyDispatchWorkspacePage({
       <RemindersPanel reminders={reminders} />
 
       <DepartmentWorkspace
+        openThreadId={thread}
         role={user.role}
         unreadThreads={unreadThreads}
         table={TABLE}

@@ -18,13 +18,13 @@ const TABLE = "order_billing" as const;
 export default async function BillingWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string }>;
+  searchParams: Promise<{ edit?: string; thread?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit } = await searchParams;
+  const { edit, thread } = await searchParams;
   const orders = await listOrdersForBilling();
 
   // Unread discussion messages per SO, for the row badge.
@@ -52,6 +52,7 @@ export default async function BillingWorkspacePage({
       </div>
 
       <BillingWorkspace
+        openThreadId={thread}
         role={user.role}
         unreadThreads={unreadThreads}
         rows={orders}

@@ -39,12 +39,15 @@ export function BillingWorkspace({
   rows,
   canEdit,
   openOrderId,
+  openThreadId,
   role,
   unreadThreads = {},
 }: {
   rows: BillingQueueRow[];
   canEdit: boolean;
   openOrderId?: string;
+  // Deep-link from the discussion icon: open this SO's thread on load.
+  openThreadId?: string;
   // The viewer's role — decides which discussion lane they get.
   role: string;
   // Unread discussion messages keyed by order id, for the row badge.
@@ -55,6 +58,18 @@ export function BillingWorkspace({
     orderId: string;
     soLabel: string;
   } | null>(null);
+
+  // Deep link from the discussion icon: open that SO's thread on arrival.
+  useEffect(() => {
+    if (!openThreadId) return;
+    const row = rows.find((r) => String(r.id) === openThreadId);
+    if (!row) return;
+    setThreadFor({
+      orderId: openThreadId,
+      soLabel: String(row.so_no ?? row.sl_no ?? ""),
+    });
+  }, [openThreadId, rows]);
+
   const [orderDetailsFor, setOrderDetailsFor] = useState<string | null>(null);
   const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
     useTableSearch(rows, rowSearchText);

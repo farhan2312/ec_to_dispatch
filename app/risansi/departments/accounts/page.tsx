@@ -22,13 +22,13 @@ const TABLE = "order_accounts" as const;
 export default async function AccountsWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string }>;
+  searchParams: Promise<{ edit?: string; thread?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit } = await searchParams;
+  const { edit, thread } = await searchParams;
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const orders = await listOrdersForSection(
     TABLE,
@@ -61,6 +61,7 @@ export default async function AccountsWorkspacePage({
       </div>
 
       <DepartmentWorkspace
+        openThreadId={thread}
         role={user.role}
         unreadThreads={unreadThreads}
         table={TABLE}

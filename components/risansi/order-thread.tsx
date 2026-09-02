@@ -1,7 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { ChevronDown, ChevronRight, Loader2, MessageSquare, Send } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  MessageSquare,
+  Send,
+} from "lucide-react";
 import { isCentral, roleLabel } from "@/lib/roles";
 import type { LaneSummary, OrderMessage } from "@/lib/order-messages";
 import {
@@ -34,6 +41,10 @@ function stamp(iso: string): string {
  * One SO's discussion. Lanes are per department and never cross: a department
  * user sees only their own lane, Central Visibility / Admin pick which
  * department they're talking to.
+ *
+ * An entry is either a plain note or one flagged as a delay. A delay is the
+ * same message, marked and dated by when it was logged, so the reason for a
+ * hold-up stays on the order.
  */
 export function OrderThread({
   orderId,
@@ -59,14 +70,17 @@ export function OrderThread({
   const [messages, setMessages] = useState<OrderMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [body, setBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
 
-  const refreshLanes = useCallback(async () => {
+  // Composer — a note, or the same message flagged as a delay.
+  const [mode, setMode] = useState<"note" | "delay">("note");
+  const [body, setBody] = useState("");
+
+  async function refreshLanes() {
     const res = await listLanesAction(orderId);
     if (res.ok) setLanes(res.lanes);
-  }, [orderId]);
+  }
 
   // Pick the lane worth showing first: unread, else most recently active,
   // else the first department. Department users only ever have their own.
@@ -129,7 +143,7 @@ export function OrderThread({
     event.preventDefault();
     if (!lane || body.trim() === "" || sending) return;
     setSending(true);
-    const res = await postMessageAction(orderId, lane, body);
+    const res = await postMessageAction(orderId, lane, body, mode);
     setSending(false);
     if (!res.ok) {
       setError(res.error);
@@ -137,6 +151,7 @@ export function OrderThread({
     }
     setError(null);
     setBody("");
+    setMode("note");
     setMessages(res.messages);
     refreshLanes();
   }
@@ -147,6 +162,8 @@ export function OrderThread({
   const totalMessages = lanes.reduce((n, l) => n + l.total, 0);
   const Header = collapsible ? "button" : "div";
 
+  const delayCount = messages.filter((m) => m.kind === "delay").length;
+
   return (
     <section
       className={`rounded-xl border border-card-border bg-surface shadow-sm ${className}`}
@@ -156,7 +173,11 @@ export function OrderThread({
           open ? "border-b border-card-border" : ""
         }`}
         {...(collapsible
-          ? { type: "button" as const, onClick: () => setOpen((v) => !v), "aria-expanded": open }
+          ? {
+              type: "button" as const,
+              onClick: () => setOpen((v) => !v),
+              "aria-expanded": open,
+            }
           : {})}
       >
         <div className="flex items-center gap-2">
@@ -173,6 +194,13 @@ export function OrderThread({
           {totalUnread > 0 && (
             <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-600 px-1.5 text-[11px] font-bold text-white">
               {totalUnread}
+            </span>
+          )}
+          {delayCount > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+              <AlertTriangle className="h-3 w-3" />
+              {delayCount} delay
+              {delayCount === 1 ? "" : "s"}
             </span>
           )}
           {!open && totalUnread === 0 && totalMessages > 0 && (
@@ -206,7 +234,9 @@ export function OrderThread({
                 {l.unread > 0 ? (
                   <span
                     className={`inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
-                      active ? "bg-primary-foreground text-primary" : "bg-rose-600 text-white"
+                      active
+                        ? "bg-primary-foreground text-primary"
+                        : "bg-rose-600 text-white"
                     }`}
                   >
                     {l.unread}
@@ -227,99 +257,161 @@ export function OrderThread({
       )}
 
       {open && (
-      <>
-      <div className="max-h-96 min-h-[10rem] space-y-3 overflow-y-auto px-5 py-4">
-        {loading ? (
-          <div className="flex items-center gap-2 text-sm text-muted">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading…
-          </div>
-        ) : messages.length === 0 ? (
-          <p className="text-sm text-muted">
-            No messages yet
-            {central && laneLabel ? ` with ${laneLabel}` : ""}. Post an update or
-            the reason for a delay — it stays on this order.
-          </p>
-        ) : (
-          messages.map((m) => (
-            <div
-              key={m.id}
-              className={`flex ${m.mine ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 ${
-                  m.mine
-                    ? "bg-primary text-primary-foreground"
-                    : "border border-card-border bg-background text-foreground"
-                }`}
-              >
-                {!m.mine && (
-                  <div className="mb-0.5 text-[11px] font-semibold text-primary">
-                    {m.author_name}
-                    <span className="ml-1 font-normal text-muted-foreground">
-                      {roleLabel(m.author_role)}
-                    </span>
+        <>
+          <div className="max-h-96 min-h-[10rem] space-y-3 overflow-y-auto px-5 py-4">
+            {loading ? (
+              <div className="flex items-center gap-2 text-sm text-muted">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading…
+              </div>
+            ) : messages.length === 0 ? (
+              <p className="text-sm text-muted">
+                No messages yet
+                {central && laneLabel ? ` with ${laneLabel}` : ""}. Post an
+                update, or log a delay so the reason stays on this order.
+              </p>
+            ) : (
+              messages.map((m) => {
+                // --- delay: the same message, flagged and dated.
+                if (m.kind === "delay") {
+                  return (
+                    <div
+                      key={m.id}
+                      className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3"
+                    >
+                      <div className="mb-1.5 flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1 rounded-full bg-amber-600 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white">
+                          <AlertTriangle className="h-3 w-3" />
+                          Delay
+                        </span>
+                        <span className="text-[11px] font-semibold text-amber-900">
+                          {stamp(m.created_at)}
+                        </span>
+                      </div>
+                      <p className="whitespace-pre-wrap break-words text-sm text-amber-950">
+                        {m.body}
+                      </p>
+                      <div className="mt-1.5 text-[11px] text-amber-800">
+                        {m.author_name} · {roleLabel(m.author_role)}
+                      </div>
+                    </div>
+                  );
+                }
+                // --- plain note: chat bubble.
+                return (
+                  <div
+                    key={m.id}
+                    className={`flex ${m.mine ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 ${
+                        m.mine
+                          ? "bg-primary text-primary-foreground"
+                          : "border border-card-border bg-background text-foreground"
+                      }`}
+                    >
+                      {!m.mine && (
+                        <div className="mb-0.5 text-[11px] font-semibold text-primary">
+                          {m.author_name}
+                          <span className="ml-1 font-normal text-muted-foreground">
+                            {roleLabel(m.author_role)}
+                          </span>
+                        </div>
+                      )}
+                      <p className="whitespace-pre-wrap break-words text-sm">
+                        {m.body}
+                      </p>
+                      <div
+                        className={`mt-1 text-[10px] ${
+                          m.mine
+                            ? "text-primary-foreground/70"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {stamp(m.created_at)}
+                      </div>
+                    </div>
                   </div>
-                )}
-                <p className="whitespace-pre-wrap break-words text-sm">{m.body}</p>
-                <div
-                  className={`mt-1 text-[10px] ${
-                    m.mine ? "text-primary-foreground/70" : "text-muted-foreground"
+                );
+              })
+            )}
+            <div ref={endRef} />
+          </div>
+
+          {error && (
+            <p role="alert" className="px-5 pb-2 text-xs text-danger">
+              {error}
+            </p>
+          )}
+
+          <form
+            onSubmit={send}
+            className="space-y-2.5 border-t border-card-border px-5 py-4"
+          >
+            {/* Note vs delay decides whether the structured fields appear. */}
+            <div className="inline-flex rounded-lg border border-card-border p-0.5">
+              {(["note", "delay"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setMode(value)}
+                  className={`h-7 rounded-md px-3 text-xs font-semibold transition-colors ${
+                    mode === value
+                      ? value === "delay"
+                        ? "bg-amber-600 text-white"
+                        : "bg-primary text-primary-foreground"
+                      : "text-muted hover:text-foreground"
                   }`}
                 >
-                  {stamp(m.created_at)}
-                </div>
-              </div>
+                  {value === "note" ? "Note" : "Log a delay"}
+                </button>
+              ))}
             </div>
-          ))
-        )}
-        <div ref={endRef} />
-      </div>
 
-      {error && (
-        <p role="alert" className="px-5 pb-2 text-xs text-danger">
-          {error}
-        </p>
-      )}
-
-      <form
-        onSubmit={send}
-        className="flex items-end gap-2 border-t border-card-border px-5 py-4"
-      >
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          onKeyDown={(e) => {
-            // Enter sends, Shift+Enter makes a new line.
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send(e);
-            }
-          }}
-          rows={2}
-          maxLength={MAX_MESSAGE_LENGTH}
-          disabled={!lane || sending}
-          placeholder={
-            central && laneLabel
-              ? `Message ${laneLabel}…`
-              : "Add an update or a delay reason…"
-          }
-          className="min-h-[2.75rem] flex-1 resize-y rounded-[10px] border border-input-border bg-surface px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60"
-        />
-        <button
-          type="submit"
-          disabled={!lane || sending || body.trim() === ""}
-          className="inline-flex h-11 shrink-0 items-center gap-2 rounded-[10px] bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {sending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Send className="h-4 w-4" />
-          )}
-          Send
-        </button>
-      </form>
-      </>
+            <div className="flex items-end gap-2">
+              <textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter sends, Shift+Enter makes a new line.
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send(e);
+                  }
+                }}
+                rows={2}
+                maxLength={MAX_MESSAGE_LENGTH}
+                disabled={!lane || sending}
+                placeholder={
+                  mode === "delay"
+                    ? "What exactly is holding it up?"
+                    : central && laneLabel
+                      ? `Message ${laneLabel}…`
+                      : "Add an update…"
+                }
+                className="min-h-[2.75rem] flex-1 resize-y rounded-[10px] border border-input-border bg-surface px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60"
+              />
+              <button
+                type="submit"
+                disabled={!lane || sending || body.trim() === ""}
+                className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-[10px] px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                  mode === "delay"
+                    ? "bg-amber-600 text-white hover:bg-amber-700"
+                    : "bg-primary text-primary-foreground hover:bg-primary-hover"
+                }`}
+              >
+                {sending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : mode === "delay" ? (
+                  <AlertTriangle className="h-4 w-4" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+                {mode === "delay" ? "Log delay" : "Send"}
+              </button>
+            </div>
+          </form>
+        </>
       )}
     </section>
   );

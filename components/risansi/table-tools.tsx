@@ -260,6 +260,7 @@ export function FilterBar<T>({
   clearAll,
   total,
   searchPlaceholder = "Search…",
+  extraControls,
 }: {
   filters: FilterDef<T>[];
   options: Record<string, string[]>;
@@ -274,20 +275,26 @@ export function FilterBar<T>({
   clearAll: () => void;
   total: number;
   searchPlaceholder?: string;
+  // Rendered beside the search box — for controls the built-in single-value
+  // facets can't express, e.g. a multi-select.
+  extraControls?: React.ReactNode;
 }) {
   const hasQuery = query.trim() !== "";
   return (
     <div className="mb-4 rounded-xl border border-card-border bg-surface p-3 shadow-sm">
-      {/* Row 1 — free-text search. */}
-      <div className="relative w-full sm:max-w-xs">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={searchPlaceholder}
-          className="h-10 w-full rounded-lg border border-input-border bg-surface pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
-        />
+      {/* Row 1 — free-text search, plus any caller-supplied controls. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={searchPlaceholder}
+            className="h-10 w-full rounded-lg border border-input-border bg-surface pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
+          />
+        </div>
+        {extraControls}
       </div>
 
       {/* Row 2 — compact faceted filters. */}

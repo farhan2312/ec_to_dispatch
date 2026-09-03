@@ -208,24 +208,6 @@ export function OrdersTable({
           shown to roles that may create orders (same gate as Add-On/delete). */}
       {canDelete && <ClientLookup />}
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <MultiSelectFilter
-          label="Zone"
-          options={zoneOptions}
-          selected={zones}
-          onChange={(next) => {
-            setZones(next);
-            setPage(1);
-          }}
-        />
-        {zones.length > 0 && (
-          <span className="text-xs text-muted">
-            {zoneFiltered.length} of {orders.length} orders in{" "}
-            {zones.join(", ")}
-          </span>
-        )}
-      </div>
-
       <FilterBar
         filters={ORDER_FILTERS}
         options={options}
@@ -237,6 +219,24 @@ export function OrdersTable({
         clearAll={clearAll}
         total={total}
         searchPlaceholder="Search SO, client name, client code, EC…"
+        extraControls={
+          <>
+            <MultiSelectFilter
+              label="Zone"
+              options={zoneOptions}
+              selected={zones}
+              onChange={(next) => {
+                setZones(next);
+                setPage(1);
+              }}
+            />
+            {zones.length > 0 && (
+              <span className="text-xs text-muted">
+                {zoneFiltered.length} of {orders.length} orders
+              </span>
+            )}
+          </>
+        }
       />
 
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">

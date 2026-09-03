@@ -5,7 +5,7 @@ import { ChevronDown, MessageSquare, Plus } from "lucide-react";
 import type { PurchaseQueueRow } from "@/lib/orders";
 import { BOI_ITEM_FIELDS } from "@/lib/order-schema";
 import { OrderChildList } from "./order-children";
-import { UrlPagination, UrlSearchInput } from "./url-table";
+import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import type { PageResult } from "@/lib/pagination";
 import { OrderThreadModal } from "./order-thread-modal";
 
@@ -46,6 +46,12 @@ export function PurchaseWorkspace({
   unreadThreads?: Record<string, number>;
 }) {
   const rows = queue.rows;
+  const { get: getParam } = useUrlTable();
+  // An empty table means one of two very different things — say which, so a
+  // search that matched nothing isn't read as an empty queue.
+  const emptyMessage = getParam("q")
+    ? "No orders match your search."
+    : "No orders yet.";
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [threadFor, setThreadFor] = useState<{
     orderId: string;
@@ -84,16 +90,6 @@ export function PurchaseWorkspace({
     });
   }
 
-  if (queue.total === 0) {
-    return (
-      <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
-        <p className="text-sm font-medium text-foreground">No orders yet</p>
-        <p className="mt-1 text-sm text-muted">
-          ECs created by Central Visibility will appear here for BOI input.
-        </p>
-      </div>
-    );
-  }
 
   // Group EC queue rows by SO so the workspace lists one row per SO with a
   // chevron to reveal the ECs and their per-EC "Manage" buttons.
@@ -136,7 +132,7 @@ export function PurchaseWorkspace({
               {soGroups.length === 0 && (
                 <tr>
                   <td colSpan={11} className="px-4 py-10 text-center text-sm text-muted">
-                    No orders match your search.
+                    {emptyMessage}
                   </td>
                 </tr>
               )}

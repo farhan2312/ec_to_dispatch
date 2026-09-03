@@ -8,7 +8,7 @@ import { OrderChildList } from "./order-children";
 import { OrderDetailsModal } from "./order-details-modal";
 import { InvoiceLrCell } from "./invoice-lr-cell";
 import { invoiceRowHeader } from "./order-detail";
-import { UrlPagination, UrlSearchInput } from "./url-table";
+import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import type { PageResult } from "@/lib/pagination";
 import { OrderThreadModal } from "./order-thread-modal";
 
@@ -56,6 +56,12 @@ export function BillingWorkspace({
   unreadThreads?: Record<string, number>;
 }) {
   const rows = queue.rows;
+  const { get: getParam } = useUrlTable();
+  // An empty table means one of two very different things — say which, so a
+  // search that matched nothing isn't read as an empty queue.
+  const emptyMessage = getParam("q")
+    ? "No orders match your search."
+    : "No orders yet.";
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [threadFor, setThreadFor] = useState<{
     orderId: string;
@@ -93,16 +99,6 @@ export function BillingWorkspace({
     });
   }
 
-  if (rows.length === 0) {
-    return (
-      <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
-        <p className="text-sm font-medium text-foreground">No orders yet</p>
-        <p className="mt-1 text-sm text-muted">
-          Orders created by Central Visibility will appear here.
-        </p>
-      </div>
-    );
-  }
 
   return (
     <div>
@@ -133,7 +129,7 @@ export function BillingWorkspace({
               {pageRows.length === 0 && (
                 <tr>
                   <td colSpan={12} className="px-4 py-10 text-center text-sm text-muted">
-                    No orders match your search.
+                    {emptyMessage}
                   </td>
                 </tr>
               )}

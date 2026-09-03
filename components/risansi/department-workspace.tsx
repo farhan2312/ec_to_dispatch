@@ -23,7 +23,7 @@ import {
   type OrderTable,
 } from "@/lib/order-schema";
 import { OrderChildList } from "./order-children";
-import { UrlPagination, UrlSearchInput } from "./url-table";
+import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import type { PageResult } from "@/lib/pagination";
 import { QcDocumentsModal } from "./qc-documents-modal";
 import { OrderDetailsModal } from "./order-details-modal";
@@ -136,6 +136,7 @@ export function DepartmentWorkspace({
   );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const orders = queue.rows;
+  const { get: getParam } = useUrlTable();
   const [threadFor, setThreadFor] = useState<{
     orderId: string;
     soLabel: string;
@@ -177,16 +178,6 @@ export function DepartmentWorkspace({
     });
   }
 
-  if (queue.total === 0) {
-    return (
-      <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
-        <p className="text-sm font-medium text-foreground">No orders yet</p>
-        <p className="mt-1 text-sm text-muted">
-          Orders created by Central Visibility will appear here for your input.
-        </p>
-      </div>
-    );
-  }
 
   // Party is customer-identifying info; only Billing & Operations and
   // Accounts need it for their day-to-day work.
@@ -279,6 +270,12 @@ export function DepartmentWorkspace({
     );
   }
 
+  // An empty table means one of two very different things — say which, so a
+  // search that matched nothing isn't read as an empty queue.
+  const emptyMessage = getParam("q")
+    ? "No orders match your search."
+    : "No orders yet.";
+
   const colCount = groupBySo
     ? 4 + (showParty ? 1 : 0) + readonlyFields.length + 1 // toggle + Sl. + SO + client_name? + context + ECs + chat
     : 3 +
@@ -341,7 +338,7 @@ export function DepartmentWorkspace({
                     colSpan={colCount}
                     className="px-4 py-10 text-center text-sm text-muted"
                   >
-                    No orders match your search.
+                    {emptyMessage}
                   </td>
                 </tr>
               )}

@@ -132,7 +132,7 @@ export function OrdersTable({
   const [addFor, setAddFor] = useState<OrderListRow | null>(null);
   // Zone lives in the URL, so the filter narrows the whole table rather
   // than only the page already loaded.
-  const { getList, setParams } = useUrlTable();
+  const { get: getParam, getList, setParams } = useUrlTable();
   const zones = getList("zone");
   const pageRows = orders;
   // expand-toggle + 9 data columns + open + optional Add-On/delete.
@@ -158,6 +158,13 @@ export function OrdersTable({
     if (!res.ok) alert(res.error);
     else router.refresh();
   }
+
+  // An empty table means one of two very different things — say which, so a
+  // search that matched nothing isn't read as an empty tracker.
+  const emptyMessage =
+    getParam("q") || zones.length > 0
+      ? "No orders match your search."
+      : "No orders yet.";
 
   return (
     <div>
@@ -203,7 +210,7 @@ export function OrdersTable({
               {pageRows.length === 0 && (
                 <tr>
                   <td colSpan={colSpan} className="px-4 py-10 text-center text-sm text-muted">
-                    No orders match your search.
+                    {emptyMessage}
                   </td>
                 </tr>
               )}

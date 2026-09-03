@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight, Loader2, Search, X } from "lucide-react";
 
+/** One request per typing pause, not one per keystroke. */
+const DEBOUNCE_MS = 300;
+
 /**
  * URL-backed table state. The server reads these params to fetch one page, so
  * every control here writes to the query string rather than to local state —
@@ -15,10 +18,14 @@ export function useUrlTable() {
   const pathname = usePathname();
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
+  // Depend on the serialized query, not the object: useSearchParams returns a
+  // fresh instance on every render, which would give setParams a new identity
+  // each time and restart any effect that lists it as a dependency.
+  const qs = params?.toString() ?? "";
 
   const setParams = useCallback(
     (changes: Record<string, string | string[] | null>, resetPage = true) => {
-      const next = new URLSearchParams(params?.toString() ?? "");
+      const next = new URLSearchParams(qs);
       for (const [key, value] of Object.entries(changes)) {
         const flat = Array.isArray(value) ? value.join(",") : value;
         if (flat === null || flat === "") next.delete(key);
@@ -27,12 +34,14 @@ export function useUrlTable() {
       // Any change other than paging itself puts the user back on page 1 —
       // otherwise a narrower search can land them past the last page.
       if (resetPage) next.delete("page");
-      const qs = next.toString();
+      const nextQs = next.toString();
       startTransition(() => {
-        router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+        router.replace(nextQs ? `${pathname}?${nextQs}` : pathname, {
+          scroll: false,
+        });
       });
     },
-    [params, pathname, router]
+    [qs, pathname, router]
   );
 
   return {
@@ -74,14 +83,19 @@ export function UrlSearchInput({
     if (!dirty.current) setValue(urlValue);
   }, [urlValue]);
 
+  // Held in a ref so the debounce timer restarts only when the typed value
+  // changes — never because a re-render handed us a new setParams.
+  const commit = useRef(setParams);
+  commit.current = setParams;
+
   useEffect(() => {
     if (!dirty.current) return;
     const timer = setTimeout(() => {
       dirty.current = false;
-      setParams({ [paramKey]: value.trim() || null });
-    }, 300);
+      commit.current({ [paramKey]: value.trim() || null });
+    }, DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [value, paramKey, setParams]);
+  }, [value, paramKey]);
 
   return (
     <div className={`relative w-full sm:max-w-xs ${className}`}>

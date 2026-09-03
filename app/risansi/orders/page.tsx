@@ -72,16 +72,7 @@ export default async function OrdersPage({
         )}
       </div>
 
-      {result.total === 0 ? (
-        <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
-          <p className="text-sm font-medium text-foreground">No orders yet</p>
-          <p className="mt-1 text-sm text-muted">
-            Orders will appear here once added via the create form.
-          </p>
-        </div>
-      ) : (
-        <OrdersTable result={result} canDelete={canCreate} />
-      )}
+      <OrdersTable result={result} canDelete={canCreate} />
     </div>
   );
 }

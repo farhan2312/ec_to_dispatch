@@ -158,7 +158,7 @@ export function OrderImport() {
   const showDropzone = !parsed && !summary;
 
   return (
-    <div className="max-w-6xl space-y-5">
+    <div className="space-y-5">
       <input
         ref={fileRef}
         type="file"

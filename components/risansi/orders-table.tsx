@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -20,6 +20,7 @@ import {
 } from "./table-tools";
 import { AddOnForm } from "./add-on-form";
 import { ClientLookup } from "./client-lookup";
+import { MultiSelectFilter } from "./multi-select-filter";
 
 function searchText(o: OrderListRow): string {
   const items = (o.items ?? [])
@@ -142,6 +143,24 @@ export function OrdersTable({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [addFor, setAddFor] = useState<OrderListRow | null>(null);
+  // Zone is multi-select, so it sits outside useTableFilters (whose facets
+  // hold one value each) and narrows the rows before they reach it.
+  const [zones, setZones] = useState<string[]>([]);
+
+  const zoneOptions = useMemo(
+    () =>
+      [...new Set(orders.map((o) => (o.zone ?? "").trim()).filter(Boolean))].sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [orders]
+  );
+  const zoneFiltered = useMemo(
+    () =>
+      zones.length === 0
+        ? orders
+        : orders.filter((o) => zones.includes((o.zone ?? "").trim())),
+    [orders, zones]
+  );
   const {
     query,
     setQuery,
@@ -157,7 +176,7 @@ export function OrdersTable({
     total,
     from,
     to,
-  } = useTableFilters(orders, searchText, ORDER_FILTERS);
+  } = useTableFilters(zoneFiltered, searchText, ORDER_FILTERS);
 
   // expand-toggle + 9 data columns + open + optional Add-On/delete.
   const baseCols = 11;
@@ -188,6 +207,24 @@ export function OrdersTable({
       {/* Create an SO straight from the Market Intell client directory. Only
           shown to roles that may create orders (same gate as Add-On/delete). */}
       {canDelete && <ClientLookup />}
+
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <MultiSelectFilter
+          label="Zone"
+          options={zoneOptions}
+          selected={zones}
+          onChange={(next) => {
+            setZones(next);
+            setPage(1);
+          }}
+        />
+        {zones.length > 0 && (
+          <span className="text-xs text-muted">
+            {zoneFiltered.length} of {orders.length} orders in{" "}
+            {zones.join(", ")}
+          </span>
+        )}
+      </div>
 
       <FilterBar
         filters={ORDER_FILTERS}

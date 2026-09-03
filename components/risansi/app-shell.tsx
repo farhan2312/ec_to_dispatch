@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useTransition } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Bell, ChevronRight, PlayCircle } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Bell, ChevronRight, PlayCircle, RotateCw } from "lucide-react";
 import { ReportBugTrigger } from "./report-bug";
 import { DiscussionBell } from "./discussion-bell";
 import { Sidebar } from "./sidebar";
@@ -78,6 +78,10 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  // router.refresh() re-runs the server components for the current route,
+  // so the page picks up other people's saves without a full reload.
+  const [refreshing, startRefresh] = useTransition();
   const crumbs = useMemo(() => crumbsFor(pathname ?? ""), [pathname]);
   const showBugBell = isCentral(user.role);
   // On mobile the breadcrumb's last segment doubles as the page title.
@@ -143,6 +147,20 @@ export function AppShell({
           )}
 
           <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => startRefresh(() => router.refresh())}
+              disabled={refreshing}
+              aria-label="Refresh this page"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-card-border bg-surface px-3 text-sm font-medium text-foreground transition-colors hover:bg-background disabled:opacity-60"
+            >
+              <RotateCw
+                className={`h-4 w-4 text-primary ${refreshing ? "animate-spin" : ""}`}
+              />
+              <span className="hidden sm:inline">
+                {refreshing ? "Refreshing…" : "Refresh"}
+              </span>
+            </button>
             <a
               href={DEMO_VIDEO_URL}
               target="_blank"

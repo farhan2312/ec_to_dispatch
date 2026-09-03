@@ -246,6 +246,72 @@ export async function countDiscussionUnread(viewer: {
   return Number(result.rows[0]?.n ?? 0);
 }
 
+/** One logged delay, for the delay-log table. */
+export type DelayLog = {
+  id: string;
+  dept_role: string;
+  author_name: string;
+  author_role: string;
+  body: string;
+  created_at: string;
+};
+
+/** The delay log of one SO, with that SO's target dates for context. */
+export type DelayLogReport = {
+  so_no: string | null;
+  sl_no: number;
+  targets: Record<string, string | null>;
+  logs: DelayLog[];
+};
+
+/**
+ * Every delay logged against one SO, oldest first. Lane rule applies: a
+ * department user sees only the delays in their own lane.
+ */
+export async function listDelayLogs(
+  orderId: string,
+  viewer: { id: string; role: string }
+): Promise<DelayLogReport> {
+  const lanes = lanesFor(viewer.role);
+  const order = await query<{
+    so_no: string | null;
+    sl_no: number;
+    drg_target_date: string | null;
+    purchase_target_date: string | null;
+    qc_doc_target_date: string | null;
+    dispatch_team_target_date: string | null;
+    dispatch_target_date: string | null;
+  }>(
+    `SELECT so_no, sl_no::int AS sl_no,
+            to_char(drg_target_date, 'YYYY-MM-DD')           AS drg_target_date,
+            to_char(purchase_target_date, 'YYYY-MM-DD')      AS purchase_target_date,
+            to_char(qc_doc_target_date, 'YYYY-MM-DD')        AS qc_doc_target_date,
+            to_char(dispatch_team_target_date, 'YYYY-MM-DD') AS dispatch_team_target_date,
+            to_char(dispatch_target_date, 'YYYY-MM-DD')      AS dispatch_target_date
+       FROM orders WHERE id = $1`,
+    [orderId]
+  );
+  const row = order.rows[0];
+  const { so_no = null, sl_no = 0, ...targets } = row ?? {};
+
+  if (lanes.length === 0) {
+    return { so_no, sl_no, targets, logs: [] };
+  }
+
+  const result = await query<DelayLog>(
+    `SELECT m.id, m.dept_role, m.author_name, m.author_role, m.body,
+            to_char(m.created_at AT TIME ZONE 'UTC', ${ISO}) AS created_at
+       FROM order_messages m
+      WHERE m.order_id = $1
+        AND m.dept_role = ANY($2)
+        AND m.kind = 'delay'
+      ORDER BY m.created_at ASC`,
+    [orderId, lanes]
+  );
+
+  return { so_no, sl_no, targets, logs: result.rows };
+}
+
 // ---------------------------------------------------------------------------
 // Writes
 // ---------------------------------------------------------------------------

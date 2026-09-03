@@ -62,6 +62,7 @@ export type OrderListRow = {
   client_name: string | null;
   client_code: string | null;
   reps: string | null;
+  zone: string | null;
   po_no: string | null;
   order_type: string | null;
   order_value: string | null;
@@ -1295,6 +1296,7 @@ export async function listOrders(): Promise<OrderListRow[]> {
             o.client_name,
             o.client_code,
             o.reps,
+            o.zone,
             o.po_no,
             o.order_type,
             o.order_value::text AS order_value,

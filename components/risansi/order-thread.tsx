@@ -16,6 +16,7 @@ import {
   openThreadAction,
   postMessageAction,
 } from "@/app/risansi/orders/thread-actions";
+import { DelayLogsModal } from "./delay-logs-modal";
 
 const MAX_MESSAGE_LENGTH = 2000;
 
@@ -75,6 +76,7 @@ export function OrderThread({
 
   // Composer — a note, or the same message flagged as a delay.
   const [mode, setMode] = useState<"note" | "delay">("note");
+  const [showLogs, setShowLogs] = useState(false);
   const [body, setBody] = useState("");
 
   async function refreshLanes() {
@@ -160,7 +162,7 @@ export function OrderThread({
   // Header summary, so a collapsed card still shows there is something here.
   const totalUnread = lanes.reduce((n, l) => n + l.unread, 0);
   const totalMessages = lanes.reduce((n, l) => n + l.total, 0);
-  const Header = collapsible ? "button" : "div";
+  const Toggle = collapsible ? "button" : "div";
 
   const delayCount = messages.filter((m) => m.kind === "delay").length;
 
@@ -168,19 +170,21 @@ export function OrderThread({
     <section
       className={`rounded-xl border border-card-border bg-surface shadow-sm ${className}`}
     >
-      <Header
-        className={`flex w-full flex-wrap items-center justify-between gap-2 px-5 py-4 text-left ${
+      <div
+        className={`flex flex-wrap items-center justify-between gap-2 px-5 py-4 ${
           open ? "border-b border-card-border" : ""
         }`}
-        {...(collapsible
-          ? {
-              type: "button" as const,
-              onClick: () => setOpen((v) => !v),
-              "aria-expanded": open,
-            }
-          : {})}
       >
-        <div className="flex items-center gap-2">
+        <Toggle
+          className="flex items-center gap-2 text-left"
+          {...(collapsible
+            ? {
+                type: "button" as const,
+                onClick: () => setOpen((v) => !v),
+                "aria-expanded": open,
+              }
+            : {})}
+        >
           {collapsible &&
             (open ? (
               <ChevronDown className="h-4 w-4 text-muted-foreground" />
@@ -206,13 +210,32 @@ export function OrderThread({
           {!open && totalUnread === 0 && totalMessages > 0 && (
             <span className="text-xs text-muted">{totalMessages}</span>
           )}
+        </Toggle>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <p className="hidden text-xs text-muted lg:block">
+            {central
+              ? "Each department is a separate conversation — they can't see each other's."
+              : `Visible to you and Central Visibility only${soLabel ? ` · SO ${soLabel}` : ""}.`}
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowLogs(true)}
+            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-semibold text-amber-900 transition-colors hover:bg-amber-100"
+          >
+            <AlertTriangle className="h-3.5 w-3.5" />
+            View delay logs
+          </button>
         </div>
-        <p className="text-xs text-muted">
-          {central
-            ? "Each department is a separate conversation — they can't see each other's."
-            : `Visible to you and Central Visibility only${soLabel ? ` · SO ${soLabel}` : ""}.`}
-        </p>
-      </Header>
+      </div>
+
+      {showLogs && (
+        <DelayLogsModal
+          orderId={orderId}
+          soLabel={soLabel}
+          onClose={() => setShowLogs(false)}
+        />
+      )}
 
       {/* Central picks the department lane; a department user has just one. */}
       {open && central && lanes.length > 0 && (

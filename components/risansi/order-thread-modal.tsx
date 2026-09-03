@@ -33,7 +33,7 @@ export function OrderThreadModal({
               Discussion
             </p>
             <p className="truncate font-display text-sm font-semibold text-foreground">
-              SO {soLabel || "—"}
+              {soLabel || "—"}
             </p>
           </div>
           <button

@@ -6,12 +6,14 @@ import {
   canUseLane,
   insertMessage,
   isMessageKind,
+  listDelayLogs,
   listDiscussionInbox,
   listLanes,
   listMessages,
   markLaneRead,
   resolveLane,
   MAX_MESSAGE_LENGTH,
+  type DelayLogReport,
   type InboxEntry,
   type LaneSummary,
   type OrderMessage,
@@ -121,5 +123,23 @@ export async function discussionInboxAction(): Promise<InboxResult> {
   } catch (error) {
     console.error("discussionInboxAction failed:", error);
     return { ok: false, error: "Could not load your discussions." };
+  }
+}
+
+export type DelayLogsResult =
+  | { ok: true; report: DelayLogReport }
+  | { ok: false; error: string };
+
+/** Every delay logged on one SO, for the delay-log table. */
+export async function delayLogsAction(
+  orderId: string
+): Promise<DelayLogsResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  try {
+    return { ok: true, report: await listDelayLogs(orderId, user) };
+  } catch (error) {
+    console.error("delayLogsAction failed:", error);
+    return { ok: false, error: "Could not load the delay log." };
   }
 }

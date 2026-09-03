@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { Receipt } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditChild, canEditSection } from "@/lib/roles";
-import { listOrdersForBilling } from "@/lib/orders";
+import { listOrdersForBillingPage } from "@/lib/orders";
+import { parsePage, parseQuery } from "@/lib/pagination";
 import { unreadByOrder } from "@/lib/order-messages";
 import { BillingWorkspace } from "@/components/risansi/billing-workspace";
 
@@ -18,18 +19,21 @@ const TABLE = "order_billing" as const;
 export default async function BillingWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string; thread?: string }>;
+  searchParams: Promise<{ edit?: string; thread?: string; page?: string; q?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit, thread } = await searchParams;
-  const orders = await listOrdersForBilling();
+  const { edit, thread, page, q } = await searchParams;
+  const queue = await listOrdersForBillingPage({
+    page: parsePage(page),
+    search: parseQuery(q),
+  });
 
   // Unread discussion messages per SO, for the row badge.
   const unreadThreads = await unreadByOrder(
-    [...new Set(orders.map((r) => String(r.id)))],
+    [...new Set(queue.rows.map((r) => String(r.id)))],
     user
   );
 
@@ -55,7 +59,7 @@ export default async function BillingWorkspacePage({
         openThreadId={thread}
         role={user.role}
         unreadThreads={unreadThreads}
-        rows={orders}
+        queue={queue}
         canEdit={canEditChild(user.role, "order_billing_docs")}
         openOrderId={edit}
       />

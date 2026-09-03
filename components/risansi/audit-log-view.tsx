@@ -1,44 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { Pagination, SearchInput, useTableSearch } from "./table-tools";
+import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { roleLabel } from "@/lib/roles";
-import type { AuditEvent, AuditStats } from "@/lib/audit";
-
-type TabKey = "by_user" | "activity" | "logins" | "ownership";
-type RangeKey = "today" | "7d" | "30d" | "all";
-
-const TABS: { key: TabKey; label: string }[] = [
-  { key: "by_user", label: "Usage by User" },
-  { key: "activity", label: "Activity" },
-  { key: "logins", label: "Logins & Sessions" },
-  { key: "ownership", label: "Ownership Changes" },
-];
-
-const RANGES: { key: RangeKey; label: string }[] = [
-  { key: "today", label: "Today" },
-  { key: "7d", label: "7 days" },
-  { key: "30d", label: "30 days" },
-  { key: "all", label: "All" },
-];
-
-const DAY = 86_400_000;
-
-// Midnight IST today, as a timestamp — not `d.setHours(0,0,0,0)`, which zeroes
-// out the *runtime's* local timezone (UTC during server-side render, browser
-// tz after hydration), splitting "Today" across two different cutoffs.
-function todayStartIst(): number {
-  const isoDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
-  return new Date(`${isoDate}T00:00:00+05:30`).getTime();
-}
-
-function cutoff(range: RangeKey): number {
-  const now = Date.now();
-  if (range === "today") return todayStartIst();
-  if (range === "7d") return now - 7 * DAY;
-  if (range === "30d") return now - 30 * DAY;
-  return 0;
-}
+import type { AuditEvent, AuditStats, AuditUserRow } from "@/lib/audit";
+import type { PageResult } from "@/lib/pagination";
+import { AUDIT_RANGES, AUDIT_TABS } from "@/lib/audit-range";
 
 function fmt(iso: string): string {
   const d = new Date(iso);
@@ -97,69 +63,37 @@ function StatCard({ label, value }: { label: string; value: number }) {
   );
 }
 
-type UserRow = {
-  email: string;
-  role: string | null;
-  actions: number;
-  sessions: number;
-  lastActive: string;
-};
-
 export function AuditLogView({
   stats,
+  tab,
+  range,
+  users,
   events,
 }: {
   stats: AuditStats;
-  events: AuditEvent[];
+  tab: string;
+  range: string;
+  // Exactly one of these is populated — whichever tab is on screen.
+  users: PageResult<AuditUserRow> | null;
+  events: PageResult<AuditEvent> | null;
 }) {
-  const [tab, setTab] = useState<TabKey>("by_user");
-  const [range, setRange] = useState<RangeKey>("7d");
-
-  const since = cutoff(range);
-  const rangeEvents = events.filter(
-    (e) => new Date(e.created_at).getTime() >= since
-  );
-
-  // Aggregate per user for the "Usage by User" tab.
-  const userMap = new Map<string, UserRow>();
-  for (const e of rangeEvents) {
-    if (!e.user_email) continue;
-    const row =
-      userMap.get(e.user_email) ??
-      { email: e.user_email, role: e.user_role, actions: 0, sessions: 0, lastActive: e.created_at };
-    if (e.user_role) row.role = e.user_role;
-    if (e.category === "activity") row.actions += 1;
-    if (e.action === "login") row.sessions += 1;
-    if (new Date(e.created_at) > new Date(row.lastActive)) row.lastActive = e.created_at;
-    userMap.set(e.user_email, row);
-  }
-  const userRows = [...userMap.values()].sort(
-    (a, b) => new Date(b.lastActive).getTime() - new Date(a.lastActive).getTime()
-  );
-
-  const tabEvents =
-    tab === "activity"
-      ? rangeEvents.filter((e) => e.category === "activity")
-      : tab === "logins"
-        ? rangeEvents.filter((e) => e.category === "auth")
-        : tab === "ownership"
-          ? rangeEvents.filter((e) => e.category === "ownership")
-          : [];
-
+  const { setParams } = useUrlTable();
   const isByUser = tab === "by_user";
-  const rows: (AuditEvent | UserRow)[] = isByUser ? userRows : tabEvents;
+  const result = (isByUser ? users : events) ?? {
+    rows: [],
+    total: 0,
+    page: 1,
+    pageSize: 0,
+    totalPages: 1,
+    from: 0,
+    to: 0,
+  };
+  const pageRows = result.rows;
 
-  const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
-    useTableSearch(rows, (r) =>
-      "action" in r
-        ? `${r.user_email ?? ""} ${r.details ?? ""} ${r.target ?? ""} ${r.action}`
-        : `${r.email} ${r.role ?? ""}`
-    );
-
+  // Aggregation, filtering and paging all happen in SQL now.
   const summary = isByUser
-    ? `${userRows.length} user${userRows.length === 1 ? "" : "s"} active`
-    : `${total} event${total === 1 ? "" : "s"}`;
-
+    ? `${result.total} user${result.total === 1 ? "" : "s"} active`
+    : `${result.total} event${result.total === 1 ? "" : "s"}`;
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
       <div className="mb-6">
@@ -181,11 +115,11 @@ export function AuditLogView({
 
       {/* tabs */}
       <div className="mb-4 flex flex-wrap gap-1 border-b border-card-border">
-        {TABS.map((t) => (
+        {AUDIT_TABS.map((t) => (
           <button
             key={t.key}
             type="button"
-            onClick={() => setTab(t.key)}
+            onClick={() => setParams({ tab: t.key === "by_user" ? null : t.key })}
             className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
               tab === t.key
                 ? "border-primary text-primary"
@@ -200,11 +134,11 @@ export function AuditLogView({
       {/* range pills + summary + search */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          {RANGES.map((r) => (
+          {AUDIT_RANGES.map((r) => (
             <button
               key={r.key}
               type="button"
-              onClick={() => setRange(r.key)}
+              onClick={() => setParams({ range: r.key === "7d" ? null : r.key })}
               className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                 range === r.key
                   ? "border-primary bg-primary text-primary-foreground"
@@ -217,9 +151,7 @@ export function AuditLogView({
         </div>
         {/* The 'By user' tab has no event columns — its rows are just user
             identity + role, so the placeholder shifts to match. */}
-        <SearchInput
-          value={query}
-          onChange={setQuery}
+        <UrlSearchInput
           placeholder={
             isByUser
               ? "Search email, role…"
@@ -251,7 +183,7 @@ export function AuditLogView({
                     </td>
                   </tr>
                 )}
-                {(pageRows as UserRow[]).map((u) => (
+                {(pageRows as AuditUserRow[]).map((u) => (
                   <tr key={u.email} className="text-foreground">
                     <td className="px-4 py-3 font-medium">{u.email}</td>
                     <td className="px-4 py-3 text-muted">
@@ -304,13 +236,12 @@ export function AuditLogView({
             </table>
           )}
         </div>
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          setPage={setPage}
-          from={from}
-          to={to}
-          total={total}
+        <UrlPagination
+          page={result.page}
+          totalPages={result.totalPages}
+          from={result.from}
+          to={result.to}
+          total={result.total}
         />
       </div>
     </div>

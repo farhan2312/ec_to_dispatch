@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { Wallet } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditSection } from "@/lib/roles";
-import { listOrdersForSection } from "@/lib/orders";
+import { listOrdersForSectionPage } from "@/lib/orders";
+import { parsePage, parseQuery } from "@/lib/pagination";
 import {
   PAYMENT_TERMS_CONTEXT_FIELDS,
   SECTION_BY_TABLE,
@@ -22,23 +23,25 @@ const TABLE = "order_accounts" as const;
 export default async function AccountsWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string; thread?: string }>;
+  searchParams: Promise<{ edit?: string; thread?: string; page?: string; q?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit, thread } = await searchParams;
+  const { edit, thread, page, q } = await searchParams;
   const section = SECTION_BY_TABLE.get(TABLE)!;
-  const orders = await listOrdersForSection(
+  const queue = await listOrdersForSectionPage(
     TABLE,
     PAYMENT_TERMS_CONTEXT_FIELDS.map((f) => ({ column: f.column, type: f.type }))
-  );
+  ,
+      { page: parsePage(page), search: parseQuery(q) }
+    );
 
   // Unread discussion messages per SO, for the row badge. Rows are ECs in
   // the item-scope workspaces (order_id) and SOs in the SO-scope ones (id).
   const unreadThreads = await unreadByOrder(
-    [...new Set(orders.map((o) => String(o.order_id ?? o.id)))],
+    [...new Set(queue.rows.map((o) => String(o.order_id ?? o.id)))],
     user
   );
 
@@ -66,7 +69,7 @@ export default async function AccountsWorkspacePage({
         unreadThreads={unreadThreads}
         table={TABLE}
         fields={section.fields}
-        orders={orders}
+        queue={queue}
         readonlyFields={PAYMENT_TERMS_CONTEXT_FIELDS}
         openOrderId={edit}
       />

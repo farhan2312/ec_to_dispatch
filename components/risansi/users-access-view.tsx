@@ -3,7 +3,12 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Plus, X } from "lucide-react";
-import { Pagination, SearchInput, useTableSearch } from "./table-tools";
+import {
+  UrlPagination,
+  UrlSearchInput,
+  UrlTabs,
+} from "./url-table";
+import type { PageResult } from "@/lib/pagination";
 import { ALL_ROLES, roleLabel } from "@/lib/roles";
 import type { User, UserStatus } from "@/lib/users";
 import {
@@ -63,29 +68,25 @@ function ActionButton({
 }
 
 export function UsersAccessView({
-  users,
+  result,
   currentEmail,
   platformAdminEmail,
 }: {
-  users: User[];
+  // One server-fetched page, plus per-status totals for the whole table.
+  result: PageResult<User> & { counts: Record<string, number> };
   currentEmail: string;
   platformAdminEmail: string;
 }) {
   const router = useRouter();
-  const [statusFilter, setStatusFilter] = useState<"all" | UserStatus>("all");
+  const users = result.rows;
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
 
-  const byStatus =
-    statusFilter === "all"
-      ? users
-      : users.filter((u) => u.status === statusFilter);
-
-  const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
-    useTableSearch(byStatus, (u) => `${u.full_name} ${u.email} ${u.role}`);
-
-  const activeCount = users.filter((u) => u.status === "approved").length;
+  // Filtering and paging happen in SQL now — these are just the totals the
+  // header and the tabs display.
+  const pageRows = users;
+  const activeCount = result.counts.approved ?? 0;
 
   async function run(id: string, fn: () => Promise<{ ok: boolean; error?: string }>) {
     setBusyId(id);
@@ -102,28 +103,24 @@ export function UsersAccessView({
           Users &amp; Access
         </h1>
         <p className="text-sm text-muted">
-          {users.length} users · {activeCount} active
+          {result.counts.all ?? 0} users · {activeCount} active
         </p>
       </div>
 
       {/* toolbar */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <SearchInput
-          value={query}
-          onChange={setQuery}
-          placeholder="Search name, email, role…"
+        <UrlSearchInput placeholder="Search name, email, role…" />
+        <UrlTabs
+          paramKey="status"
+          fallback="all"
+          options={[
+            { value: "all", label: "All", count: result.counts.all ?? 0 },
+            { value: "pending", label: "Pending", count: result.counts.pending ?? 0 },
+            { value: "approved", label: "Approved", count: result.counts.approved ?? 0 },
+            { value: "rejected", label: "Rejected", count: result.counts.rejected ?? 0 },
+            { value: "disabled", label: "Disabled", count: result.counts.disabled ?? 0 },
+          ]}
         />
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as "all" | UserStatus)}
-          className="h-10 rounded-lg border border-input-border bg-surface px-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
-        >
-          <option value="all">All statuses</option>
-          <option value="pending">Pending</option>
-          <option value="approved">Approved</option>
-          <option value="rejected">Rejected</option>
-          <option value="disabled">Disabled</option>
-        </select>
         <button
           type="button"
           onClick={() => setShowAdd(true)}
@@ -250,13 +247,12 @@ export function UsersAccessView({
             </tbody>
           </table>
         </div>
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          setPage={setPage}
-          from={from}
-          to={to}
-          total={total}
+        <UrlPagination
+          page={result.page}
+          totalPages={result.totalPages}
+          from={result.from}
+          to={result.to}
+          total={result.total}
         />
       </div>
 

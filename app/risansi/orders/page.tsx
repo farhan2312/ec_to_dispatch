@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ClipboardList, Plus, Upload } from "lucide-react";
-import { listOrders } from "@/lib/orders";
+import { listOrdersPage } from "@/lib/orders";
+import { parseList, parsePage, parseQuery } from "@/lib/pagination";
 import { getCurrentUser } from "@/lib/session";
 import { canCreateOrders, isCentral } from "@/lib/roles";
 import { OrdersTable } from "@/components/risansi/orders-table";
@@ -13,14 +14,23 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function OrdersPage() {
+export default async function OrdersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; q?: string; zone?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   // The whole-order list/summary is Central Visibility & Admin only;
   // department roles use their own workspace instead.
   if (!isCentral(user.role)) redirect("/risansi/dashboard");
 
-  const orders = await listOrders();
+  const { page, q, zone } = await searchParams;
+  const result = await listOrdersPage({
+    page: parsePage(page),
+    search: parseQuery(q),
+    zones: parseList(zone),
+  });
   const canCreate = canCreateOrders(user.role);
 
   return (
@@ -36,8 +46,8 @@ export default async function OrdersPage() {
               Orders
             </h1>
             <p className="text-sm text-muted">
-              Master Order-to-Dispatch tracker — {orders.length}{" "}
-              {orders.length === 1 ? "order" : "orders"}.
+              Master Order-to-Dispatch tracker — {result.total}{" "}
+              {result.total === 1 ? "order" : "orders"}.
             </p>
           </div>
         </div>
@@ -62,7 +72,7 @@ export default async function OrdersPage() {
         )}
       </div>
 
-      {orders.length === 0 ? (
+      {result.total === 0 ? (
         <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
           <p className="text-sm font-medium text-foreground">No orders yet</p>
           <p className="mt-1 text-sm text-muted">
@@ -70,7 +80,7 @@ export default async function OrdersPage() {
           </p>
         </div>
       ) : (
-        <OrdersTable orders={orders} canDelete={canCreate} />
+        <OrdersTable result={result} canDelete={canCreate} />
       )}
     </div>
   );

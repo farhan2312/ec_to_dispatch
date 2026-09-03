@@ -1,5 +1,13 @@
 import { query } from "@/lib/db";
 import {
+  PAGE_SIZE,
+  clampPage,
+  likePattern,
+  offsetFor,
+  pageResult,
+  type PageResult,
+} from "@/lib/pagination";
+import {
   CHILD_FIELDS,
   coerceField,
   SECTION_BY_TABLE,
@@ -1032,7 +1040,10 @@ function contextTypeCast(type: string): string {
  */
 export async function listOrdersForSection(
   table: OrderTable,
-  contextColumns: ContextColumn[] = []
+  contextColumns: ContextColumn[] = [],
+  // When given, only these SOs are read — how the paged wrapper keeps the
+  // query to one page instead of scanning the whole queue.
+  orderIds?: string[]
 ): Promise<Row[]> {
   const section = SECTION_BY_TABLE.get(table);
   if (!section || section.scope !== "so" || table === "orders") return [];
@@ -1066,9 +1077,12 @@ export async function listOrdersForSection(
   // Accounts is not involved for Challan orders — Billing collects payment
   // against the challan directly, so those SOs shouldn't sit in the Accounts
   // queue at all.
-  const whereSql = table === "order_accounts"
-    ? "WHERE COALESCE(o.bill_type, '') <> 'Challan'"
-    : "";
+  const clauses: string[] = [];
+  if (table === "order_accounts") {
+    clauses.push(`COALESCE(o.bill_type, '') <> 'Challan'`);
+  }
+  if (orderIds) clauses.push(`o.id = ANY($1)`);
+  const whereSql = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
 
   const result = await query<Row>(
     `SELECT o.id,
@@ -1080,7 +1094,8 @@ export async function listOrdersForSection(
        LEFT JOIN ${table} d ON d.order_id = o.id
        ${extraJoinSql}
        ${whereSql}
-      ORDER BY o.sl_no ASC`
+      ORDER BY o.sl_no ASC`,
+    orderIds ? [orderIds] : []
   );
   return result.rows;
 }
@@ -1092,7 +1107,10 @@ export async function listOrdersForSection(
  */
 export async function listItemsForSection(
   table: OrderTable,
-  contextColumns: ContextColumn[] = []
+  contextColumns: ContextColumn[] = [],
+  // When given, only these SOs are read — how the paged wrapper keeps the
+  // query to one page instead of scanning the whole queue.
+  orderIds?: string[]
 ): Promise<Row[]> {
   const section = SECTION_BY_TABLE.get(table);
   if (!section || section.scope !== "item" || table === "order_items") return [];
@@ -1124,10 +1142,12 @@ export async function listItemsForSection(
     .join("\n       ");
 
   // QC isn't involved when the SO is flagged QC Needed = No.
-  const whereSql =
-    table === "order_qc"
-      ? `WHERE (o.qc_required IS NULL OR o.qc_required <> 'No')`
-      : "";
+  const clauses: string[] = [];
+  if (table === "order_qc") {
+    clauses.push(`(o.qc_required IS NULL OR o.qc_required <> 'No')`);
+  }
+  if (orderIds) clauses.push(`it.order_id = ANY($1)`);
+  const whereSql = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
 
   // Sections backed by a per-EC child list (Planning/Packing → packing slips)
   // carry those rows inline so the workspace can edit them without a round
@@ -1165,7 +1185,8 @@ export async function listItemsForSection(
        LEFT JOIN ${table} d ON d.item_id = it.id
        ${extraJoinSql}
       ${whereSql}
-      ORDER BY o.sl_no ASC, it.seq ASC`
+      ORDER BY o.sl_no ASC, it.seq ASC`,
+    orderIds ? [orderIds] : []
   );
   return result.rows;
 }
@@ -1197,7 +1218,9 @@ export type BillingQueueRow = {
  * Billing/Accounts queue: one row per SO, with the read-only SO context and
  * that SO's list of PIs (order_billing_docs) for inline management.
  */
-export async function listOrdersForBilling(): Promise<BillingQueueRow[]> {
+export async function listOrdersForBilling(
+  orderIds?: string[]
+): Promise<BillingQueueRow[]> {
   const result = await query<BillingQueueRow>(
     `SELECT o.id,
             o.sl_no::int AS sl_no,
@@ -1224,7 +1247,9 @@ export async function listOrdersForBilling(): Promise<BillingQueueRow[]> {
                      '[]'::jsonb) AS invoices
        FROM orders o
        LEFT JOIN order_billing b ON b.order_id = o.id
-      ORDER BY o.sl_no ASC`
+      WHERE ($1::uuid[] IS NULL OR o.id = ANY($1))
+      ORDER BY o.sl_no ASC`,
+    [orderIds ?? null]
   );
   return result.rows;
 }
@@ -1248,7 +1273,9 @@ export type PurchaseQueueRow = {
  * Purchase workspace queue: one row per EC with the SO's BOI flag, the purchase
  * target date, and that EC's BOI items (for the manage-items list).
  */
-export async function listItemsForPurchase(): Promise<PurchaseQueueRow[]> {
+export async function listItemsForPurchase(
+  orderIds?: string[]
+): Promise<PurchaseQueueRow[]> {
   // BOI = No SOs don't need Purchase involvement — hide them from the queue.
   const result = await query<PurchaseQueueRow>(
     `SELECT it.id,
@@ -1267,7 +1294,9 @@ export async function listItemsForPurchase(): Promise<PurchaseQueueRow[]> {
        FROM order_items it
        JOIN orders o ON o.id = it.order_id
       WHERE o.boi = 'Yes'
-      ORDER BY o.sl_no ASC, it.seq ASC`
+        AND ($1::uuid[] IS NULL OR it.order_id = ANY($1))
+      ORDER BY o.sl_no ASC, it.seq ASC`,
+    [orderIds ?? null]
   );
   return result.rows;
 }
@@ -1287,6 +1316,96 @@ function detailSelect(alias: string, f: { column: string; type: string }): strin
 // ---------------------------------------------------------------------------
 
 /** All SOs for the master table, each with its EC items, ordered by Sl. No. */
+/**
+ * One page of the orders list, filtered in SQL.
+ *
+ * Search covers the SO's own columns plus its ECs (an EC number or model is
+ * how people find an order), so it has to run here — filtering the 30 rows
+ * already on screen would miss matches on every other page.
+ */
+export async function listOrdersPage(opts: {
+  page: number;
+  search: string;
+  zones: string[];
+}): Promise<PageResult<OrderListRow> & { zoneOptions: string[] }> {
+  const search = opts.search ? likePattern(opts.search) : null;
+  const zones = opts.zones.length > 0 ? opts.zones : null;
+
+  const where = `WHERE ($1::text[] IS NULL OR TRIM(COALESCE(o.zone, '')) = ANY($1))
+        AND ($2::text IS NULL
+             OR o.so_no ILIKE $2 OR o.client_name ILIKE $2
+             OR o.client_code ILIKE $2 OR o.po_no ILIKE $2
+             OR o.sl_no::text ILIKE $2
+             OR EXISTS (SELECT 1 FROM order_items s
+                         WHERE s.order_id = o.id
+                           AND (s.ec_no ILIKE $2 OR s.item_type ILIKE $2
+                                OR s.model_no ILIKE $2)))`;
+
+  const [totals, zoneRows] = await Promise.all([
+    query<{ count: string }>(
+      `SELECT count(*) AS count FROM orders o ${where}`,
+      [zones, search]
+    ),
+    // Zone choices come from the whole table, not the current page.
+    query<{ zone: string }>(
+      `SELECT DISTINCT TRIM(zone) AS zone FROM orders
+        WHERE zone IS NOT NULL AND TRIM(zone) <> ''
+        ORDER BY 1`
+    ),
+  ]);
+
+  const total = Number(totals.rows[0]?.count ?? 0);
+  const page = clampPage(opts.page, total);
+
+  const rows = await (async () =>
+    query<OrderListRow>(
+      `SELECT o.id,
+            o.sl_no::int AS sl_no,
+            o.so_no,
+            to_char(o.so_date, 'YYYY-MM-DD') AS so_date,
+            o.client_name,
+            o.client_code,
+            o.reps,
+            o.zone,
+            o.po_no,
+            o.order_type,
+            o.order_value::text AS order_value,
+            a.payment_status,
+            o.dispatch_status,
+            COALESCE(ic.cnt, 0)::int AS ec_count,
+            COALESCE((
+              SELECT jsonb_agg(to_jsonb(x) ORDER BY x.seq)
+                FROM (
+                  SELECT it.id,
+                         it.seq::int AS seq,
+                         it.ec_no,
+                         to_char(it.ec_date, 'YYYY-MM-DD') AS ec_date,
+                         it.item_type,
+                         it.pump_type,
+                         it.model_no,
+                         it.internal_model,
+                         it.version,
+                         it.quantity::text AS quantity
+                    FROM order_items it
+                   WHERE it.order_id = o.id
+                ) x
+            ), '[]'::jsonb) AS items
+       FROM orders o
+       LEFT JOIN order_accounts a ON a.order_id = o.id
+       LEFT JOIN (
+         SELECT order_id, COUNT(*) AS cnt FROM order_items GROUP BY order_id
+       ) ic ON ic.order_id = o.id
+      ${where}
+      ORDER BY o.sl_no ASC
+      LIMIT $3 OFFSET $4`,
+      [zones, search, PAGE_SIZE, offsetFor(page)]
+    ))();
+
+  return {
+    ...pageResult(rows.rows, total, page),
+    zoneOptions: zoneRows.rows.map((r) => r.zone),
+  };
+}
 export async function listOrders(): Promise<OrderListRow[]> {
   const result = await query<OrderListRow>(
     `SELECT o.id,
@@ -1328,4 +1447,131 @@ export async function listOrders(): Promise<OrderListRow[]> {
       ORDER BY o.sl_no ASC`
   );
   return result.rows;
+}
+
+// ---------------------------------------------------------------------------
+// Paged department queues
+//
+// These page on *SOs*, never on ECs: the workspaces render one card per SO
+// with its ECs inside, so paging on EC rows would split an SO across two
+// pages. Each query therefore picks the SO ids for the page first, then
+// pulls every EC belonging to them.
+// ---------------------------------------------------------------------------
+
+/** SO ids for one page of a queue, plus how many SOs matched in total. */
+async function pageOfOrderIds(opts: {
+  page: number;
+  search: string;
+  /** Extra SQL restricting which SOs belong in this queue. */
+  restrict: string;
+  /** Extra SQL matching the search against the SO and its ECs. */
+  searchable: string;
+}): Promise<{ ids: string[]; total: number; page: number }> {
+  const search = opts.search ? likePattern(opts.search) : null;
+  const where = `WHERE ${opts.restrict}
+        AND ($1::text IS NULL OR ${opts.searchable})`;
+
+  const totals = await query<{ count: string }>(
+    `SELECT count(*) AS count FROM orders o ${where}`,
+    [search]
+  );
+  const total = Number(totals.rows[0]?.count ?? 0);
+  const page = clampPage(opts.page, total);
+
+  const ids = await query<{ id: string }>(
+    `SELECT o.id FROM orders o ${where}
+      ORDER BY o.sl_no ASC
+      LIMIT $2 OFFSET $3`,
+    [search, PAGE_SIZE, offsetFor(page)]
+  );
+
+  return { ids: ids.rows.map((r) => r.id), total, page };
+}
+
+// Matches the SO's own identity columns or any of its ECs.
+const SO_AND_EC_SEARCH = `(o.so_no ILIKE $1 OR o.client_name ILIKE $1
+             OR o.sl_no::text ILIKE $1
+             OR EXISTS (SELECT 1 FROM order_items s
+                         WHERE s.order_id = o.id AND s.ec_no ILIKE $1))`;
+
+/** Item-scope department queue, one page of SOs' worth of ECs. */
+export async function listItemsForSectionPage(
+  table: OrderTable,
+  contextColumns: ContextColumn[],
+  opts: { page: number; search: string }
+): Promise<PageResult<Row>> {
+  // QC isn't involved when the SO is flagged QC Needed = No — the same rule
+  // the unpaged query applies.
+  const restrict =
+    table === "order_qc"
+      ? `(o.qc_required IS NULL OR o.qc_required <> 'No')`
+      : `TRUE`;
+
+  const { ids, total, page } = await pageOfOrderIds({
+    page: opts.page,
+    search: opts.search,
+    restrict: `${restrict} AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id)`,
+    searchable: SO_AND_EC_SEARCH,
+  });
+
+  const rows = ids.length === 0 ? [] : await listItemsForSection(table, contextColumns, ids);
+
+  return pageResult(rows, total, page);
+}
+
+/** SO-scope department queue (Accounts), one page of SOs. */
+export async function listOrdersForSectionPage(
+  table: OrderTable,
+  contextColumns: ContextColumn[],
+  opts: { page: number; search: string }
+): Promise<PageResult<Row>> {
+  const { ids, total, page } = await pageOfOrderIds({
+    page: opts.page,
+    search: opts.search,
+    // Accounts is not involved for Challan orders, so they must be out of
+    // the count as well as out of the rows.
+    restrict:
+      table === "order_accounts"
+        ? `COALESCE(o.bill_type, '') <> 'Challan'`
+        : `TRUE`,
+    searchable: SO_AND_EC_SEARCH,
+  });
+
+  const rows = ids.length === 0 ? [] : await listOrdersForSection(table, contextColumns, ids);
+
+  return pageResult(rows, total, page);
+}
+
+/** Purchase queue (BOI = Yes), one page of SOs' worth of ECs. */
+export async function listItemsForPurchasePage(opts: {
+  page: number;
+  search: string;
+}): Promise<PageResult<PurchaseQueueRow>> {
+  const { ids, total, page } = await pageOfOrderIds({
+    page: opts.page,
+    search: opts.search,
+    restrict: `o.boi = 'Yes' AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id)`,
+    searchable: SO_AND_EC_SEARCH,
+  });
+
+  const rows = ids.length === 0 ? [] : await listItemsForPurchase(ids);
+
+  return pageResult(rows, total, page);
+}
+
+/** Billing queue: one page of SOs, filtered in SQL. */
+export async function listOrdersForBillingPage(opts: {
+  page: number;
+  search: string;
+}): Promise<PageResult<BillingQueueRow>> {
+  const { ids, total, page } = await pageOfOrderIds({
+    page: opts.page,
+    search: opts.search,
+    restrict: `TRUE`,
+    searchable: `(o.so_no ILIKE $1 OR o.client_name ILIKE $1 OR o.sl_no::text ILIKE $1)`,
+  });
+
+  const rows = ids.length === 0 ? [] : await listOrdersForBilling(ids);
+
+  return pageResult(rows, total, page);
 }

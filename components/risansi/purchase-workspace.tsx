@@ -5,7 +5,8 @@ import { ChevronDown, MessageSquare, Plus } from "lucide-react";
 import type { PurchaseQueueRow } from "@/lib/orders";
 import { BOI_ITEM_FIELDS } from "@/lib/order-schema";
 import { OrderChildList } from "./order-children";
-import { Pagination, SearchInput, useTableSearch } from "./table-tools";
+import { UrlPagination, UrlSearchInput } from "./url-table";
+import type { PageResult } from "@/lib/pagination";
 import { OrderThreadModal } from "./order-thread-modal";
 
 type Row = Record<string, unknown>;
@@ -26,14 +27,15 @@ function rowSearchText(o: PurchaseQueueRow): string {
 }
 
 export function PurchaseWorkspace({
-  rows,
+  queue,
   canEdit,
   openItemId,
   openThreadId,
   role,
   unreadThreads = {},
 }: {
-  rows: PurchaseQueueRow[];
+  // One server-fetched page of SOs, with every EC of those SOs.
+  queue: PageResult<PurchaseQueueRow>;
   canEdit: boolean;
   openItemId?: string;
   // Deep-link from the discussion icon: open this SO's thread on load.
@@ -43,6 +45,7 @@ export function PurchaseWorkspace({
   // Unread discussion messages keyed by order id, for the row badge.
   unreadThreads?: Record<string, number>;
 }) {
+  const rows = queue.rows;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [threadFor, setThreadFor] = useState<{
     orderId: string;
@@ -60,8 +63,7 @@ export function PurchaseWorkspace({
     });
   }, [openThreadId, rows]);
 
-  const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
-    useTableSearch(rows, rowSearchText);
+  const pageRows = rows;
 
   useEffect(() => {
     if (!openItemId) return;
@@ -82,7 +84,7 @@ export function PurchaseWorkspace({
     });
   }
 
-  if (rows.length === 0) {
+  if (queue.total === 0) {
     return (
       <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
         <p className="text-sm font-medium text-foreground">No orders yet</p>
@@ -109,7 +111,7 @@ export function PurchaseWorkspace({
   return (
     <div>
       <div className="mb-3">
-        <SearchInput value={query} onChange={setQuery} placeholder="Search SO, EC…" />
+        <UrlSearchInput placeholder="Search SO, EC…" />
       </div>
 
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">
@@ -234,13 +236,12 @@ export function PurchaseWorkspace({
             </tbody>
           </table>
         </div>
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          setPage={setPage}
-          from={from}
-          to={to}
-          total={total}
+        <UrlPagination
+          page={queue.page}
+          totalPages={queue.totalPages}
+          from={queue.from}
+          to={queue.to}
+          total={queue.total}
         />
       </div>
 

@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { Package } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditChild, canEditSection, reminderDeptForTable } from "@/lib/roles";
-import { listItemsForPurchase } from "@/lib/orders";
+import { listItemsForPurchasePage } from "@/lib/orders";
+import { parsePage, parseQuery } from "@/lib/pagination";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import { unreadByOrder } from "@/lib/order-messages";
 import { PurchaseWorkspace } from "@/components/risansi/purchase-workspace";
@@ -20,21 +21,21 @@ const TABLE = "order_purchase" as const;
 export default async function PurchaseWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string; thread?: string }>;
+  searchParams: Promise<{ edit?: string; thread?: string; page?: string; q?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit, thread } = await searchParams;
-  const [items, reminders] = await Promise.all([
-    listItemsForPurchase(),
+  const { edit, thread, page, q } = await searchParams;
+  const [queue, reminders] = await Promise.all([
+    listItemsForPurchasePage({ page: parsePage(page), search: parseQuery(q) }),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);
 
   // Unread discussion messages per SO, for the row badge.
   const unreadThreads = await unreadByOrder(
-    [...new Set(items.map((r) => String(r.order_id)))],
+    [...new Set(queue.rows.map((r) => String(r.order_id)))],
     user
   );
 
@@ -62,7 +63,7 @@ export default async function PurchaseWorkspacePage({
         openThreadId={thread}
         role={user.role}
         unreadThreads={unreadThreads}
-        rows={items}
+        queue={queue}
         canEdit={canEditChild(user.role, "order_boi_items")}
         openItemId={edit}
       />

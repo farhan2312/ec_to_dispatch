@@ -23,7 +23,8 @@ import {
   type OrderTable,
 } from "@/lib/order-schema";
 import { OrderChildList } from "./order-children";
-import { Pagination, SearchInput, useTableSearch } from "./table-tools";
+import { UrlPagination, UrlSearchInput } from "./url-table";
+import type { PageResult } from "@/lib/pagination";
 import { QcDocumentsModal } from "./qc-documents-modal";
 import { OrderDetailsModal } from "./order-details-modal";
 import { ViewPisModal } from "./view-pis-modal";
@@ -99,7 +100,7 @@ function fieldApplies(field: OrderField, row: Row): boolean {
 export function DepartmentWorkspace({
   table,
   fields,
-  orders,
+  queue,
   readonlyFields = [],
   canEdit = true,
   canEditCentral = true,
@@ -111,7 +112,9 @@ export function DepartmentWorkspace({
 }: {
   table: OrderTable;
   fields: OrderField[];
-  orders: Row[];
+  // One server-fetched page of the queue: search and paging ran in SQL, and
+  // paging is on SOs so an SO's ECs never straddle two pages.
+  queue: PageResult<Row>;
   readonlyFields?: OrderField[];
   canEdit?: boolean;
   // Whether the current user may edit `centralOnly` fields (Central Visibility).
@@ -132,6 +135,7 @@ export function DepartmentWorkspace({
     null
   );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const orders = queue.rows;
   const [threadFor, setThreadFor] = useState<{
     orderId: string;
     soLabel: string;
@@ -149,21 +153,7 @@ export function DepartmentWorkspace({
   }, [openThreadId, orders]);
 
 
-  const { match: rowSearchText, placeholder: searchPlaceholder } =
-    searchConfigFor(table);
-  const SO_GROUP_PAGE_SIZE = 30;
-  const {
-    query,
-    setQuery,
-    pageRows: rowPageRows,
-    page: rowPage,
-    setPage: setRowPage,
-    totalPages: rowTotalPages,
-    filteredRows,
-    total: rowTotal,
-    from: rowFrom,
-    to: rowTo,
-  } = useTableSearch(orders, rowSearchText);
+  const { placeholder: searchPlaceholder } = searchConfigFor(table);
 
   useEffect(() => {
     if (!openOrderId || !canEdit) return;
@@ -187,7 +177,7 @@ export function DepartmentWorkspace({
     });
   }
 
-  if (orders.length === 0) {
+  if (queue.total === 0) {
     return (
       <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
         <p className="text-sm font-medium text-foreground">No orders yet</p>
@@ -223,15 +213,12 @@ export function DepartmentWorkspace({
   // Item-scope layout: one row per SO (with the SO's readonly context) + a
   // nested EC subtable for that SO's department fields.
   //
-  // Pagination lives on SO groups here, not on ECs — otherwise an SO whose
-  // ECs straddle two pages would appear as different card counts on each
-  // page (page 1 with fewer cards, page 2 with more). We build groups from
-  // the full filtered row set and page over those. The row-level pagination
-  // returned by useTableSearch is still used for the SO-scope path below.
+  // The server pages on SOs, so every EC of every SO on this page is
+  // already here — grouping is just a reshape, never a re-paginate.
   type SoGroup = { key: string; head: Row; ecs: Row[] };
-  const allSoGroups: SoGroup[] = groupBySo
+  const soGroups: SoGroup[] = groupBySo
     ? Array.from(
-        filteredRows.reduce((map, r) => {
+        orders.reduce((map, r) => {
           const key = String(r.so_no ?? r.sl_no ?? "");
           const g = map.get(key);
           if (g) g.ecs.push(r);
@@ -240,29 +227,8 @@ export function DepartmentWorkspace({
         }, new Map<string, SoGroup>())
       ).map(([, g]) => g)
     : [];
-  const [soPage, setSoPage] = useState(1);
-  // Reset the SO page whenever the underlying set shrinks/grows (search).
-  const groupTotal = allSoGroups.length;
-  const groupTotalPages = Math.max(1, Math.ceil(groupTotal / SO_GROUP_PAGE_SIZE));
-  const soCurrent = Math.min(soPage, groupTotalPages);
-  const soGroups = groupBySo
-    ? allSoGroups.slice(
-        (soCurrent - 1) * SO_GROUP_PAGE_SIZE,
-        soCurrent * SO_GROUP_PAGE_SIZE
-      )
-    : [];
-  const groupFrom = groupTotal === 0 ? 0 : (soCurrent - 1) * SO_GROUP_PAGE_SIZE + 1;
-  const groupTo = Math.min(soCurrent * SO_GROUP_PAGE_SIZE, groupTotal);
-
-  // Which pagination the Pagination footer + row map should use.
-  const page = groupBySo ? soCurrent : rowPage;
-  const setPage = groupBySo ? setSoPage : setRowPage;
-  const totalPages = groupBySo ? groupTotalPages : rowTotalPages;
-  const total = groupBySo ? groupTotal : rowTotal;
-  const from = groupBySo ? groupFrom : rowFrom;
-  const to = groupBySo ? groupTo : rowTo;
-  // SO-scope path uses this for its own map; item-scope path iterates soGroups.
-  const pageRows = rowPageRows;
+  // SO-scope path maps these directly; item-scope iterates soGroups.
+  const pageRows = orders;
 
   // Per-EC child list carried by this section (packing slips), plus its gate
   // against the SO and the label/kind it files rows under.
@@ -327,11 +293,7 @@ export function DepartmentWorkspace({
   return (
     <div>
       <div className="mb-3">
-        <SearchInput
-          value={query}
-          onChange={setQuery}
-          placeholder={searchPlaceholder}
-        />
+        <UrlSearchInput placeholder={searchPlaceholder} />
       </div>
 
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">
@@ -633,13 +595,12 @@ export function DepartmentWorkspace({
             </tbody>
           </table>
         </div>
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          setPage={setPage}
-          from={from}
-          to={to}
-          total={total}
+        <UrlPagination
+          page={queue.page}
+          totalPages={queue.totalPages}
+          from={queue.from}
+          to={queue.to}
+          total={queue.total}
         />
       </div>
 

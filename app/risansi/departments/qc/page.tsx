@@ -10,7 +10,11 @@ import {
   isCentral,
   reminderDeptForTable,
 } from "@/lib/roles";
-import { listItemsForSection, listQcDocumentCounts } from "@/lib/orders";
+import {
+  listItemsForSectionPage,
+  listQcDocumentCounts,
+} from "@/lib/orders";
+import { parsePage, parseQuery } from "@/lib/pagination";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import { QC_CONTEXT_FIELDS, SECTION_BY_TABLE } from "@/lib/order-schema";
 import { unreadByOrder } from "@/lib/order-messages";
@@ -28,26 +32,28 @@ const TABLE = "order_qc" as const;
 export default async function QcWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string; thread?: string }>;
+  searchParams: Promise<{ edit?: string; thread?: string; page?: string; q?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canAccessDepartment(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit, thread } = await searchParams;
+  const { edit, thread, page, q } = await searchParams;
   // QC fills its own submission fields; Required QC Documents / Target Date
   // stay centralOnly (Mitali fills those, read-only to QC — see order-schema.ts).
   const canEdit = canEditSection(user.role, TABLE);
   const canEditCentral = isCentral(user.role);
   const section = SECTION_BY_TABLE.get(TABLE)!;
-  const [orders, docCounts, requirementDocCounts, reminders] = await Promise.all([
-    listItemsForSection(
+  const [queue, docCounts, requirementDocCounts, reminders] = await Promise.all([
+    listItemsForSectionPage(
       TABLE,
       QC_CONTEXT_FIELDS.map((f) => ({
         column: f.column,
         type: f.type,
         from: "orders" as const,
       }))
+    ,
+      { page: parsePage(page), search: parseQuery(q) }
     ),
     listQcDocumentCounts("order_qc_documents"),
     listQcDocumentCounts("order_qc_requirement_documents"),
@@ -57,7 +63,7 @@ export default async function QcWorkspacePage({
   // Unread discussion messages per SO, for the row badge. Rows are ECs in
   // the item-scope workspaces (order_id) and SOs in the SO-scope ones (id).
   const unreadThreads = await unreadByOrder(
-    [...new Set(orders.map((o) => String(o.order_id ?? o.id)))],
+    [...new Set(queue.rows.map((o) => String(o.order_id ?? o.id)))],
     user
   );
 
@@ -87,7 +93,7 @@ export default async function QcWorkspacePage({
         unreadThreads={unreadThreads}
         table={TABLE}
         fields={section.fields}
-        orders={orders}
+        queue={queue}
         readonlyFields={QC_CONTEXT_FIELDS}
         canEdit={canEdit}
         canEditCentral={canEditCentral}

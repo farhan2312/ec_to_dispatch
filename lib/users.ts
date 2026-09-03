@@ -1,4 +1,12 @@
 import bcrypt from "bcryptjs";
+import {
+  PAGE_SIZE,
+  clampPage,
+  likePattern,
+  offsetFor,
+  pageResult,
+  type PageResult,
+} from "@/lib/pagination";
 import { query } from "@/lib/db";
 
 import type { Role } from "@/lib/roles";
@@ -80,6 +88,60 @@ export async function listAllUsers(): Promise<User[]> {
     `SELECT ${PUBLIC_COLUMNS} FROM users ORDER BY created_at DESC`
   );
   return result.rows;
+}
+
+/**
+ * One page of users, filtered in SQL. Status counts come back with it so
+ * the tabs can show totals for the whole table, not just this page.
+ */
+export async function listUsersPage(opts: {
+  page: number;
+  status: string;
+  search: string;
+}): Promise<PageResult<User> & { counts: Record<string, number> }> {
+  const status = opts.status === "all" ? null : opts.status;
+  const search = opts.search ? likePattern(opts.search) : null;
+
+  const where = `WHERE ($1::text IS NULL OR status = $1)
+        AND ($2::text IS NULL OR full_name ILIKE $2 OR email ILIKE $2
+                              OR role ILIKE $2)`;
+
+  const [totals, counts] = await Promise.all([
+    query<{ count: string }>(
+      `SELECT count(*) AS count FROM users ${where}`,
+      [status, search]
+    ),
+    // Tab counts ignore the status filter but respect the search, so the
+    // numbers match what clicking each tab would actually show.
+    query<{ status: string; count: string }>(
+      `SELECT status, count(*) AS count FROM users
+        WHERE ($1::text IS NULL OR full_name ILIKE $1 OR email ILIKE $1
+                                OR role ILIKE $1)
+        GROUP BY status`,
+      [search]
+    ),
+  ]);
+
+  const total = Number(totals.rows[0]?.count ?? 0);
+  const page = clampPage(opts.page, total);
+  const rows = await query<User>(
+    `SELECT ${PUBLIC_COLUMNS} FROM users
+      ${where}
+      ORDER BY created_at DESC
+      LIMIT $3 OFFSET $4`,
+    [status, search, PAGE_SIZE, offsetFor(page)]
+  );
+
+  const byStatus: Record<string, number> = { all: 0 };
+  for (const row of counts.rows) {
+    byStatus[row.status] = Number(row.count);
+    byStatus.all += Number(row.count);
+  }
+
+  return {
+    ...pageResult(rows.rows, total, page),
+    counts: byStatus,
+  };
 }
 
 /** Change a user's role. */

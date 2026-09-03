@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { CalendarClock } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
-import { listItemsForSection } from "@/lib/orders";
+import { listItemsForSectionPage } from "@/lib/orders";
+import { parsePage, parseQuery } from "@/lib/pagination";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import { PLANNING_CONTEXT_FIELDS, SECTION_BY_TABLE } from "@/lib/order-schema";
 import { unreadByOrder } from "@/lib/order-messages";
@@ -21,22 +22,24 @@ const TABLE = "order_planning" as const;
 export default async function PlanningWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string; thread?: string }>;
+  searchParams: Promise<{ edit?: string; thread?: string; page?: string; q?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit, thread } = await searchParams;
+  const { edit, thread, page, q } = await searchParams;
   const section = SECTION_BY_TABLE.get(TABLE)!;
-  const [orders, reminders] = await Promise.all([
-    listItemsForSection(
+  const [queue, reminders] = await Promise.all([
+    listItemsForSectionPage(
       TABLE,
       PLANNING_CONTEXT_FIELDS.map((f) => ({
         column: f.column,
         type: f.type,
         from: "orders" as const,
       }))
+    ,
+      { page: parsePage(page), search: parseQuery(q) }
     ),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);
@@ -44,7 +47,7 @@ export default async function PlanningWorkspacePage({
   // Unread discussion messages per SO, for the row badge. Rows are ECs in
   // the item-scope workspaces (order_id) and SOs in the SO-scope ones (id).
   const unreadThreads = await unreadByOrder(
-    [...new Set(orders.map((o) => String(o.order_id ?? o.id)))],
+    [...new Set(queue.rows.map((o) => String(o.order_id ?? o.id)))],
     user
   );
 
@@ -73,7 +76,7 @@ export default async function PlanningWorkspacePage({
         unreadThreads={unreadThreads}
         table={TABLE}
         fields={section.fields}
-        orders={orders}
+        queue={queue}
         readonlyFields={PLANNING_CONTEXT_FIELDS}
         canEditCentral={isCentral(user.role)}
         openOrderId={edit}

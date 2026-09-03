@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { PenTool } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
-import { listItemsForSection } from "@/lib/orders";
+import { listItemsForSectionPage } from "@/lib/orders";
+import { parsePage, parseQuery } from "@/lib/pagination";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import {
   DRAWING_CONTEXT_FIELDS,
@@ -24,22 +25,24 @@ const TABLE = "order_drawing" as const;
 export default async function DrawingWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string; thread?: string }>;
+  searchParams: Promise<{ edit?: string; thread?: string; page?: string; q?: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit, thread } = await searchParams;
+  const { edit, thread, page, q } = await searchParams;
   const section = SECTION_BY_TABLE.get(TABLE)!;
-  const [orders, reminders] = await Promise.all([
-    listItemsForSection(
+  const [queue, reminders] = await Promise.all([
+    listItemsForSectionPage(
       TABLE,
       DRAWING_CONTEXT_FIELDS.map((f) => ({
         column: f.column,
         type: f.type,
         from: "orders" as const,
       }))
+    ,
+      { page: parsePage(page), search: parseQuery(q) }
     ),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);
@@ -47,7 +50,7 @@ export default async function DrawingWorkspacePage({
   // Unread discussion messages per SO, for the row badge. Rows are ECs in
   // the item-scope workspaces (order_id) and SOs in the SO-scope ones (id).
   const unreadThreads = await unreadByOrder(
-    [...new Set(orders.map((o) => String(o.order_id ?? o.id)))],
+    [...new Set(queue.rows.map((o) => String(o.order_id ?? o.id)))],
     user
   );
 
@@ -77,7 +80,7 @@ export default async function DrawingWorkspacePage({
         unreadThreads={unreadThreads}
         table={TABLE}
         fields={section.fields}
-        orders={orders}
+        queue={queue}
         readonlyFields={DRAWING_CONTEXT_FIELDS}
         // Approval on a revision is Central Visibility's to set — Drawing sees
         // it read-only. Without this the prop defaults to true and Drawing

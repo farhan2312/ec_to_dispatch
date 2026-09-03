@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -12,26 +12,11 @@ import {
 } from "lucide-react";
 import type { ItemSummary, OrderListRow } from "@/lib/orders";
 import { deleteOrderAction } from "@/app/risansi/orders/actions";
-import {
-  FilterBar,
-  Pagination,
-  useTableFilters,
-  type FilterDef,
-} from "./table-tools";
+import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
+import type { PageResult } from "@/lib/pagination";
 import { AddOnForm } from "./add-on-form";
 import { ClientLookup } from "./client-lookup";
 import { MultiSelectFilter } from "./multi-select-filter";
-
-function searchText(o: OrderListRow): string {
-  const items = (o.items ?? [])
-    .map((it) => [it.ec_no, it.item_type, it.model_no].filter(Boolean).join(" "))
-    .join(" ");
-  return [o.sl_no, o.so_no, o.client_name, o.client_code, o.po_no, items]
-    .filter(Boolean)
-    .join(" ");
-}
-
-const ORDER_FILTERS: FilterDef<OrderListRow>[] = [];
 
 const numberFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 
@@ -133,51 +118,23 @@ function ItemRows({
 }
 
 export function OrdersTable({
-  orders,
+  result,
   canDelete = false,
 }: {
-  orders: OrderListRow[];
+  // One server-fetched page; search, zone and paging all ran in SQL.
+  result: PageResult<OrderListRow> & { zoneOptions: string[] };
   canDelete?: boolean;
 }) {
+  const orders = result.rows;
   const router = useRouter();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [addFor, setAddFor] = useState<OrderListRow | null>(null);
-  // Zone is multi-select, so it sits outside useTableFilters (whose facets
-  // hold one value each) and narrows the rows before they reach it.
-  const [zones, setZones] = useState<string[]>([]);
-
-  const zoneOptions = useMemo(
-    () =>
-      [...new Set(orders.map((o) => (o.zone ?? "").trim()).filter(Boolean))].sort(
-        (a, b) => a.localeCompare(b)
-      ),
-    [orders]
-  );
-  const zoneFiltered = useMemo(
-    () =>
-      zones.length === 0
-        ? orders
-        : orders.filter((o) => zones.includes((o.zone ?? "").trim())),
-    [orders, zones]
-  );
-  const {
-    query,
-    setQuery,
-    selected,
-    setFilter,
-    clearAll,
-    options,
-    activeCount,
-    pageRows,
-    page,
-    setPage,
-    totalPages,
-    total,
-    from,
-    to,
-  } = useTableFilters(zoneFiltered, searchText, ORDER_FILTERS);
-
+  // Zone lives in the URL, so the filter narrows the whole table rather
+  // than only the page already loaded.
+  const { getList, setParams } = useUrlTable();
+  const zones = getList("zone");
+  const pageRows = orders;
   // expand-toggle + 9 data columns + open + optional Add-On/delete.
   const baseCols = 11;
   const colSpan = baseCols + (canDelete ? 1 : 0);
@@ -208,36 +165,20 @@ export function OrdersTable({
           shown to roles that may create orders (same gate as Add-On/delete). */}
       {canDelete && <ClientLookup />}
 
-      <FilterBar
-        filters={ORDER_FILTERS}
-        options={options}
-        selected={selected}
-        setFilter={setFilter}
-        query={query}
-        setQuery={setQuery}
-        activeCount={activeCount}
-        clearAll={clearAll}
-        total={total}
-        searchPlaceholder="Search SO, client name, client code, EC…"
-        extraControls={
-          <>
-            <MultiSelectFilter
-              label="Zone"
-              options={zoneOptions}
-              selected={zones}
-              onChange={(next) => {
-                setZones(next);
-                setPage(1);
-              }}
-            />
-            {zones.length > 0 && (
-              <span className="text-xs text-muted">
-                {zoneFiltered.length} of {orders.length} orders
-              </span>
-            )}
-          </>
-        }
-      />
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-card-border bg-surface p-3 shadow-sm">
+        <UrlSearchInput placeholder="Search SO, client name, client code, EC…" />
+        <MultiSelectFilter
+          label="Zone"
+          options={result.zoneOptions}
+          selected={zones}
+          onChange={(next) => setParams({ zone: next })}
+        />
+        {zones.length > 0 && (
+          <span className="text-xs text-muted">
+            {result.total} matching {result.total === 1 ? "order" : "orders"}
+          </span>
+        )}
+      </div>
 
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">
         <div className="overflow-x-auto">
@@ -359,13 +300,12 @@ export function OrdersTable({
             </tbody>
           </table>
         </div>
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          setPage={setPage}
-          from={from}
-          to={to}
-          total={total}
+        <UrlPagination
+          page={result.page}
+          totalPages={result.totalPages}
+          from={result.from}
+          to={result.to}
+          total={result.total}
         />
       </div>
 

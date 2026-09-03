@@ -8,7 +8,8 @@ import { OrderChildList } from "./order-children";
 import { OrderDetailsModal } from "./order-details-modal";
 import { InvoiceLrCell } from "./invoice-lr-cell";
 import { invoiceRowHeader } from "./order-detail";
-import { Pagination, SearchInput, useTableSearch } from "./table-tools";
+import { UrlPagination, UrlSearchInput } from "./url-table";
+import type { PageResult } from "@/lib/pagination";
 import { OrderThreadModal } from "./order-thread-modal";
 
 type Row = Record<string, unknown>;
@@ -36,14 +37,15 @@ function formatValue(v: string | null): string {
 }
 
 export function BillingWorkspace({
-  rows,
+  queue,
   canEdit,
   openOrderId,
   openThreadId,
   role,
   unreadThreads = {},
 }: {
-  rows: BillingQueueRow[];
+  // One server-fetched page; search and paging ran in SQL.
+  queue: PageResult<BillingQueueRow>;
   canEdit: boolean;
   openOrderId?: string;
   // Deep-link from the discussion icon: open this SO's thread on load.
@@ -53,6 +55,7 @@ export function BillingWorkspace({
   // Unread discussion messages keyed by order id, for the row badge.
   unreadThreads?: Record<string, number>;
 }) {
+  const rows = queue.rows;
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [threadFor, setThreadFor] = useState<{
     orderId: string;
@@ -71,8 +74,7 @@ export function BillingWorkspace({
   }, [openThreadId, rows]);
 
   const [orderDetailsFor, setOrderDetailsFor] = useState<string | null>(null);
-  const { query, setQuery, pageRows, page, setPage, totalPages, total, from, to } =
-    useTableSearch(rows, rowSearchText);
+  const pageRows = rows;
 
   useEffect(() => {
     if (!openOrderId) return;
@@ -105,7 +107,7 @@ export function BillingWorkspace({
   return (
     <div>
       <div className="mb-3">
-        <SearchInput value={query} onChange={setQuery} placeholder="Search SO, client…" />
+        <UrlSearchInput placeholder="Search SO, client…" />
       </div>
 
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">
@@ -258,13 +260,12 @@ export function BillingWorkspace({
             </tbody>
           </table>
         </div>
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          setPage={setPage}
-          from={from}
-          to={to}
-          total={total}
+        <UrlPagination
+          page={queue.page}
+          totalPages={queue.totalPages}
+          from={queue.from}
+          to={queue.to}
+          total={queue.total}
         />
       </div>
 

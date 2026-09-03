@@ -49,7 +49,7 @@ export function ItemDetail({
   );
 
   return (
-    <div className="px-4 py-6 sm:px-8 sm:py-8">
+    <div className="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-8">
       <Link
         href={`/risansi/orders/${orderId}`}
         className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground"
@@ -70,7 +70,7 @@ export function ItemDetail({
         <span className="text-sm text-muted">SO {soLabel}</span>
       </div>
 
-      <div className="max-w-6xl space-y-6">
+      <div className="space-y-6">
         {visibleSections.map((section) => {
           // A section may carry a 1:many child list (Purchase → BOI items,
           // Planning/Packing → packing slips), gated by childGate against the

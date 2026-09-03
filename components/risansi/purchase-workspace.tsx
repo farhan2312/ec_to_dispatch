@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { ChevronDown, MessageSquare, Plus } from "lucide-react";
 import type { PurchaseQueueRow } from "@/lib/orders";
 import { BOI_ITEM_FIELDS } from "@/lib/order-schema";
+import { isCentral } from "@/lib/roles";
 import { OrderChildList } from "./order-children";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import type { PageResult } from "@/lib/pagination";
@@ -205,8 +206,11 @@ export function PurchaseWorkspace({
                                   </span>
                                 </div>
                                 {boiYes ? (
-                                  // Inline BOI items — add/edit/delete right here,
-                                  // no separate modal to open.
+                                  // Central Visibility decides which items are
+                                  // bought out and describes them; Purchase only
+                                  // records the receipt date and remarks. So the
+                                  // item/make fields are read-only here, and the
+                                  // add and delete controls belong to Central.
                                   <OrderChildList
                                     orderId={row.id}
                                     table="order_boi_items"
@@ -214,6 +218,8 @@ export function PurchaseWorkspace({
                                     fields={BOI_ITEM_FIELDS}
                                     rows={(row.boi_items ?? []) as Row[]}
                                     canEdit={canEdit}
+                                    canEditCentral={isCentral(role)}
+                                    canAdd={isCentral(role)}
                                   />
                                 ) : (
                                   <p className="text-xs text-muted">

@@ -1607,3 +1607,12 @@ ALTER TABLE order_messages DROP COLUMN IF EXISTS resolved_at;
 ALTER TABLE order_messages DROP COLUMN IF EXISTS resolved_by;
 ALTER TABLE order_messages DROP COLUMN IF EXISTS resolved_name;
 ALTER TABLE order_messages DROP COLUMN IF EXISTS resolves_id;
+
+-- ---------------------------------------------------------------------------
+-- Planning now records assembly and packing as separate, dated stages with
+-- their own remarks. Packing only applies to pump-like items (gated in the
+-- schema by item_type); a spare is simply ready or not.
+-- ---------------------------------------------------------------------------
+ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS assembly_remarks TEXT;
+ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS packing_date     DATE;
+ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS packing_remarks  TEXT;

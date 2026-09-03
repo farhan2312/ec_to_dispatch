@@ -175,6 +175,15 @@ const TARGET_DATE_RECIPIENTS: Partial<
       roles: ["dispatch"],
     },
   ],
+  // Planning schedules the assembly; Assembly & Packing is the team that has
+  // to be there for it, and sees the date read-only in their workspace.
+  order_planning: [
+    {
+      column: "assembly_date",
+      label: "Assembly date",
+      roles: ["dispatch"],
+    },
+  ],
 };
 
 /**

@@ -36,7 +36,9 @@ export default async function PlanningWorkspacePage({
       PLANNING_CONTEXT_FIELDS.map((f) => ({
         column: f.column,
         type: f.type,
-        from: "orders" as const,
+        // A context field can name its own source table (e.g. Assembly
+        // reading Planning's Assembly Date); SO-level context defaults to orders.
+        from: f.from ?? ("orders" as const),
       }))
     ,
       { page: parsePage(page), search: parseQuery(q) }

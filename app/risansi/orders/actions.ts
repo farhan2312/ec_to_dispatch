@@ -694,11 +694,15 @@ export async function updateOrderChildAction(
         });
       }
     } else if (tbl === "order_boi_items") {
-      // Purchase BOI item save → Central Visibility.
-      if (!notifyMuted && soOrderId) {
+      // Purchase BOI item save → Central Visibility, and Planning: a bought-out
+      // receipt date is what unblocks their schedule, so they need to hear it
+      // without going looking.
+      if (soOrderId) {
         const soLabel = (await getOrderLabel(soOrderId)) ?? soOrderId;
+        const roles = ["planning"];
+        if (!notifyMuted) roles.push("central_visibility");
         await emitNotification({
-          roles: ["central_visibility"],
+          roles,
           orderId: soOrderId,
           type: "dept_update",
           message: `Purchase BOI updated for ${soLabel}`,
@@ -908,3 +912,43 @@ export async function deleteQcDocumentAction(
   }
 }
 
+
+export type BoiItemsResult =
+  | { ok: true; rows: Record<string, unknown>[] }
+  | { ok: false; error: string };
+
+/**
+ * The bought-out items on one EC, read-only.
+ *
+ * Planning needs these to schedule around a pending receipt, so the read is
+ * open to Planning and Purchase (its owner) plus Central Visibility — but it
+ * is a read only: the rows themselves are written through the Purchase
+ * workspace, under its own permission checks.
+ */
+export async function boiItemsAction(itemId: string): Promise<BoiItemsResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+
+  const allowed =
+    isCentral(user.role) ||
+    canEditSection(user.role, "order_planning") ||
+    canEditSection(user.role, "order_purchase");
+  if (!allowed) {
+    return { ok: false, error: "You don't have access to bought-out items." };
+  }
+
+  try {
+    const result = await query<Record<string, unknown>>(
+      `SELECT id, boi_item, boi_item_other, boi_make_desc,
+              to_char(receipt_date, 'YYYY-MM-DD') AS receipt_date, remarks
+         FROM order_boi_items
+        WHERE item_id = $1
+        ORDER BY created_at`,
+      [itemId]
+    );
+    return { ok: true, rows: result.rows };
+  } catch (error) {
+    console.error("boiItemsAction failed:", error);
+    return { ok: false, error: "Could not load the bought-out items." };
+  }
+}

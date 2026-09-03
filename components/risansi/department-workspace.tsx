@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ClipboardList,
   Loader2,
+  Package,
   MessageSquare,
   Paperclip,
   Pencil,
@@ -27,6 +28,7 @@ import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import type { PageResult } from "@/lib/pagination";
 import { QcDocumentsModal } from "./qc-documents-modal";
 import { OrderDetailsModal } from "./order-details-modal";
+import { BoiItemsModal } from "./boi-items-modal";
 import { ViewPisModal } from "./view-pis-modal";
 import { OrderThreadModal } from "./order-thread-modal";
 import type { QcDocTable } from "@/lib/orders";
@@ -179,6 +181,14 @@ export function DepartmentWorkspace({
   }
 
 
+  // Read-only context splits by scope: SO-level values (from `orders`)
+  // belong on the SO header row, while anything read from an item-keyed
+  // table — Planning's Assembly Date, say — differs per EC and has to sit
+  // in the EC subtable, or the SO row would show the first EC's value as
+  // if it applied to all of them.
+  const soContext = readonlyFields.filter((f) => !f.from || f.from === "orders");
+  const ecContext = readonlyFields.filter((f) => f.from && f.from !== "orders");
+
   // Party is customer-identifying info; only Billing & Operations and
   // Accounts need it for their day-to-day work.
   const showParty = table === "order_billing" || table === "order_accounts";
@@ -277,11 +287,11 @@ export function DepartmentWorkspace({
     : "No orders yet.";
 
   const colCount = groupBySo
-    ? 4 + (showParty ? 1 : 0) + readonlyFields.length + 1 // toggle + Sl. + SO + client_name? + context + ECs + chat
+    ? 4 + (showParty ? 1 : 0) + soContext.length + 1 // toggle + Sl. + SO + client_name? + context + ECs + chat
     : 3 +
       (showEcNo ? 1 : 0) +
       (showParty ? 1 : 0) +
-      readonlyFields.length +
+      soContext.length +
       visibleFields.length +
       (canEdit ? 1 : 0) +
       documents.length;
@@ -304,7 +314,7 @@ export function DepartmentWorkspace({
                 <th className="px-4 py-3">Chat</th>
                 {!groupBySo && showEcNo && <th className="px-4 py-3">EC No.</th>}
                 {showParty && <th className="px-4 py-3">Client Name</th>}
-                {readonlyFields.map((f) => (
+                {soContext.map((f) => (
                   <th
                     key={f.column}
                     className="px-3 py-3 whitespace-nowrap text-muted-foreground"
@@ -365,7 +375,7 @@ export function DepartmentWorkspace({
                     {showParty && (
                       <td className="px-4 py-3">{toInput(order.client_name) || "—"}</td>
                     )}
-                    {readonlyFields.map((f) => (
+                    {soContext.map((f) => (
                       <td
                         key={f.column}
                         className="px-3 py-3 whitespace-nowrap text-muted"
@@ -444,7 +454,7 @@ export function DepartmentWorkspace({
                             {toInput(g.head.client_name) || "—"}
                           </td>
                         )}
-                        {readonlyFields.map((f) => (
+                        {soContext.map((f) => (
                           <td
                             key={f.column}
                             className="px-3 py-3 whitespace-nowrap text-muted"
@@ -465,6 +475,14 @@ export function DepartmentWorkspace({
                                 <thead>
                                   <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                                     <th className="px-3 py-2">EC No.</th>
+                                    {ecContext.map((f) => (
+                                      <th
+                                        key={f.column}
+                                        className="px-3 py-2 whitespace-nowrap"
+                                      >
+                                        {f.label}
+                                      </th>
+                                    ))}
                                     {visibleFields.map((f) => (
                                       <th
                                         key={f.column}
@@ -492,6 +510,14 @@ export function DepartmentWorkspace({
                                       <td className="px-3 py-2 whitespace-nowrap font-medium">
                                         {toInput(ec.ec_no) || "—"}
                                       </td>
+                                      {ecContext.map((f) => (
+                                        <td
+                                          key={f.column}
+                                          className="px-3 py-2 whitespace-nowrap text-muted"
+                                        >
+                                          {formatValue(f, ec[f.column])}
+                                        </td>
+                                      ))}
                                       {visibleFields.map((f) => (
                                         <td
                                           key={f.column}
@@ -673,6 +699,7 @@ function EditSectionModal({
   const [error, setError] = useState<string | null>(null);
   const [showOrder, setShowOrder] = useState(false);
   const [showPis, setShowPis] = useState(false);
+  const [showBoi, setShowBoi] = useState(false);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -710,6 +737,19 @@ function EditSectionModal({
           <h2 className="font-display text-lg font-semibold text-foreground">
             {title}
           </h2>
+          {/* Planning schedules around bought-out receipts, so they can read
+              this EC's BOI rows — filled by Central and Purchase, never here.
+              Only worth offering when the SO is actually flagged BOI = Yes. */}
+          {table === "order_planning" && String(data.boi ?? "") === "Yes" && (
+            <button
+              type="button"
+              onClick={() => setShowBoi(true)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-input-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+            >
+              <Package className="h-3.5 w-3.5" />
+              View BOI items
+            </button>
+          )}
           {/* orderId is the SO's order_id only for SO-scope sections
               (Billing & Operations, Accounts) — the rest are keyed by item_id. */}
           {(table === "order_billing" || table === "order_accounts") && (
@@ -741,6 +781,8 @@ function EditSectionModal({
           {showParty && data.client_name ? ` · ${String(data.client_name)}` : ""}
         </p>
 
+        {/* The modal shows one EC, so its row carries both the SO-level and
+            the per-EC context — no need to split them here. */}
         {readonlyFields.length > 0 && (
           <div className="mb-5 grid grid-cols-1 gap-x-6 gap-y-3 rounded-xl bg-background/60 p-4 sm:grid-cols-2">
             {readonlyFields.map((f) => (
@@ -860,6 +902,15 @@ function EditSectionModal({
       )}
       {showPis && (
         <ViewPisModal orderId={orderId} onClose={() => setShowPis(false)} />
+      )}
+      {/* Item-scope sections key `orderId` by item_id, which is exactly what
+          the BOI rows hang off. */}
+      {showBoi && (
+        <BoiItemsModal
+          itemId={orderId}
+          label={identity}
+          onClose={() => setShowBoi(false)}
+        />
       )}
     </div>
   );

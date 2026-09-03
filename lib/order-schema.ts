@@ -43,6 +43,10 @@ export type OrderField = {
   // Optional visual grouping inside a section — consecutive fields sharing
   // the same `group` label are rendered together under one subheading.
   group?: string;
+  // Context-field lists only: which table the value is read from. Defaults to
+  // `orders` (SO-level context); name an item-keyed table to surface another
+  // department's field, e.g. Assembly seeing Planning's Assembly Date.
+  from?: OrderTable;
 };
 
 /** Turn a list of strings into { value, label } option objects. */
@@ -482,7 +486,25 @@ export const ORDER_SECTIONS: OrderSection[] = [
         dependsOn: [{ column: "item_type", value: "Spare" }],
       },
       { column: "assembled_packed_qty", label: "Assembled / Packed Qty", type: "text" },
+
+      // Assembly is planned for every item type; packing only for pumps — a
+      // spare is ready or it isn't, there's no separate packing stage to plan.
+      // Assembly Date is what Assembly & Packing works to, so it's mirrored
+      // read-only into their workspace and notifies them when it's set.
       { column: "assembly_date", label: "Assembly Date", type: "date" },
+      { column: "assembly_remarks", label: "Assembly Remarks", type: "text" },
+      {
+        column: "packing_date",
+        label: "Packing Date",
+        type: "date",
+        dependsOn: [{ column: "item_type", value: PUMP_LIKE }],
+      },
+      {
+        column: "packing_remarks",
+        label: "Packing Remarks",
+        type: "text",
+        dependsOn: [{ column: "item_type", value: PUMP_LIKE }],
+      },
     ],
     // Planning files the TENTATIVE packing slips for each EC. Available as soon
     // as the SO has a Market Type (Domestic/Export) — at that point only the
@@ -722,15 +744,30 @@ export const LOT_FIELDS: OrderField[] = [
   { column: "invoice_date", label: "Invoice Date", type: "date" },
 ];
 
+// A bought-out item. Central Visibility decides *what* is bought out (the item
+// and its make/description); Purchase only records what happened to it — so
+// the first three are centralOnly and Purchase sees them read-only.
 export const BOI_ITEM_FIELDS: OrderField[] = [
-  { column: "boi_item", label: "Item", type: "select", options: BOI_ITEM_OPTIONS },
+  {
+    column: "boi_item",
+    label: "Item",
+    type: "select",
+    options: BOI_ITEM_OPTIONS,
+    centralOnly: true,
+  },
   {
     column: "boi_item_other",
     label: "Item (Others)",
     type: "text",
     dependsOn: [{ column: "boi_item", value: "Others" }],
+    centralOnly: true,
   },
-  { column: "boi_make_desc", label: "BOI Make & Description", type: "text" },
+  {
+    column: "boi_make_desc",
+    label: "BOI Make & Description",
+    type: "text",
+    centralOnly: true,
+  },
   { column: "receipt_date", label: "Receipt Date", type: "date" },
   { column: "remarks", label: "Remarks", type: "text" },
 ];
@@ -876,6 +913,20 @@ export const DISPATCH_CONTEXT_FIELDS: OrderField[] = [
     label: "Target Date for Packing Team",
     type: "date",
   },
+  // Planning schedules the assembly; Assembly & Packing works to that date, so
+  // it's mirrored here read-only (they're also notified when it's set).
+  {
+    column: "assembly_date",
+    label: "Assembly Date",
+    type: "date",
+    from: "order_planning",
+  },
+  {
+    column: "assembly_remarks",
+    label: "Assembly Remarks",
+    type: "text",
+    from: "order_planning",
+  },
 ];
 
 // Dispatch dates (SO-level, on orders) shown read-only in the Planning
@@ -888,6 +939,11 @@ export const PLANNING_CONTEXT_FIELDS: OrderField[] = [
     label: "Revised Dispatch Target Date",
     type: "date",
   },
+  // Liquidated damages and the bought-out flag drive how Planning schedules an
+  // SO — an LD date is a hard deadline, and BOI = Yes means waiting on Purchase.
+  { column: "ld", label: "LD", type: "select", options: YES_NO },
+  { column: "ld_date", label: "LD Date", type: "date" },
+  { column: "boi", label: "BOI", type: "select", options: YES_NO },
 ];
 
 /** Coerce a raw form string to the storable value for a field type. */

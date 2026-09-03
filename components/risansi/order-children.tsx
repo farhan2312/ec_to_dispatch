@@ -30,6 +30,7 @@ export function OrderChildList({
   canEdit,
   canEditCentral = true,
   canAdd,
+  canDelete,
   kind,
   context,
   renderExtra,
@@ -44,6 +45,10 @@ export function OrderChildList({
   // Whether the viewer may edit `centralOnly` fields (Central Visibility).
   // Non-central owners see those read-only, mirroring EditableSection.
   canEditCentral?: boolean;
+  // Whether rows may be removed. Defaults to whoever may add them — a
+  // department that only fills fields on rows someone else created (Purchase
+  // on BOI items) can save but not delete.
+  canDelete?: boolean;
   // Whether new rows may be added — defaults to canEdit. Set false to keep
   // existing rows editable/deletable while retiring new additions (e.g.
   // Dispatch Lots, now superseded by Billing's per-SO invoices).
@@ -276,15 +281,17 @@ export function OrderChildList({
                             ) : null}
                             Save
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteRow(row)}
-                            disabled={busyId === id}
-                            aria-label="Delete row"
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          {(canDelete ?? canAdd ?? canEdit) && (
+                            <button
+                              type="button"
+                              onClick={() => deleteRow(row)}
+                              disabled={busyId === id}
+                              aria-label="Delete row"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     )}

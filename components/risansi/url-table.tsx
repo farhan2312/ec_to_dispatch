@@ -118,28 +118,45 @@ export function UrlPagination({
   total: number;
 }) {
   const { setPage, pending } = useUrlTable();
+  // The URL update is a transition, so this component doesn't re-render
+  // until the server responds. Track the clicked page locally so the chip
+  // highlights immediately and the wait is visible, not silent.
+  const [target, setTarget] = useState<number | null>(null);
+  useEffect(() => {
+    setTarget(null); // the server caught up
+  }, [page]);
+
   if (total === 0) return null;
+  const shown = target ?? page;
 
   const stepClass =
     "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-input-border text-foreground transition-colors hover:bg-background disabled:cursor-not-allowed disabled:opacity-50";
 
   // A short window around the current page, so 40 pages don't render 40 chips.
-  const windowStart = Math.max(1, Math.min(page - 2, totalPages - 4));
-  const windowEnd = Math.min(totalPages, Math.max(page + 2, 5));
+  const windowStart = Math.max(1, Math.min(shown - 2, totalPages - 4));
+  const windowEnd = Math.min(totalPages, Math.max(shown + 2, 5));
   const pages: number[] = [];
   for (let p = windowStart; p <= windowEnd; p++) pages.push(p);
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-card-border px-4 py-3 text-sm text-muted">
       <span className="inline-flex items-center gap-2">
-        Showing {from}–{to} of {total}
-        {pending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        {pending ? (
+          <>Loading page {shown}…</>
+        ) : (
+          <>
+            Showing {from}–{to} of {total}
+          </>
+        )}
       </span>
       <div className="flex items-center gap-1.5">
         <button
           type="button"
-          onClick={() => setPage(page - 1)}
-          disabled={page <= 1}
+          onClick={() => {
+            setTarget(shown - 1);
+            setPage(shown - 1);
+          }}
+          disabled={shown <= 1}
           aria-label="Previous page"
           className={stepClass}
         >
@@ -149,21 +166,31 @@ export function UrlPagination({
           <button
             key={p}
             type="button"
-            onClick={() => setPage(p)}
-            aria-current={p === page ? "page" : undefined}
+            onClick={() => {
+              setTarget(p);
+              setPage(p);
+            }}
+            aria-current={p === shown ? "page" : undefined}
             className={`inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-sm font-medium transition-colors ${
-              p === page
+              p === shown
                 ? "bg-primary text-primary-foreground"
                 : "border border-input-border text-foreground hover:bg-background"
             }`}
           >
-            {p}
+            {p === shown && pending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              p
+            )}
           </button>
         ))}
         <button
           type="button"
-          onClick={() => setPage(page + 1)}
-          disabled={page >= totalPages}
+          onClick={() => {
+            setTarget(shown + 1);
+            setPage(shown + 1);
+          }}
+          disabled={shown >= totalPages}
           aria-label="Next page"
           className={stepClass}
         >
@@ -184,8 +211,14 @@ export function UrlTabs({
   options: { value: string; label: string; count?: number }[];
   fallback: string;
 }) {
-  const { get, setParams } = useUrlTable();
-  const active = get(paramKey) || fallback;
+  const { get, setParams, pending } = useUrlTable();
+  const urlActive = get(paramKey) || fallback;
+  // Same trick as the pager: reflect the click before the data lands.
+  const [target, setTarget] = useState<string | null>(null);
+  useEffect(() => {
+    setTarget(null);
+  }, [urlActive]);
+  const active = target ?? urlActive;
   return (
     <div className="flex flex-wrap gap-1.5">
       {options.map((o) => {
@@ -194,9 +227,10 @@ export function UrlTabs({
           <button
             key={o.value}
             type="button"
-            onClick={() =>
-              setParams({ [paramKey]: o.value === fallback ? null : o.value })
-            }
+            onClick={() => {
+              setTarget(o.value);
+              setParams({ [paramKey]: o.value === fallback ? null : o.value });
+            }}
             className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
               on
                 ? "bg-primary text-primary-foreground"
@@ -204,6 +238,9 @@ export function UrlTabs({
             }`}
           >
             {o.label}
+            {on && pending && (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            )}
             {o.count !== undefined && (
               <span className={on ? "opacity-80" : "text-muted-foreground"}>
                 {o.count}

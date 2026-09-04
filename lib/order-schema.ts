@@ -43,6 +43,9 @@ export type OrderField = {
   // Optional visual grouping inside a section — consecutive fields sharing
   // the same `group` label are rendered together under one subheading.
   group?: string;
+  // Child lists only: hide this field on the first row. The first drawing
+  // issue has no revision number; only re-issues (2nd row onward) do.
+  hideOnFirstRow?: boolean;
   // Context-field lists only: which table the value is read from. Defaults to
   // `orders` (SO-level context); name an item-keyed table to surface another
   // department's field, e.g. Assembly seeing Planning's Assembly Date.
@@ -778,7 +781,13 @@ export const BOI_ITEM_FIELDS: OrderField[] = [
 export const DRAWING_REVISION_FIELDS: OrderField[] = [
   // `group` renders each hand-off as its own labelled subsection with a
   // divider between them (same card layout the invoice phases use).
-  { column: "revision_no", label: "Revision No.", type: "text", group: "Revision" },
+  {
+    column: "revision_no",
+    label: "Revision No.",
+    type: "text",
+    group: "Revision",
+    hideOnFirstRow: true,
+  },
 
   {
     column: "issued_to_client",
@@ -794,6 +803,8 @@ export const DRAWING_REVISION_FIELDS: OrderField[] = [
     group: "Issued to Client",
   },
 
+  // Approval only matters once the drawing has gone to the client — gate the
+  // whole Approval group on Issued to Client = Yes.
   {
     column: "approved",
     label: "Drg. Approved",
@@ -801,6 +812,7 @@ export const DRAWING_REVISION_FIELDS: OrderField[] = [
     options: YES_NO,
     centralOnly: true,
     group: "Approval",
+    dependsOn: [{ column: "issued_to_client", value: "Yes" }],
   },
   {
     column: "approved_date",
@@ -808,20 +820,24 @@ export const DRAWING_REVISION_FIELDS: OrderField[] = [
     type: "date",
     centralOnly: true,
     group: "Approval",
+    dependsOn: [{ column: "issued_to_client", value: "Yes" }],
   },
 
+  // Production issue only follows approval — gate on Drg. Approved = Yes.
   {
     column: "issued_to_production",
     label: "Drg. issued to Production",
     type: "select",
     options: YES_NO,
     group: "Issued to Production",
+    dependsOn: [{ column: "approved", value: "Yes" }],
   },
   {
     column: "issued_to_production_date",
     label: "Issued to Production Dt.",
     type: "date",
     group: "Issued to Production",
+    dependsOn: [{ column: "approved", value: "Yes" }],
   },
 ];
 

@@ -5,6 +5,7 @@ import { ChevronDown, ClipboardList, MessageSquare, Plus } from "lucide-react";
 import type { BillingQueueRow } from "@/lib/orders";
 import { BILLING_DOC_FIELDS, INVOICE_FIELDS } from "@/lib/order-schema";
 import { OrderChildList } from "./order-children";
+import { PiExcelUpload } from "./pi-excel-upload";
 import { OrderDetailsModal } from "./order-details-modal";
 import { InvoiceLrCell } from "./invoice-lr-cell";
 import { invoiceRowHeader } from "./order-detail";
@@ -218,6 +219,11 @@ export function BillingWorkspace({
                                 fields={BILLING_DOC_FIELDS}
                                 rows={(row.pi_docs ?? []) as Row[]}
                                 canEdit={canEdit}
+                                headerAction={
+                                  canEdit ? (
+                                    <PiExcelUpload orderId={row.id} />
+                                  ) : null
+                                }
                               />
                             )}
 

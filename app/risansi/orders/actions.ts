@@ -16,6 +16,8 @@ import {
   getChildOrderId,
   getItemDetail,
   getOrderDetail,
+  getOrderDeptStatus,
+  insertBillingDocs,
   getOrderLabel,
   insertQcDocument,
   listQcDocuments,
@@ -26,6 +28,7 @@ import {
   type NewOrderInput,
   type QcDocTable,
   type QcDocumentMeta,
+  type SoDeptStatus,
 } from "@/lib/orders";
 import {
   CHILD_FIELDS,
@@ -47,6 +50,7 @@ import {
   canEditSection,
   isCentral,
 } from "@/lib/roles";
+import { parsePiWorkbook } from "@/lib/pi-import";
 import { logAudit } from "@/lib/audit";
 import { emitNotification, notifySectionSaved } from "@/lib/notifications";
 
@@ -950,5 +954,89 @@ export async function boiItemsAction(itemId: string): Promise<BoiItemsResult> {
   } catch (error) {
     console.error("boiItemsAction failed:", error);
     return { ok: false, error: "Could not load the bought-out items." };
+  }
+}
+
+export type DeptStatusResult =
+  | { ok: true; status: SoDeptStatus }
+  | { ok: false; error: string };
+
+/**
+ * Every department's status for one SO — the "Departments" popup on the order
+ * list. Read-only, cross-department, so it's gated to the roles that see the
+ * whole-order list (Central Visibility / Admin).
+ */
+export async function orderDeptStatusAction(
+  orderId: string
+): Promise<DeptStatusResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!isCentral(user.role)) {
+    return { ok: false, error: "You don't have access to department status." };
+  }
+  try {
+    const status = await getOrderDeptStatus(orderId);
+    if (!status) return { ok: false, error: "Order not found." };
+    return { ok: true, status };
+  } catch (error) {
+    console.error("orderDeptStatusAction failed:", error);
+    return { ok: false, error: "Could not load department status." };
+  }
+}
+
+const MAX_PI_XLSX_BYTES = 5 * 1024 * 1024;
+
+export type ImportPiResult =
+  | { ok: true; inserted: number; skipped: number }
+  | { ok: false; error: string };
+
+/**
+ * Upload a PI Excel to auto-fill an SO's Operation card. Only rows that parse
+ * cleanly are inserted; rows with errors are counted as skipped and reported.
+ * Same permission as adding a PI by hand (Billing & Operations).
+ */
+export async function importPiExcelAction(
+  orderId: string,
+  formData: FormData
+): Promise<ImportPiResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canEditChild(user.role, "order_billing_docs")) {
+    return { ok: false, error: "You don't have permission to add PIs." };
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "Choose an .xlsx file to upload." };
+  }
+  if (file.size > MAX_PI_XLSX_BYTES) {
+    return { ok: false, error: "That file is larger than 5 MB." };
+  }
+  if (!file.name.toLowerCase().endsWith(".xlsx")) {
+    return { ok: false, error: "Only .xlsx files can be uploaded." };
+  }
+
+  try {
+    const parsed = await parsePiWorkbook(Buffer.from(await file.arrayBuffer()));
+    if (parsed.missingPiNo) {
+      return {
+        ok: false,
+        error: "No PI No. column found. Expected columns: PI No., PI Date, PI Value.",
+      };
+    }
+    const good = parsed.rows.filter((r) => r.errors.length === 0);
+    if (good.length === 0) {
+      return { ok: false, error: "No valid PI rows found in that sheet." };
+    }
+    const inserted = await insertBillingDocs(
+      orderId,
+      good.map((r) => ({ pi_no: r.pi_no, pi_date: r.pi_date, pi_value: r.pi_value }))
+    );
+    revalidatePath(`/risansi/orders/${orderId}`);
+    revalidatePath("/risansi/departments/billing");
+    return { ok: true, inserted, skipped: parsed.rows.length - good.length };
+  } catch (error) {
+    console.error("importPiExcelAction failed:", error);
+    return { ok: false, error: "Could not read that workbook." };
   }
 }

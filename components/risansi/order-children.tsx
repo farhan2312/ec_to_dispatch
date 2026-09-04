@@ -35,6 +35,7 @@ export function OrderChildList({
   context,
   renderExtra,
   rowHeader,
+  headerAction,
 }: {
   orderId: string;
   table: ChildTable;
@@ -67,6 +68,9 @@ export function OrderChildList({
   // linked packing slip's EC / Packing Slip No. / Qty at the top of the card
   // (that context isn't part of the invoice form itself).
   rowHeader?: (row: Row) => React.ReactNode;
+  // Optional control shown in the card header, left of the Add button (e.g.
+  // the PI Excel upload on the Operation card).
+  headerAction?: React.ReactNode;
 }) {
   const router = useRouter();
   // Edits overlay keyed by row id; the row list itself always comes from props.
@@ -164,6 +168,8 @@ export function OrderChildList({
         <h2 className="font-display text-base font-semibold text-foreground">
           {title}
         </h2>
+        <div className="flex items-center gap-2">
+        {headerAction}
         {(canAdd ?? canEdit) && (
           <button
             type="button"
@@ -179,6 +185,7 @@ export function OrderChildList({
             Add
           </button>
         )}
+        </div>
       </div>
 
       {rows.length === 0 ? (
@@ -188,10 +195,11 @@ export function OrderChildList({
         // each row as a vertical card with one grid per group. Reads better
         // than a wide many-column table.
         <div className="space-y-4">
-          {rows.map((row) => (
+          {rows.map((row, rowIndex) => (
             <RowCard
               key={String(row.id)}
               row={row}
+              rowIndex={rowIndex}
               groups={groupBuckets}
               renderExtra={renderExtra}
               canEdit={canEdit}
@@ -323,6 +331,7 @@ function bucketByGroup(fields: OrderField[]): Bucket[] {
 /** One row of a grouped list, rendered as a vertical card with a grid per group. */
 function RowCard({
   row,
+  rowIndex,
   groups,
   renderExtra,
   canEdit,
@@ -331,13 +340,14 @@ function RowCard({
   saved,
   dirty,
   valueFor,
-  applies,
+  applies: appliesBase,
   update,
   onSave,
   onDelete,
   headerContent,
 }: {
   row: Row;
+  rowIndex: number;
   groups: Bucket[];
   renderExtra?: { label: string; render: (row: Row) => React.ReactNode };
   canEdit: boolean;
@@ -356,6 +366,10 @@ function RowCard({
 }) {
   const inputClass =
     "h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
+  // `hideOnFirstRow` fields (Revision No.) drop off the first row — the first
+  // drawing issue has no revision number; re-issues do.
+  const applies = (f: OrderField, r: Row) =>
+    rowIndex === 0 && f.hideOnFirstRow ? false : appliesBase(f, r);
   // Collapse the card to a one-line summary when there's a lot to look at.
   // Default open on a brand-new (empty) row so it's obvious what to fill in.
   const isNew = groups.every((g) =>

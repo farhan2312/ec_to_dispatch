@@ -546,6 +546,28 @@ export async function addChildRow(
   return row;
 }
 
+/**
+ * Bulk-insert PI rows into an SO's Operation card (order_billing_docs), for
+ * the PI Excel upload. Each row is a { pi_no, pi_date, pi_value }; blank dates
+ * and values become NULL. Returns how many were inserted.
+ */
+export async function insertBillingDocs(
+  orderId: string,
+  rows: { pi_no: string; pi_date: string | null; pi_value: string | null }[]
+): Promise<number> {
+  if (!UUID_RE.test(orderId) || rows.length === 0) return 0;
+  let inserted = 0;
+  for (const r of rows) {
+    await query(
+      `INSERT INTO order_billing_docs (order_id, pi_no, pi_date, pi_value)
+       VALUES ($1, $2, $3::date, $4::numeric)`,
+      [orderId, r.pi_no, r.pi_date, r.pi_value]
+    );
+    inserted += 1;
+  }
+  return inserted;
+}
+
 /** Update a child row's fields, validated against the child schema. */
 export async function updateChildRow(
   table: ChildTable,
@@ -1574,4 +1596,135 @@ export async function listOrdersForBillingPage(opts: {
   const rows = ids.length === 0 ? [] : await listOrdersForBilling(ids);
 
   return pageResult(rows, total, page);
+}
+
+// ---------------------------------------------------------------------------
+// Per-SO department status (the "Departments" popup on the order list)
+// ---------------------------------------------------------------------------
+
+export type DeptCell = { state: "done" | "pending" | "na"; label: string };
+
+export type EcDeptStatus = {
+  id: string;
+  ec_no: string | null;
+  item_type: string | null;
+  drawing: DeptCell;
+  purchase: DeptCell;
+  quality: DeptCell;
+  planning: DeptCell;
+  assembly: DeptCell;
+};
+
+export type SoDeptStatus = {
+  billing: DeptCell;
+  accounts: DeptCell;
+  dispatch: DeptCell;
+  ecs: EcDeptStatus[];
+};
+
+const NA: DeptCell = { state: "na", label: "N/A" };
+const done = (label: string): DeptCell => ({ state: "done", label });
+const pending = (label = "Pending"): DeptCell => ({ state: "pending", label });
+
+/** Full department status for one SO — SO-scope depts plus a per-EC matrix. */
+export async function getOrderDeptStatus(
+  orderId: string
+): Promise<SoDeptStatus | null> {
+  if (!UUID_RE.test(orderId)) return null;
+
+  const so = await query<{
+    dispatch_status: string | null;
+    bill_type: string | null;
+    has_pi: boolean;
+    payment_status: string | null;
+  }>(
+    `SELECT o.dispatch_status, o.bill_type,
+            (EXISTS (SELECT 1 FROM order_billing_docs d WHERE d.order_id = o.id)
+             OR b.challan_no IS NOT NULL) AS has_pi,
+            a.payment_status
+       FROM orders o
+       LEFT JOIN order_billing b  ON b.order_id  = o.id
+       LEFT JOIN order_accounts a ON a.order_id = o.id
+      WHERE o.id = $1`,
+    [orderId]
+  );
+  const head = so.rows[0];
+  if (!head) return null;
+
+  const ecRows = await query<{
+    id: string;
+    ec_no: string | null;
+    item_type: string | null;
+    boi: string | null;
+    drg: string | null;
+    purchase: string;
+    qc_required: string | null;
+    qc_submitted: boolean;
+    planning: string | null;
+    packed: boolean;
+    packing_date: string | null;
+  }>(
+    `SELECT it.id, it.ec_no, it.item_type, o.boi,
+            (SELECT CASE
+                      WHEN bool_or(lower(coalesce(rv.approved,'')) = 'yes')
+                        THEN 'Approved'
+                      WHEN bool_or(lower(coalesce(rv.issued_to_client,'')) = 'yes')
+                        THEN 'Issued to Client'
+                      ELSE NULL END
+               FROM order_drawing_revisions rv WHERE rv.item_id = it.id) AS drg,
+            (CASE
+               WHEN COALESCE(o.boi, '') <> 'Yes' THEN 'na'
+               WHEN NOT EXISTS (SELECT 1 FROM order_boi_items bi WHERE bi.item_id = it.id) THEN 'pending'
+               WHEN EXISTS (SELECT 1 FROM order_boi_items bi WHERE bi.item_id = it.id AND bi.receipt_date IS NULL) THEN 'pending'
+               ELSE 'done' END) AS purchase,
+            o.qc_required,
+            (qc.qc_doc_actual_date IS NOT NULL) AS qc_submitted,
+            COALESCE(NULLIF(pl.actual_pump_status, ''),
+                     NULLIF(pl.actual_spare_status, ''),
+                     NULLIF(pl.planning_status, '')) AS planning,
+            (ad.actual_packing_date IS NOT NULL) AS packed,
+            to_char(ad.actual_packing_date, 'YYYY-MM-DD') AS packing_date
+       FROM order_items it
+       JOIN orders o ON o.id = it.order_id
+       LEFT JOIN order_qc qc                ON qc.item_id = it.id
+       LEFT JOIN order_planning pl          ON pl.item_id = it.id
+       LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
+      WHERE it.order_id = $1
+      ORDER BY it.seq ASC`,
+    [orderId]
+  );
+
+  const ecs: EcDeptStatus[] = ecRows.rows.map((r) => ({
+    id: r.id,
+    ec_no: r.ec_no,
+    item_type: r.item_type,
+    drawing: r.drg ? done(r.drg) : pending(),
+    purchase:
+      r.purchase === "na"
+        ? NA
+        : r.purchase === "done"
+          ? done("Received")
+          : pending(),
+    quality:
+      String(r.qc_required ?? "") === "No"
+        ? NA
+        : r.qc_submitted
+          ? done("Submitted")
+          : pending(),
+    planning: r.planning ? done(r.planning) : pending(),
+    assembly: r.packed ? done(`Packed`) : pending(),
+  }));
+
+  const isChallan = String(head.bill_type ?? "") === "Challan";
+  return {
+    billing: head.has_pi ? done(isChallan ? "Challan filed" : "PI raised") : pending(),
+    // Accounts is skipped for Challan orders (no A/R), matching the workspace.
+    accounts: isChallan
+      ? NA
+      : head.payment_status
+        ? done(head.payment_status)
+        : pending(),
+    dispatch: head.dispatch_status ? done(head.dispatch_status) : pending(),
+    ecs,
+  };
 }

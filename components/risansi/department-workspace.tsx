@@ -25,6 +25,7 @@ import {
 } from "@/lib/order-schema";
 import { OrderChildList } from "./order-children";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
+import { useFocusRow } from "./use-focus-row";
 import type { PageResult } from "@/lib/pagination";
 import { QcDocumentsModal } from "./qc-documents-modal";
 import { OrderDetailsModal } from "./order-details-modal";
@@ -109,6 +110,7 @@ export function DepartmentWorkspace({
   documents = [],
   openOrderId,
   openThreadId,
+  focusOrderId,
   role,
   unreadThreads = {},
 }: {
@@ -127,6 +129,9 @@ export function DepartmentWorkspace({
   openOrderId?: string;
   // Deep-link from the discussion icon: open this SO's thread on load.
   openThreadId?: string;
+  // The SO that `openOrderId` / `openThreadId` belongs to. The server already
+  // paged onto it; this is what we scroll to and highlight.
+  focusOrderId?: string;
   // The viewer's role — decides which discussion lane they get.
   role: string;
   // Unread discussion messages keyed by order id, for the row badge.
@@ -170,6 +175,16 @@ export function DepartmentWorkspace({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openOrderId]);
+
+  // Reveal the deep-linked SO's ECs, then scroll to the exact row.
+  useEffect(() => {
+    if (!focusOrderId) return;
+    const row = orders.find((o) => String(o.order_id ?? o.id) === focusOrderId);
+    const soKey = row ? String(row.so_no ?? row.sl_no ?? "") : "";
+    if (soKey) setExpanded((prev) => new Set(prev).add(soKey));
+  }, [focusOrderId, orders]);
+
+  const focusClass = useFocusRow([openOrderId, focusOrderId], orders.length > 0);
 
   function toggleSo(key: string) {
     setExpanded((prev) => {
@@ -354,7 +369,11 @@ export function DepartmentWorkspace({
               )}
               {!groupBySo &&
                 pageRows.map((order) => (
-                  <tr key={String(order.id)} className="text-foreground">
+                  <tr
+                    key={String(order.id)}
+                    data-focus-row={String(order.id)}
+                    className={`text-foreground ${focusClass(String(order.id))}`}
+                  >
                     <td className="px-4 py-3 font-medium tabular-nums">
                       {String(order.sl_no ?? "—")}
                     </td>
@@ -421,7 +440,12 @@ export function DepartmentWorkspace({
                   const isOpen = expanded.has(g.key);
                   return (
                     <Fragment key={g.key}>
-                      <tr className="text-foreground transition-colors hover:bg-background/60">
+                      <tr
+                        data-focus-row={String(g.head.order_id ?? g.head.id)}
+                        className={`text-foreground transition-colors hover:bg-background/60 ${focusClass(
+                          String(g.head.order_id ?? g.head.id)
+                        )}`}
+                      >
                         <td className="px-2 py-3 text-center">
                           <button
                             type="button"
@@ -506,7 +530,11 @@ export function DepartmentWorkspace({
                                 </thead>
                                 <tbody>
                                   {g.ecs.map((ec) => (
-                                    <tr key={String(ec.id)} className="text-foreground">
+                                    <tr
+                                      key={String(ec.id)}
+                                      data-focus-row={String(ec.id)}
+                                      className={`text-foreground ${focusClass(String(ec.id))}`}
+                                    >
                                       <td className="px-3 py-2 whitespace-nowrap font-medium">
                                         {toInput(ec.ec_no) || "—"}
                                       </td>

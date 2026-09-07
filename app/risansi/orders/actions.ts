@@ -33,6 +33,7 @@ import {
 import {
   CHILD_FIELDS,
   SECTION_BY_TABLE,
+  firstMissingAddOnField,
   type ChildTable,
   type OrderTable,
 } from "@/lib/order-schema";
@@ -220,6 +221,15 @@ export async function createItemAction(
     ...input,
     item_type: (order.order.order_type as string | null) ?? input.item_type,
   };
+
+  // Every Add-On field is mandatory (the Spare's Order Copy file aside). The
+  // form checks this too; repeated here so a crafted request can't create a
+  // half-filled EC.
+  const missing = firstMissingAddOnField(
+    itemInput.item_type,
+    itemInput as Record<string, unknown>
+  );
+  if (missing) return { ok: false, error: `${missing.label} is required.` };
 
   try {
     const { id: itemId } = await createItem(orderId, itemInput);

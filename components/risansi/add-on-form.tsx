@@ -8,42 +8,12 @@ import {
   createSpareItemAction,
 } from "@/app/risansi/orders/actions";
 import {
-  PUMP_TYPE_OPTIONS,
+  ADD_ON_SPARE_FIELDS,
+  addOnFieldsFor,
+  firstMissingAddOnField,
   selectOptionsFor,
-  type OrderField,
 } from "@/lib/order-schema";
 import type { NewItemInput } from "@/lib/orders";
-
-// Pump Add-On: full EC attribute set (item_type = "Pump" is inherited from SO).
-// Target dates are SO-level now, so they don't appear here.
-const PUMP_FIELDS: OrderField[] = [
-  { column: "ec_no", label: "EC No.", type: "text" },
-  { column: "ec_date", label: "EC Date", type: "date" },
-  {
-    column: "pump_type",
-    label: "Pump Type",
-    type: "select",
-    options: PUMP_TYPE_OPTIONS,
-  },
-  { column: "model_no", label: "Model No.", type: "text" },
-  { column: "internal_model", label: "Internal Model", type: "text" },
-  { column: "quantity", label: "Quantity", type: "int" },
-  { column: "suction", label: "Suction", type: "text" },
-  { column: "delivery", label: "Delivery", type: "text" },
-  { column: "pump_sno", label: "Pump Serial No.", type: "text" },
-  { column: "application", label: "Application", type: "text" },
-  { column: "version", label: "Series Version", type: "text" },
-];
-
-// Spare Add-On: EC identity + model/version + quantity + Order Copy upload.
-const SPARE_FIELDS: OrderField[] = [
-  { column: "ec_no", label: "EC No.", type: "text" },
-  { column: "ec_date", label: "EC Date", type: "date" },
-  { column: "model_no", label: "Model No.", type: "text" },
-  { column: "internal_model", label: "Internal Model", type: "text" },
-  { column: "version", label: "Series Version", type: "text" },
-  { column: "quantity", label: "Quantity", type: "int" },
-];
 
 const inputClass =
   "h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
@@ -63,7 +33,7 @@ export function AddOnForm({
 }) {
   const router = useRouter();
   const isSpare = orderType === "Spare";
-  const fields = isSpare ? SPARE_FIELDS : PUMP_FIELDS;
+  const fields = addOnFieldsFor(orderType);
   const [values, setValues] = useState<Record<string, string>>({});
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
@@ -72,6 +42,16 @@ export function AddOnForm({
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+
+    // Every field on the Add-On is mandatory — only the Spare's Order Copy
+    // file is optional. Checked again server-side.
+    const missing = firstMissingAddOnField(orderType, values);
+    if (missing) {
+      setError(`${missing.label} is required.`);
+      document.getElementById(`addon-${missing.column}`)?.focus();
+      return;
+    }
+
     setSaving(true);
     setError(null);
 
@@ -79,7 +59,7 @@ export function AddOnForm({
     let err: string | undefined;
     if (isSpare) {
       const fd = new FormData();
-      for (const f of SPARE_FIELDS) fd.append(f.column, values[f.column] ?? "");
+      for (const f of ADD_ON_SPARE_FIELDS) fd.append(f.column, values[f.column] ?? "");
       if (file) fd.append("order_copy", file);
       const res = await createSpareItemAction(orderId, fd);
       ok = res.ok;
@@ -130,11 +110,17 @@ export function AddOnForm({
           <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
             {fields.map((field) => (
               <div key={field.column}>
-                <label className="mb-1.5 block text-[13px] font-medium text-brand-label">
+                <label
+                  htmlFor={`addon-${field.column}`}
+                  className="mb-1.5 block text-[13px] font-medium text-brand-label"
+                >
                   {field.label}
+                  <span className="text-danger"> *</span>
                 </label>
                 {field.type === "select" ? (
                   <select
+                    id={`addon-${field.column}`}
+                    required
                     value={values[field.column] ?? ""}
                     onChange={(e) =>
                       setValues((v) => ({ ...v, [field.column]: e.target.value }))
@@ -150,6 +136,8 @@ export function AddOnForm({
                   </select>
                 ) : (
                   <input
+                    id={`addon-${field.column}`}
+                    required
                     type={
                       field.type === "date"
                         ? "date"
@@ -170,12 +158,14 @@ export function AddOnForm({
           </div>
 
           {isSpare && (
-            // Spare form's Order Copy file upload. Optional — you can create
-            // the EC now and attach later (though attach-later isn't wired yet;
-            // the intent is to upload here).
+            // Spare form's Order Copy file upload — the one field on either
+            // Add-On that is not mandatory.
             <div className="mt-5">
               <label className="mb-1.5 block text-[13px] font-medium text-brand-label">
                 Order Copy (file)
+                <span className="ml-1 font-normal text-muted-foreground">
+                  (optional)
+                </span>
               </label>
               <label className="flex cursor-pointer items-center gap-3 rounded-[10px] border border-dashed border-input-border bg-surface px-4 py-3 text-sm transition-colors hover:bg-background">
                 <Upload className="h-4 w-4 text-muted-foreground" />

@@ -3,7 +3,10 @@ import { redirect } from "next/navigation";
 import { Receipt } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditChild, canEditSection } from "@/lib/roles";
-import { listOrdersForBillingPage } from "@/lib/orders";
+import {
+  listOrdersForBillingPage,
+  resolveFocusOrderId,
+} from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
 import { unreadByOrder } from "@/lib/order-messages";
 import { BillingWorkspace } from "@/components/risansi/billing-workspace";
@@ -26,9 +29,12 @@ export default async function BillingWorkspacePage({
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
   const { edit, thread, page, q } = await searchParams;
+  // A notification links to an SO; open the page that holds it.
+  const focusOrderId = await resolveFocusOrderId(thread ?? edit);
   const queue = await listOrdersForBillingPage({
     page: parsePage(page),
     search: parseQuery(q),
+    focusOrderId,
   });
 
   // Unread discussion messages per SO, for the row badge.
@@ -57,6 +63,7 @@ export default async function BillingWorkspacePage({
 
       <BillingWorkspace
         openThreadId={thread}
+        focusOrderId={focusOrderId ?? undefined}
         role={user.role}
         unreadThreads={unreadThreads}
         queue={queue}

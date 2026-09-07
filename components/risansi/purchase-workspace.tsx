@@ -7,6 +7,7 @@ import { BOI_ITEM_FIELDS } from "@/lib/order-schema";
 import { isCentral } from "@/lib/roles";
 import { OrderChildList } from "./order-children";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
+import { useFocusRow } from "./use-focus-row";
 import type { PageResult } from "@/lib/pagination";
 import { OrderThreadModal } from "./order-thread-modal";
 
@@ -32,6 +33,7 @@ export function PurchaseWorkspace({
   canEdit,
   openItemId,
   openThreadId,
+  focusOrderId,
   role,
   unreadThreads = {},
 }: {
@@ -41,6 +43,8 @@ export function PurchaseWorkspace({
   openItemId?: string;
   // Deep-link from the discussion icon: open this SO's thread on load.
   openThreadId?: string;
+  // The SO a notification deep link resolved to — scrolled to and highlighted.
+  focusOrderId?: string;
   // The viewer's role — decides which discussion lane they get.
   role: string;
   // Unread discussion messages keyed by order id, for the row badge.
@@ -81,6 +85,8 @@ export function PurchaseWorkspace({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openItemId]);
+
+  const focusClass = useFocusRow([openItemId, focusOrderId], rows.length > 0);
 
   function toggle(key: string) {
     setExpanded((prev) => {
@@ -142,7 +148,12 @@ export function PurchaseWorkspace({
                 const boiYes = (g.head.boi ?? "") === "Yes";
                 return (
                   <Fragment key={g.key}>
-                    <tr className="text-foreground transition-colors hover:bg-background/60">
+                    <tr
+                      data-focus-row={String(g.head.order_id)}
+                      className={`text-foreground transition-colors hover:bg-background/60 ${focusClass(
+                        String(g.head.order_id)
+                      )}`}
+                    >
                       <td className="px-2 py-3 text-center">
                         <button
                           type="button"
@@ -198,7 +209,10 @@ export function PurchaseWorkspace({
                             {g.ecs.map((row) => (
                               <div
                                 key={row.id}
-                                className="rounded-lg border border-card-border bg-surface p-3 shadow-sm"
+                                data-focus-row={String(row.id)}
+                                className={`rounded-lg border border-card-border bg-surface p-3 shadow-sm ${focusClass(
+                                  String(row.id)
+                                )}`}
                               >
                                 <div className="mb-2 flex items-center gap-2 text-sm">
                                   <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">

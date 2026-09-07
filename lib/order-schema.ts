@@ -734,6 +734,64 @@ export function dependsOnSatisfied(
 
 // A PI under an SO (Tax Invoice bill type only). Billing owns these fields;
 // each save fires a "PI created" notification to Accounts (see actions.ts).
+// ---------------------------------------------------------------------------
+// Add-On forms (new EC under an SO)
+//
+// Shared by the form and by createItemAction, so "every field is required" is
+// enforced in one place rather than trusted to the browser. The Spare form's
+// Order Copy file is deliberately NOT here — it is the one optional input.
+// ---------------------------------------------------------------------------
+
+/** Pump / ROLB Add-On: the full EC attribute set. */
+export const ADD_ON_PUMP_FIELDS: OrderField[] = [
+  { column: "ec_no", label: "EC No.", type: "text" },
+  { column: "ec_date", label: "EC Date", type: "date" },
+  {
+    column: "pump_type",
+    label: "Pump Type",
+    type: "select",
+    options: PUMP_TYPE_OPTIONS,
+  },
+  { column: "model_no", label: "Model No.", type: "text" },
+  { column: "internal_model", label: "Internal Model", type: "text" },
+  { column: "quantity", label: "Quantity", type: "int" },
+  { column: "suction", label: "Suction", type: "text" },
+  { column: "delivery", label: "Delivery", type: "text" },
+  { column: "pump_sno", label: "Pump Serial No.", type: "text" },
+  { column: "application", label: "Application", type: "text" },
+  { column: "version", label: "Series Version", type: "text" },
+];
+
+/** Spare Add-On: EC identity + model/version + quantity. */
+export const ADD_ON_SPARE_FIELDS: OrderField[] = [
+  { column: "ec_no", label: "EC No.", type: "text" },
+  { column: "ec_date", label: "EC Date", type: "date" },
+  { column: "model_no", label: "Model No.", type: "text" },
+  { column: "internal_model", label: "Internal Model", type: "text" },
+  { column: "version", label: "Series Version", type: "text" },
+  { column: "quantity", label: "Quantity", type: "int" },
+];
+
+/** Which Add-On field set an SO's order type uses. */
+export function addOnFieldsFor(orderType?: string | null): OrderField[] {
+  return orderType === "Spare" ? ADD_ON_SPARE_FIELDS : ADD_ON_PUMP_FIELDS;
+}
+
+/**
+ * The first Add-On field left blank, or null when the EC is complete. Every
+ * field on the form is mandatory.
+ */
+export function firstMissingAddOnField(
+  orderType: string | null | undefined,
+  values: Record<string, unknown>
+): OrderField | null {
+  for (const f of addOnFieldsFor(orderType)) {
+    const v = values[f.column];
+    if (v === null || v === undefined || String(v).trim() === "") return f;
+  }
+  return null;
+}
+
 export const BILLING_DOC_FIELDS: OrderField[] = [
   { column: "pi_no", label: "PI No.", type: "text" },
   { column: "pi_date", label: "PI Date", type: "date" },

@@ -10,6 +10,7 @@ import { OrderDetailsModal } from "./order-details-modal";
 import { InvoiceLrCell } from "./invoice-lr-cell";
 import { invoiceRowHeader } from "./order-detail";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
+import { useFocusRow } from "./use-focus-row";
 import type { PageResult } from "@/lib/pagination";
 import { OrderThreadModal } from "./order-thread-modal";
 
@@ -42,6 +43,7 @@ export function BillingWorkspace({
   canEdit,
   openOrderId,
   openThreadId,
+  focusOrderId,
   role,
   unreadThreads = {},
 }: {
@@ -51,6 +53,8 @@ export function BillingWorkspace({
   openOrderId?: string;
   // Deep-link from the discussion icon: open this SO's thread on load.
   openThreadId?: string;
+  // The SO a notification deep link resolved to — scrolled to and highlighted.
+  focusOrderId?: string;
   // The viewer's role — decides which discussion lane they get.
   role: string;
   // Unread discussion messages keyed by order id, for the row badge.
@@ -90,6 +94,8 @@ export function BillingWorkspace({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openOrderId]);
+
+  const focusClass = useFocusRow([focusOrderId ?? openOrderId], rows.length > 0);
 
   function toggle(id: string) {
     setExpanded((prev) => {
@@ -139,7 +145,12 @@ export function BillingWorkspace({
                 const isOpen = expanded.has(row.id);
                 return (
                   <Fragment key={row.id}>
-                    <tr className="text-foreground transition-colors hover:bg-background/60">
+                    <tr
+                      data-focus-row={String(row.id)}
+                      className={`text-foreground transition-colors hover:bg-background/60 ${focusClass(
+                        String(row.id)
+                      )}`}
+                    >
                       <td className="px-2 py-3 text-center">
                         <button
                           type="button"

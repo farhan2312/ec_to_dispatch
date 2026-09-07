@@ -1488,6 +1488,12 @@ async function pageOfOrderIds(opts: {
   restrict: string;
   /** Extra SQL matching the search against the SO and its ECs. */
   searchable: string;
+  /**
+   * Deep link target (from a notification). When this SO is in the queue,
+   * the page holding it wins over the requested page — otherwise following
+   * a notification for an SO on page 3 would silently land on page 1.
+   */
+  focusOrderId?: string | null;
 }): Promise<{ ids: string[]; total: number; page: number }> {
   const search = opts.search ? likePattern(opts.search) : null;
   const where = `WHERE ${opts.restrict}
@@ -1498,7 +1504,22 @@ async function pageOfOrderIds(opts: {
     [search]
   );
   const total = Number(totals.rows[0]?.count ?? 0);
-  const page = clampPage(opts.page, total);
+
+  // Rank the target inside this queue's own ordering (sl_no ASC), then
+  // convert that position to a page. Rank 0 means it isn't in the queue at
+  // all (wrong department, or filtered out by the current search) — then we
+  // just honour the requested page.
+  let requested = opts.page;
+  if (opts.focusOrderId && UUID_RE.test(opts.focusOrderId)) {
+    const rank = await query<{ n: string }>(
+      `SELECT count(*) AS n FROM orders o ${where}
+         AND o.sl_no <= (SELECT sl_no FROM orders WHERE id = $2)`,
+      [search, opts.focusOrderId]
+    );
+    const n = Number(rank.rows[0]?.n ?? 0);
+    if (n > 0) requested = Math.ceil(n / PAGE_SIZE);
+  }
+  const page = clampPage(requested, total);
 
   const ids = await query<{ id: string }>(
     `SELECT o.id FROM orders o ${where}
@@ -1520,7 +1541,7 @@ const SO_AND_EC_SEARCH = `(o.so_no ILIKE $1 OR o.client_name ILIKE $1
 export async function listItemsForSectionPage(
   table: OrderTable,
   contextColumns: ContextColumn[],
-  opts: { page: number; search: string }
+  opts: { page: number; search: string; focusOrderId?: string | null }
 ): Promise<PageResult<Row>> {
   // QC isn't involved when the SO is flagged QC Needed = No — the same rule
   // the unpaged query applies.
@@ -1532,6 +1553,7 @@ export async function listItemsForSectionPage(
   const { ids, total, page } = await pageOfOrderIds({
     page: opts.page,
     search: opts.search,
+    focusOrderId: opts.focusOrderId ?? null,
     restrict: `${restrict} AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id)`,
     searchable: SO_AND_EC_SEARCH,
   });
@@ -1545,11 +1567,12 @@ export async function listItemsForSectionPage(
 export async function listOrdersForSectionPage(
   table: OrderTable,
   contextColumns: ContextColumn[],
-  opts: { page: number; search: string }
+  opts: { page: number; search: string; focusOrderId?: string | null }
 ): Promise<PageResult<Row>> {
   const { ids, total, page } = await pageOfOrderIds({
     page: opts.page,
     search: opts.search,
+    focusOrderId: opts.focusOrderId ?? null,
     // Accounts is not involved for Challan orders, so they must be out of
     // the count as well as out of the rows.
     restrict:
@@ -1568,10 +1591,12 @@ export async function listOrdersForSectionPage(
 export async function listItemsForPurchasePage(opts: {
   page: number;
   search: string;
+  focusOrderId?: string | null;
 }): Promise<PageResult<PurchaseQueueRow>> {
   const { ids, total, page } = await pageOfOrderIds({
     page: opts.page,
     search: opts.search,
+    focusOrderId: opts.focusOrderId ?? null,
     restrict: `o.boi = 'Yes' AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id)`,
     searchable: SO_AND_EC_SEARCH,
   });
@@ -1585,10 +1610,12 @@ export async function listItemsForPurchasePage(opts: {
 export async function listOrdersForBillingPage(opts: {
   page: number;
   search: string;
+  focusOrderId?: string | null;
 }): Promise<PageResult<BillingQueueRow>> {
   const { ids, total, page } = await pageOfOrderIds({
     page: opts.page,
     search: opts.search,
+    focusOrderId: opts.focusOrderId ?? null,
     restrict: `TRUE`,
     searchable: `(o.so_no ILIKE $1 OR o.client_name ILIKE $1 OR o.sl_no::text ILIKE $1)`,
   });
@@ -1727,4 +1754,25 @@ export async function getOrderDeptStatus(
     dispatch: head.dispatch_status ? done(head.dispatch_status) : pending(),
     ecs,
   };
+}
+
+/**
+ * A notification deep link carries an item_id for per-EC events and an
+ * order_id otherwise. Both arrive in the same `edit` parameter, so resolve
+ * whichever it is to the owning SO — that's what the queues page on.
+ */
+export async function resolveFocusOrderId(
+  id: string | undefined | null
+): Promise<string | null> {
+  if (!id || !UUID_RE.test(id)) return null;
+  const direct = await query<{ id: string }>(
+    `SELECT id FROM orders WHERE id = $1`,
+    [id]
+  );
+  if (direct.rows[0]) return direct.rows[0].id;
+  const viaItem = await query<{ order_id: string }>(
+    `SELECT order_id FROM order_items WHERE id = $1`,
+    [id]
+  );
+  return viaItem.rows[0]?.order_id ?? null;
 }

@@ -3,7 +3,9 @@ import { redirect } from "next/navigation";
 import { PenTool } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
-import { listItemsForSectionPage } from "@/lib/orders";
+import { listItemsForSectionPage,
+  resolveFocusOrderId,
+} from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import {
@@ -32,6 +34,9 @@ export default async function DrawingWorkspacePage({
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
   const { edit, thread, page, q } = await searchParams;
+  // A notification links to an EC (item id) or an SO; either way the queue
+  // must open on the page that holds it.
+  const focusOrderId = await resolveFocusOrderId(thread ?? edit);
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const [queue, reminders] = await Promise.all([
     listItemsForSectionPage(
@@ -44,7 +49,7 @@ export default async function DrawingWorkspacePage({
         from: f.from ?? ("orders" as const),
       }))
     ,
-      { page: parsePage(page), search: parseQuery(q) }
+      { page: parsePage(page), search: parseQuery(q), focusOrderId }
     ),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);
@@ -78,6 +83,7 @@ export default async function DrawingWorkspacePage({
 
       <DepartmentWorkspace
         openThreadId={thread}
+        focusOrderId={focusOrderId ?? undefined}
         role={user.role}
         unreadThreads={unreadThreads}
         table={TABLE}

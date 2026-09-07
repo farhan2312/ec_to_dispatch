@@ -3,7 +3,9 @@ import { redirect } from "next/navigation";
 import { Wallet } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditSection } from "@/lib/roles";
-import { listOrdersForSectionPage } from "@/lib/orders";
+import { listOrdersForSectionPage,
+  resolveFocusOrderId,
+} from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
 import {
   PAYMENT_TERMS_CONTEXT_FIELDS,
@@ -30,12 +32,15 @@ export default async function AccountsWorkspacePage({
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
   const { edit, thread, page, q } = await searchParams;
+  // A notification links to an EC (item id) or an SO; either way the queue
+  // must open on the page that holds it.
+  const focusOrderId = await resolveFocusOrderId(thread ?? edit);
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const queue = await listOrdersForSectionPage(
     TABLE,
     PAYMENT_TERMS_CONTEXT_FIELDS.map((f) => ({ column: f.column, type: f.type }))
   ,
-      { page: parsePage(page), search: parseQuery(q) }
+      { page: parsePage(page), search: parseQuery(q), focusOrderId }
     );
 
   // Unread discussion messages per SO, for the row badge. Rows are ECs in
@@ -65,6 +70,7 @@ export default async function AccountsWorkspacePage({
 
       <DepartmentWorkspace
         openThreadId={thread}
+        focusOrderId={focusOrderId ?? undefined}
         role={user.role}
         unreadThreads={unreadThreads}
         table={TABLE}

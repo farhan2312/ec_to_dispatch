@@ -3,7 +3,10 @@ import { redirect } from "next/navigation";
 import { Package } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditChild, canEditSection, reminderDeptForTable } from "@/lib/roles";
-import { listItemsForPurchasePage } from "@/lib/orders";
+import {
+  listItemsForPurchasePage,
+  resolveFocusOrderId,
+} from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import { unreadByOrder } from "@/lib/order-messages";
@@ -28,8 +31,14 @@ export default async function PurchaseWorkspacePage({
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
   const { edit, thread, page, q } = await searchParams;
+  // A notification links to an EC (item id) or an SO; open the page that holds it.
+  const focusOrderId = await resolveFocusOrderId(thread ?? edit);
   const [queue, reminders] = await Promise.all([
-    listItemsForPurchasePage({ page: parsePage(page), search: parseQuery(q) }),
+    listItemsForPurchasePage({
+      page: parsePage(page),
+      search: parseQuery(q),
+      focusOrderId,
+    }),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);
 
@@ -61,6 +70,7 @@ export default async function PurchaseWorkspacePage({
 
       <PurchaseWorkspace
         openThreadId={thread}
+        focusOrderId={focusOrderId ?? undefined}
         role={user.role}
         unreadThreads={unreadThreads}
         queue={queue}

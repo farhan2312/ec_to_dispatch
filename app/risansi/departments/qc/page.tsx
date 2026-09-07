@@ -13,6 +13,7 @@ import {
 import {
   listItemsForSectionPage,
   listQcDocumentCounts,
+  resolveFocusOrderId,
 } from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
 import { listRemindersForDepartment } from "@/lib/reminders";
@@ -39,6 +40,9 @@ export default async function QcWorkspacePage({
   if (!canAccessDepartment(user.role, TABLE)) redirect("/risansi/dashboard");
 
   const { edit, thread, page, q } = await searchParams;
+  // A notification links to an EC (item id) or an SO; either way the queue
+  // must open on the page that holds it.
+  const focusOrderId = await resolveFocusOrderId(thread ?? edit);
   // QC fills its own submission fields; Required QC Documents / Target Date
   // stay centralOnly (Mitali fills those, read-only to QC — see order-schema.ts).
   const canEdit = canEditSection(user.role, TABLE);
@@ -55,7 +59,7 @@ export default async function QcWorkspacePage({
         from: f.from ?? ("orders" as const),
       }))
     ,
-      { page: parsePage(page), search: parseQuery(q) }
+      { page: parsePage(page), search: parseQuery(q), focusOrderId }
     ),
     listQcDocumentCounts("order_qc_documents"),
     listQcDocumentCounts("order_qc_requirement_documents"),
@@ -91,6 +95,7 @@ export default async function QcWorkspacePage({
 
       <DepartmentWorkspace
         openThreadId={thread}
+        focusOrderId={focusOrderId ?? undefined}
         role={user.role}
         unreadThreads={unreadThreads}
         table={TABLE}

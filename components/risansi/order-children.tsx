@@ -36,6 +36,7 @@ export function OrderChildList({
   renderExtra,
   rowHeader,
   headerAction,
+  bulkSave = false,
 }: {
   orderId: string;
   table: ChildTable;
@@ -71,6 +72,9 @@ export function OrderChildList({
   // Optional control shown in the card header, left of the Add button (e.g.
   // the PI Excel upload on the Operation card).
   headerAction?: React.ReactNode;
+  // One Save for the whole list instead of a button per row — add every item
+  // first, then commit them together (Purchase's bought-out items).
+  bulkSave?: boolean;
 }) {
   const router = useRouter();
   // Edits overlay keyed by row id; the row list itself always comes from props.
@@ -78,6 +82,9 @@ export function OrderChildList({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [savedId, setSavedId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [savingAll, setSavingAll] = useState(false);
+  const [savedAll, setSavedAll] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
   function seed(row: Row): Record<string, string> {
     return Object.fromEntries(fields.map((f) => [f.column, toInput(row[f.column])]));
@@ -129,6 +136,8 @@ export function OrderChildList({
       [id]: { ...(prev[id] ?? seed(row)), [column]: value },
     }));
     setSavedId(null);
+    setSavedAll(false);
+    setBulkError(null);
   }
 
   async function saveRow(row: Row) {
@@ -147,6 +156,39 @@ export function OrderChildList({
     router.refresh();
   }
 
+  /**
+   * Commit every edited row in one go. Rows that save are cleared as they
+   * go, so a partial failure leaves only the rows that still need attention
+   * marked as unsaved rather than making saved work look lost.
+   */
+  async function saveAll() {
+    const ids = Object.keys(edits);
+    if (ids.length === 0) return;
+    setSavingAll(true);
+    setBulkError(null);
+
+    let firstError: string | null = null;
+    const saved: string[] = [];
+    for (const id of ids) {
+      const result = await updateOrderChildAction(id, table, edits[id], orderId);
+      if (result.ok) saved.push(id);
+      else if (!firstError) firstError = result.error;
+    }
+
+    setEdits((prev) => {
+      const next = { ...prev };
+      for (const id of saved) delete next[id];
+      return next;
+    });
+    setSavingAll(false);
+    if (firstError) {
+      setBulkError(firstError);
+      return;
+    }
+    setSavedAll(true);
+    router.refresh();
+  }
+
   async function deleteRow(row: Row) {
     const id = String(row.id);
     setBusyId(id);
@@ -154,6 +196,12 @@ export function OrderChildList({
     setBusyId(null);
     if (result.ok) router.refresh();
   }
+
+  const dirtyCount = Object.keys(edits).length;
+  // In bulk mode the per-row column only survives if it still holds a
+  // delete button — Purchase can neither add nor delete, so it goes away.
+  const rowCanDelete = canDelete ?? canAdd ?? canEdit;
+  const showRowActions = canEdit && (!bulkSave || rowCanDelete);
 
   async function addRow() {
     setAdding(true);
@@ -229,7 +277,7 @@ export function OrderChildList({
                 {renderExtra && (
                   <th className="px-3 py-2 whitespace-nowrap">{renderExtra.label}</th>
                 )}
-                {canEdit && <th className="px-3 py-2" />}
+                {showRowActions && <th className="px-3 py-2" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-card-border">
@@ -273,23 +321,25 @@ export function OrderChildList({
                         {renderExtra.render(row)}
                       </td>
                     )}
-                    {canEdit && (
+                    {showRowActions && (
                       <td className="px-3 py-2 whitespace-nowrap">
                         <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => saveRow(row)}
-                            disabled={!edits[id] || busyId === id}
-                            className="inline-flex h-8 items-center justify-center gap-1 rounded-lg bg-primary px-2.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {busyId === id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : savedId === id ? (
-                              <Check className="h-3.5 w-3.5" />
-                            ) : null}
-                            Save
-                          </button>
-                          {(canDelete ?? canAdd ?? canEdit) && (
+                          {!bulkSave && (
+                            <button
+                              type="button"
+                              onClick={() => saveRow(row)}
+                              disabled={!edits[id] || busyId === id}
+                              className="inline-flex h-8 items-center justify-center gap-1 rounded-lg bg-primary px-2.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              {busyId === id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : savedId === id ? (
+                                <Check className="h-3.5 w-3.5" />
+                              ) : null}
+                              Save
+                            </button>
+                          )}
+                          {rowCanDelete && (
                             <button
                               type="button"
                               onClick={() => deleteRow(row)}
@@ -308,6 +358,34 @@ export function OrderChildList({
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {bulkSave && canEdit && (
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-3 border-t border-card-border pt-4">
+          {bulkError ? (
+            <span role="alert" className="mr-auto text-xs text-danger">
+              {bulkError}
+            </span>
+          ) : dirtyCount > 0 ? (
+            <span className="mr-auto text-xs text-amber-700">
+              {dirtyCount} unsaved {dirtyCount === 1 ? "row" : "rows"}
+            </span>
+          ) : savedAll ? (
+            <span className="mr-auto inline-flex items-center gap-1 text-xs text-emerald-600">
+              <Check className="h-3.5 w-3.5" />
+              Saved
+            </span>
+          ) : null}
+          <button
+            type="button"
+            onClick={saveAll}
+            disabled={dirtyCount === 0 || savingAll}
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-primary px-4 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {savingAll && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {savingAll ? "Saving…" : "Save all"}
+          </button>
         </div>
       )}
     </section>

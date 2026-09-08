@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ClipboardList, Plus, Upload } from "lucide-react";
+import { ClipboardList, Download, Plus, Upload } from "lucide-react";
 import { listOrdersPage } from "@/lib/orders";
 import { parseList, parsePage, parseQuery } from "@/lib/pagination";
+import { parseDeptFilter } from "@/lib/dept-status";
 import { getCurrentUser } from "@/lib/session";
 import { canCreateOrders, isCentral } from "@/lib/roles";
 import { OrdersTable } from "@/components/risansi/orders-table";
@@ -17,7 +18,13 @@ export const dynamic = "force-dynamic";
 export default async function OrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string; q?: string; zone?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    q?: string;
+    zone?: string;
+    dept?: string;
+    dstatus?: string;
+  }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -25,13 +32,31 @@ export default async function OrdersPage({
   // department roles use their own workspace instead.
   if (!isCentral(user.role)) redirect("/risansi/dashboard");
 
-  const { page, q, zone } = await searchParams;
+  const { page, q, zone, dept, dstatus } = await searchParams;
+  const search = parseQuery(q);
+  const zones = parseList(zone);
+  const deptFilter = parseDeptFilter(dept, dstatus);
   const result = await listOrdersPage({
     page: parsePage(page),
-    search: parseQuery(q),
-    zones: parseList(zone),
+    search,
+    zones,
+    ...deptFilter,
   });
   const canCreate = canCreateOrders(user.role);
+
+  // The export mirrors whatever the list is showing: with any filter on it
+  // downloads just those SOs, otherwise the whole tracker.
+  const exportParams = new URLSearchParams();
+  if (search) exportParams.set("q", search);
+  if (zones.length > 0) exportParams.set("zone", zones.join(","));
+  if (deptFilter.dept && deptFilter.deptStatus) {
+    exportParams.set("dept", deptFilter.dept);
+    exportParams.set("dstatus", deptFilter.deptStatus);
+  }
+  const isFiltered = exportParams.size > 0;
+  const exportHref = isFiltered
+    ? `/api/orders/export?${exportParams}`
+    : "/api/orders/export";
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
@@ -52,24 +77,33 @@ export default async function OrdersPage({
           </div>
         </div>
 
-        {canCreate && (
-          <div className="flex shrink-0 items-center gap-2">
-            <Link
-              href="/risansi/orders/import"
-              className="inline-flex h-10 items-center gap-2 rounded-lg border border-input-border bg-surface px-4 text-sm font-semibold text-foreground transition-colors hover:bg-background"
-            >
-              <Upload className="h-4 w-4" />
-              Import orders
-            </Link>
-            <Link
-              href="/risansi/orders/new"
-              className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
-            >
-              <Plus className="h-4 w-4" />
-              New order
-            </Link>
-          </div>
-        )}
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <a
+            href={exportHref}
+            className="inline-flex h-10 items-center gap-2 rounded-lg border border-input-border bg-surface px-4 text-sm font-semibold text-foreground transition-colors hover:bg-background"
+          >
+            <Download className="h-4 w-4" />
+            {isFiltered ? `Export ${result.total} filtered` : "Export all"}
+          </a>
+          {canCreate && (
+            <>
+              <Link
+                href="/risansi/orders/import"
+                className="inline-flex h-10 items-center gap-2 rounded-lg border border-input-border bg-surface px-4 text-sm font-semibold text-foreground transition-colors hover:bg-background"
+              >
+                <Upload className="h-4 w-4" />
+                Import orders
+              </Link>
+              <Link
+                href="/risansi/orders/new"
+                className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
+              >
+                <Plus className="h-4 w-4" />
+                New order
+              </Link>
+            </>
+          )}
+        </div>
       </div>
 
       <OrdersTable result={result} canDelete={canCreate} />

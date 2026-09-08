@@ -234,6 +234,9 @@ export function PurchaseWorkspace({
                                     canEdit={canEdit}
                                     canEditCentral={isCentral(role)}
                                     canAdd={isCentral(role)}
+                                    // Add every item first, then commit them
+                                    // together — one Save for the whole list.
+                                    bulkSave
                                   />
                                 ) : (
                                   <p className="text-xs text-muted">

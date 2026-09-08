@@ -260,3 +260,89 @@ export async function notifySectionSaved(params: {
     console.error("notifySectionSaved failed:", error);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Drawing revisions
+// ---------------------------------------------------------------------------
+
+/** The three hand-offs on one drawing revision, plus what it belongs to. */
+export type DrawingHandoffs = {
+  revision_no: string | null;
+  ec_no: string | null;
+  issued_to_client: string | null;
+  approved: string | null;
+  issued_to_production: string | null;
+};
+
+export type DrawingHandoffEvent = { roles: string[]; what: string };
+
+/** Normalised Yes / No, or "" while the hand-off is still unanswered. */
+function answer(value: string | null | undefined): "Yes" | "No" | "" {
+  const v = String(value ?? "").trim().toLowerCase();
+  if (v === "yes") return "Yes";
+  if (v === "no") return "No";
+  return "";
+}
+
+/**
+ * Which notifications a drawing-revision save earns.
+ *
+ * Approval is Central Visibility's call, so Drawing is the side waiting to
+ * hear it — that hand-off is what unblocks issuing to production. The two
+ * hand-offs Drawing itself makes (to Client, to Production) report up to
+ * Mitali, who is muted when she is the one saving.
+ *
+ * "No" notifies exactly like "Yes": a drawing that comes back *not* approved is
+ * the answer Drawing most needs — it means rework — and a hand-off flipped back
+ * to No is equally a change of state. What stays silent is a save that didn't
+ * change the answer, or one that leaves it blank. Applies to every revision
+ * row, not just the first issue.
+ */
+export function drawingHandoffEvents(
+  before: DrawingHandoffs | null,
+  after: DrawingHandoffs,
+  actorIsCentral: boolean
+): DrawingHandoffEvent[] {
+  const answered = (col: keyof DrawingHandoffs) => {
+    const now = answer(after[col]);
+    return now !== "" && now !== answer(before?.[col]) ? now : null;
+  };
+  const phrase = (verdict: "Yes" | "No", what: string) =>
+    verdict === "Yes" ? what : `not ${what}`;
+
+  const events: DrawingHandoffEvent[] = [];
+
+  const client = answered("issued_to_client");
+  if (client && !actorIsCentral) {
+    events.push({
+      roles: ["central_visibility"],
+      what: phrase(client, "issued to Client"),
+    });
+  }
+
+  const approved = answered("approved");
+  if (approved) {
+    events.push({ roles: ["drawing"], what: phrase(approved, "approved") });
+  }
+
+  const production = answered("issued_to_production");
+  if (production && !actorIsCentral) {
+    events.push({
+      roles: ["central_visibility"],
+      what: phrase(production, "issued to Production"),
+    });
+  }
+
+  return events;
+}
+
+/** "SO26/1/999 · EC 123TEST · Rev. 2" — the first issue has no number. */
+export function drawingHandoffDetail(
+  soLabel: string,
+  after: DrawingHandoffs
+): string {
+  const rev = (after.revision_no ?? "").trim();
+  return `${soLabel} · EC ${after.ec_no ?? "—"} · ${
+    rev ? `Rev. ${rev}` : "first issue"
+  }`;
+}

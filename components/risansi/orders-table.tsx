@@ -17,7 +17,16 @@ import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import type { PageResult } from "@/lib/pagination";
 import { AddOnForm } from "./add-on-form";
 import { ClientLookup } from "./client-lookup";
-import { MultiSelectFilter } from "./multi-select-filter";
+import {
+  MultiSelectFilter,
+  SingleSelectFilter,
+} from "./multi-select-filter";
+import {
+  DEPT_FILTER_KEYS,
+  DEPT_FILTER_LABELS,
+  statusesFor,
+  type DeptFilterKey,
+} from "@/lib/dept-status";
 import { DeptStatusModal } from "./dept-status-modal";
 
 const numberFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
@@ -137,6 +146,17 @@ export function OrdersTable({
   // than only the page already loaded.
   const { get: getParam, getList, setParams } = useUrlTable();
   const zones = getList("zone");
+  // Department + status is one filter in two controls: "who is this order
+  // sitting with, and are they done?". The status is meaningless on its own,
+  // so it only applies once a department is picked.
+  const dept = (DEPT_FILTER_KEYS as readonly string[]).includes(
+    getParam("dept")
+  )
+    ? (getParam("dept") as DeptFilterKey)
+    : null;
+  const deptStatus = dept
+    ? (statusesFor(dept).find((v) => v === getParam("dstatus")) ?? null)
+    : null;
   const pageRows = orders;
   // expand-toggle + 9 data columns + open + optional Add-On/delete.
   const baseCols = 11;
@@ -183,7 +203,38 @@ export function OrdersTable({
           selected={zones}
           onChange={(next) => setParams({ zone: next })}
         />
-        {zones.length > 0 && (
+        <SingleSelectFilter
+          label="Department"
+          allLabel="All departments"
+          options={DEPT_FILTER_KEYS.map((k) => ({
+            value: k,
+            label: DEPT_FILTER_LABELS[k],
+          }))}
+          selected={dept}
+          onChange={(next) => {
+            // Changing department can strip a status the new one doesn't
+            // offer (only Purchase, Quality and Accounts have N/A), so pick
+            // the first status it does — never leave an impossible pair.
+            const nextStatus = next
+              ? (statusesFor(next as DeptFilterKey).find(
+                  (v) => v === deptStatus
+                ) ?? "Pending")
+              : null;
+            setParams({ dept: next, dstatus: nextStatus });
+          }}
+        />
+        <SingleSelectFilter
+          label="Status"
+          allLabel="Any status"
+          disabled={!dept}
+          options={(dept ? statusesFor(dept) : []).map((v) => ({
+            value: v,
+            label: v,
+          }))}
+          selected={deptStatus}
+          onChange={(next) => setParams({ dstatus: next })}
+        />
+        {(zones.length > 0 || (dept && deptStatus)) && (
           <span className="text-xs text-muted">
             {result.total} matching {result.total === 1 ? "order" : "orders"}
           </span>

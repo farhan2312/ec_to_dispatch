@@ -1,5 +1,11 @@
 import { query } from "@/lib/db";
 import {
+  isPerEcDept,
+  NOT_APPLICABLE,
+  PENDING,
+  type DeptFilterKey,
+} from "@/lib/dept-status";
+import {
   PAGE_SIZE,
   clampPage,
   likePattern,
@@ -432,6 +438,108 @@ export async function listItemDetails(orderIds?: string[]): Promise<ItemDetail[]
       ${orderIds ? "WHERE it.order_id = ANY($1)" : ""}
       ORDER BY o.sl_no ASC, it.seq ASC`,
     orderIds ? [orderIds] : []
+  );
+  return result.rows;
+}
+
+// ---------------------------------------------------------------------------
+// Export
+// ---------------------------------------------------------------------------
+
+/** One EC with every per-EC section and child list hanging off it. */
+export type OrderExportItem = {
+  item: Row;
+  order_drawing: Row | null;
+  order_purchase: Row | null;
+  order_qc: Row | null;
+  order_planning: Row | null;
+  order_assembly_dispatch: Row | null;
+  // No order_lots: no section declares that child list, so nothing in the app
+  // can create a lot row. The table and the dispatch register that reads it
+  // are still here, but the export has nothing to show from them.
+  order_boi_items: Row[];
+  order_packing_slips: Row[];
+  order_drawing_revisions: Row[];
+  // File attachments: name/size/date only — never the bytes.
+  order_qc_documents: Row[];
+  order_qc_requirement_documents: Row[];
+};
+
+/** One SO with its SO-level sections, its PI/invoice lists, and its ECs. */
+export type OrderExportRow = {
+  order: Row;
+  order_billing: Row | null;
+  order_accounts: Row | null;
+  order_billing_docs: Row[];
+  order_invoices: Row[];
+  items: OrderExportItem[];
+};
+
+/**
+ * The whole tracker shaped the way the export sheet reads it: SO first, its
+ * ECs nested underneath. Unlike listItemDetails (one flat row per EC) this
+ * keeps SOs that have no EC yet — they are real orders and belong in the file.
+ * `orderIds` limits to those SOs; omitted, returns every one.
+ */
+export async function listOrderExports(
+  orderIds?: string[]
+): Promise<OrderExportRow[]> {
+  const result = await query<OrderExportRow>(
+    `SELECT to_jsonb(o)  AS order,
+            to_jsonb(b)  AS order_billing,
+            to_jsonb(ac) AS order_accounts,
+            COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
+                        FROM order_billing_docs d WHERE d.order_id = o.id),
+                     '[]'::jsonb) AS order_billing_docs,
+            COALESCE((SELECT jsonb_agg((to_jsonb(inv) - 'lr_file_data') ORDER BY inv.seq)
+                        FROM order_invoices inv WHERE inv.order_id = o.id),
+                     '[]'::jsonb) AS order_invoices,
+            COALESCE((
+              SELECT jsonb_agg(jsonb_build_object(
+                       'item', to_jsonb(it) - 'order_copy_file_data',
+                       'order_drawing', to_jsonb(dr),
+                       'order_purchase', to_jsonb(pu),
+                       'order_qc', to_jsonb(qc),
+                       'order_planning', to_jsonb(pl),
+                       'order_assembly_dispatch', to_jsonb(ad),
+                       'order_boi_items', COALESCE((
+                         SELECT jsonb_agg(to_jsonb(bi) ORDER BY bi.created_at)
+                           FROM order_boi_items bi WHERE bi.item_id = it.id), '[]'::jsonb),
+                       'order_qc_documents', COALESCE((
+                         SELECT jsonb_agg(jsonb_build_object(
+                                  'file_name', qd.file_name,
+                                  'file_size', qd.file_size,
+                                  'uploaded_at', qd.uploaded_at
+                                ) ORDER BY qd.uploaded_at)
+                           FROM order_qc_documents qd WHERE qd.item_id = it.id), '[]'::jsonb),
+                       'order_qc_requirement_documents', COALESCE((
+                         SELECT jsonb_agg(jsonb_build_object(
+                                  'file_name', qr.file_name,
+                                  'file_size', qr.file_size,
+                                  'uploaded_at', qr.uploaded_at
+                                ) ORDER BY qr.uploaded_at)
+                           FROM order_qc_requirement_documents qr WHERE qr.item_id = it.id), '[]'::jsonb),
+                       'order_packing_slips', COALESCE((
+                         SELECT jsonb_agg(to_jsonb(ps) ORDER BY ps.seq)
+                           FROM order_packing_slips ps WHERE ps.item_id = it.id), '[]'::jsonb),
+                       'order_drawing_revisions', COALESCE((
+                         SELECT jsonb_agg(to_jsonb(rv) ORDER BY rv.seq)
+                           FROM order_drawing_revisions rv WHERE rv.item_id = it.id), '[]'::jsonb)
+                     ) ORDER BY it.seq)
+                FROM order_items it
+                LEFT JOIN order_drawing dr            ON dr.item_id = it.id
+                LEFT JOIN order_purchase pu           ON pu.item_id = it.id
+                LEFT JOIN order_qc qc                 ON qc.item_id = it.id
+                LEFT JOIN order_planning pl           ON pl.item_id = it.id
+                LEFT JOIN order_assembly_dispatch ad  ON ad.item_id = it.id
+               WHERE it.order_id = o.id
+            ), '[]'::jsonb) AS items
+       FROM orders o
+       LEFT JOIN order_billing b   ON b.order_id  = o.id
+       LEFT JOIN order_accounts ac ON ac.order_id = o.id
+      WHERE ($1::uuid[] IS NULL OR o.id = ANY($1))
+      ORDER BY o.sl_no ASC`,
+    [orderIds ?? null]
   );
   return result.rows;
 }
@@ -1345,15 +1453,10 @@ function detailSelect(alias: string, f: { column: string; type: string }): strin
  * how people find an order), so it has to run here — filtering the 30 rows
  * already on screen would miss matches on every other page.
  */
-export async function listOrdersPage(opts: {
-  page: number;
-  search: string;
-  zones: string[];
-}): Promise<PageResult<OrderListRow> & { zoneOptions: string[] }> {
-  const search = opts.search ? likePattern(opts.search) : null;
-  const zones = opts.zones.length > 0 ? opts.zones : null;
-
-  const where = `WHERE ($1::text[] IS NULL OR TRIM(COALESCE(o.zone, '')) = ANY($1))
+// The orders-list filter, shared by the paged table and the Excel export so
+// "Export N filtered" can never disagree with the rows on screen.
+// $1 = zones (null for all), $2 = search pattern (null for all).
+const ORDER_LIST_WHERE = `WHERE ($1::text[] IS NULL OR TRIM(COALESCE(o.zone, '')) = ANY($1))
         AND ($2::text IS NULL
              OR o.so_no ILIKE $2 OR o.client_name ILIKE $2
              OR o.client_code ILIKE $2 OR o.po_no ILIKE $2
@@ -1362,6 +1465,154 @@ export async function listOrdersPage(opts: {
                          WHERE s.order_id = o.id
                            AND (s.ec_no ILIKE $2 OR s.item_type ILIKE $2
                                 OR s.model_no ILIKE $2)))`;
+
+/**
+ * SQL for "this SO is <status> in <dept>", where <status> is the department's
+ * own word for it — Drawing's "Approved", Accounts' payment status — not a
+ * flattened done/pending. Each arm mirrors getOrderDeptStatus, so a row the
+ * filter returns is a row whose "Departments" popup says the same thing.
+ *
+ * Per-EC departments match when ANY EC is in that state: one unfinished EC is
+ * what actually holds an order up.
+ */
+
+/** Values come from fixed lists, but never interpolate one unescaped. */
+function lit(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+const DRG_APPROVED = `EXISTS (SELECT 1 FROM order_drawing_revisions rv
+                              WHERE rv.item_id = it.id
+                                AND lower(coalesce(rv.approved, '')) = 'yes')`;
+const DRG_ISSUED = `EXISTS (SELECT 1 FROM order_drawing_revisions rv
+                            WHERE rv.item_id = it.id
+                              AND lower(coalesce(rv.issued_to_client, '')) = 'yes')`;
+const BOI_RECEIVED = `EXISTS (SELECT 1 FROM order_boi_items bi WHERE bi.item_id = it.id)
+                      AND NOT EXISTS (SELECT 1 FROM order_boi_items bi
+                                       WHERE bi.item_id = it.id
+                                         AND bi.receipt_date IS NULL)`;
+const QC_SUBMITTED = `EXISTS (SELECT 1 FROM order_qc q
+                              WHERE q.item_id = it.id
+                                AND q.qc_doc_actual_date IS NOT NULL)`;
+const PACKED = `EXISTS (SELECT 1 FROM order_assembly_dispatch ad
+                        WHERE ad.item_id = it.id
+                          AND ad.actual_packing_date IS NOT NULL)`;
+// Planning files its status on whichever of the three columns applies.
+const PLANNING_STATUS = `COALESCE(NULLIF(pl.actual_pump_status, ''),
+                                  NULLIF(pl.actual_spare_status, ''),
+                                  NULLIF(pl.planning_status, ''))`;
+const planningIs = (value: string) =>
+  `EXISTS (SELECT 1 FROM order_planning pl
+            WHERE pl.item_id = it.id AND ${PLANNING_STATUS} = ${lit(value)})`;
+const PLANNING_ANY = `EXISTS (SELECT 1 FROM order_planning pl
+                              WHERE pl.item_id = it.id
+                                AND ${PLANNING_STATUS} IS NOT NULL)`;
+
+const NO_BOI = `COALESCE(o.boi, '') <> 'Yes'`;
+const NO_QC = `COALESCE(o.qc_required, '') = 'No'`;
+const IS_CHALLAN = `COALESCE(o.bill_type, '') = 'Challan'`;
+const BILL_RAISED = `(EXISTS (SELECT 1 FROM order_billing_docs d WHERE d.order_id = o.id)
+                      OR EXISTS (SELECT 1 FROM order_billing b
+                                  WHERE b.order_id = o.id
+                                    AND b.challan_no IS NOT NULL))`;
+const PAYMENT_SET = `EXISTS (SELECT 1 FROM order_accounts a
+                             WHERE a.order_id = o.id
+                               AND COALESCE(a.payment_status, '') <> '')`;
+
+/** The state of one EC (`it`) for a per-EC department. */
+function ecState(dept: DeptFilterKey, status: string): string {
+  switch (dept) {
+    case "drawing":
+      // Approval outranks issue, matching the popup's precedence.
+      if (status === "Approved") return DRG_APPROVED;
+      if (status === "Issued to Client") {
+        return `${DRG_ISSUED} AND NOT ${DRG_APPROVED}`;
+      }
+      return `NOT ${DRG_APPROVED} AND NOT ${DRG_ISSUED}`;
+    case "purchase":
+      if (status === NOT_APPLICABLE) return NO_BOI;
+      if (status === "Received") return `NOT (${NO_BOI}) AND (${BOI_RECEIVED})`;
+      return `NOT (${NO_BOI}) AND NOT (${BOI_RECEIVED})`;
+    case "quality":
+      if (status === NOT_APPLICABLE) return NO_QC;
+      if (status === "Submitted") return `NOT (${NO_QC}) AND ${QC_SUBMITTED}`;
+      return `NOT (${NO_QC}) AND NOT ${QC_SUBMITTED}`;
+    case "planning":
+      return status === PENDING ? `NOT ${PLANNING_ANY}` : planningIs(status);
+    default:
+      return status === "Packed" ? PACKED : `NOT ${PACKED}`;
+  }
+}
+
+/** The state of the SO itself for an SO-scope department. */
+function soState(dept: DeptFilterKey, status: string): string {
+  if (dept === "billing") {
+    if (status === "PI raised") return `${BILL_RAISED} AND NOT (${IS_CHALLAN})`;
+    if (status === "Challan filed") return `${BILL_RAISED} AND ${IS_CHALLAN}`;
+    return `NOT ${BILL_RAISED}`;
+  }
+  if (dept === "accounts") {
+    if (status === NOT_APPLICABLE) return IS_CHALLAN;
+    if (status === PENDING) return `NOT (${IS_CHALLAN}) AND NOT ${PAYMENT_SET}`;
+    return `NOT (${IS_CHALLAN})
+            AND EXISTS (SELECT 1 FROM order_accounts a
+                         WHERE a.order_id = o.id
+                           AND a.payment_status = ${lit(status)})`;
+  }
+  // Dispatch: "Pending" is itself a stored value, so it also covers a blank.
+  return status === PENDING
+    ? `COALESCE(o.dispatch_status, '') IN ('', ${lit(PENDING)})`
+    : `o.dispatch_status = ${lit(status)}`;
+}
+
+function deptStatusPredicate(dept: DeptFilterKey, status: string): string {
+  if (!isPerEcDept(dept)) return `(${soState(dept, status)})`;
+  return `EXISTS (SELECT 1 FROM order_items it
+                   WHERE it.order_id = o.id AND (${ecState(dept, status)}))`;
+}
+
+/** The extra WHERE clause for the department filter, or "" when it is off. */
+function deptFilterSql(
+  dept: DeptFilterKey | null,
+  status: string | null
+): string {
+  if (!dept || !status) return "";
+  return ` AND ${deptStatusPredicate(dept, status)}`;
+}
+
+/**
+ * Every SO id matching the list filter — the whole result set, not one page.
+ * The export needs this because the table only holds the current page's rows.
+ */
+export async function listOrderIdsMatching(opts: {
+  search: string;
+  zones: string[];
+  dept?: DeptFilterKey | null;
+  deptStatus?: string | null;
+}): Promise<string[]> {
+  const dept = deptFilterSql(opts.dept ?? null, opts.deptStatus ?? null);
+  const result = await query<{ id: string }>(
+    `SELECT o.id FROM orders o ${ORDER_LIST_WHERE}${dept} ORDER BY o.sl_no ASC`,
+    [
+      opts.zones.length > 0 ? opts.zones : null,
+      opts.search ? likePattern(opts.search) : null,
+    ]
+  );
+  return result.rows.map((r) => r.id);
+}
+
+export async function listOrdersPage(opts: {
+  page: number;
+  search: string;
+  zones: string[];
+  dept?: DeptFilterKey | null;
+  deptStatus?: string | null;
+}): Promise<PageResult<OrderListRow> & { zoneOptions: string[] }> {
+  const search = opts.search ? likePattern(opts.search) : null;
+  const zones = opts.zones.length > 0 ? opts.zones : null;
+
+  const where =
+    ORDER_LIST_WHERE + deptFilterSql(opts.dept ?? null, opts.deptStatus ?? null);
 
   const [totals, zoneRows] = await Promise.all([
     query<{ count: string }>(
@@ -1642,10 +1893,27 @@ export type EcDeptStatus = {
   assembly: DeptCell;
 };
 
+/**
+ * The date each department is working to. These live on the SO — one target
+ * applies across every EC of the order — so the popup prints them once per
+ * department rather than repeating the same date down every EC row. Planning
+ * has no target of its own; it works to Purchase's and Dispatch's.
+ */
+export type DeptTargets = {
+  drawing: string | null;
+  purchase: string | null;
+  quality: string | null;
+  assembly: string | null;
+  dispatch: string | null;
+  // Set only when the dispatch date has been revised; it supersedes the above.
+  dispatchRevised: string | null;
+};
+
 export type SoDeptStatus = {
   billing: DeptCell;
   accounts: DeptCell;
   dispatch: DeptCell;
+  targets: DeptTargets;
   ecs: EcDeptStatus[];
 };
 
@@ -1664,11 +1932,23 @@ export async function getOrderDeptStatus(
     bill_type: string | null;
     has_pi: boolean;
     payment_status: string | null;
+    drg_target_date: string | null;
+    purchase_target_date: string | null;
+    qc_doc_target_date: string | null;
+    dispatch_team_target_date: string | null;
+    dispatch_target_date: string | null;
+    dispatch_target_revised_date: string | null;
   }>(
     `SELECT o.dispatch_status, o.bill_type,
             (EXISTS (SELECT 1 FROM order_billing_docs d WHERE d.order_id = o.id)
              OR b.challan_no IS NOT NULL) AS has_pi,
-            a.payment_status
+            a.payment_status,
+            to_char(o.drg_target_date, 'YYYY-MM-DD') AS drg_target_date,
+            to_char(o.purchase_target_date, 'YYYY-MM-DD') AS purchase_target_date,
+            to_char(o.qc_doc_target_date, 'YYYY-MM-DD') AS qc_doc_target_date,
+            to_char(o.dispatch_team_target_date, 'YYYY-MM-DD') AS dispatch_team_target_date,
+            to_char(o.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
+            to_char(o.dispatch_target_revised_date, 'YYYY-MM-DD') AS dispatch_target_revised_date
        FROM orders o
        LEFT JOIN order_billing b  ON b.order_id  = o.id
        LEFT JOIN order_accounts a ON a.order_id = o.id
@@ -1752,6 +2032,14 @@ export async function getOrderDeptStatus(
         ? done(head.payment_status)
         : pending(),
     dispatch: head.dispatch_status ? done(head.dispatch_status) : pending(),
+    targets: {
+      drawing: head.drg_target_date,
+      purchase: head.purchase_target_date,
+      quality: head.qc_doc_target_date,
+      assembly: head.dispatch_team_target_date,
+      dispatch: head.dispatch_target_date,
+      dispatchRevised: head.dispatch_target_revised_date,
+    },
     ecs,
   };
 }

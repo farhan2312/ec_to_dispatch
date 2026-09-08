@@ -92,6 +92,20 @@ export const BOI_ITEM_OPTIONS = opts([
   "Pully",
   "Others",
 ]);
+// Planning records status on one of three columns (pump, spare, or the free
+// text one); these are the values its two selects offer, deduped, for anything
+// that needs the vocabulary rather than the fields.
+export const PLANNING_STATUS_VALUES = [
+  "Date awaited",
+  "EC under preparation",
+  "Partial assembled",
+  "Partial ready",
+  "In plan",
+  "Assembled",
+  "Ready",
+  "Packed",
+];
+
 export const DISPATCH_STATUS_OPTIONS = opts([
   "Pending",
   "LOT dispatch",

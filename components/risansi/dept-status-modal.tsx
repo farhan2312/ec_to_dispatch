@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { LayoutGrid, Loader2, X } from "lucide-react";
-import type { DeptCell, SoDeptStatus } from "@/lib/orders";
+import type { DeptCell, DeptTargets, SoDeptStatus } from "@/lib/orders";
 import { orderDeptStatusAction } from "@/app/risansi/orders/actions";
 
 function Badge({ cell }: { cell: DeptCell }) {
@@ -21,13 +21,89 @@ function Badge({ cell }: { cell: DeptCell }) {
   );
 }
 
-const EC_DEPTS: { key: keyof SoDeptStatus["ecs"][number]; label: string }[] = [
-  { key: "drawing", label: "Drawing" },
-  { key: "purchase", label: "Purchase" },
-  { key: "quality", label: "Quality" },
-  { key: "planning", label: "Planning" },
-  { key: "assembly", label: "Assembly & Packing" },
+const EC_DEPTS: {
+  key: keyof SoDeptStatus["ecs"][number];
+  label: string;
+  // Which target this department works to. Planning has no target column of
+  // its own — it schedules the order to the Dispatch Target Date, so that is
+  // the date it is judged against here.
+  target?: keyof DeptTargets;
+}[] = [
+  { key: "drawing", label: "Drawing", target: "drawing" },
+  { key: "purchase", label: "Purchase", target: "purchase" },
+  { key: "quality", label: "Quality", target: "quality" },
+  { key: "planning", label: "Planning", target: "dispatch" },
+  { key: "assembly", label: "Assembly & Packing", target: "assembly" },
 ];
+
+/**
+ * The date a column is judged against. A revised dispatch date supersedes the
+ * original wherever the dispatch target is shown, so Planning and the Dispatch
+ * card never quote a date that has since moved.
+ */
+function targetFor(
+  targets: DeptTargets,
+  key: keyof DeptTargets
+): { date: string | null; label: string } {
+  if (key !== "dispatch") return { date: targets[key], label: "Target" };
+  return targets.dispatchRevised
+    ? { date: targets.dispatchRevised, label: "Revised dispatch target" }
+    : { date: targets.dispatch, label: "Dispatch target" };
+}
+
+function formatDate(value: string | null): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function isPast(value: string | null): boolean {
+  if (!value) return false;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return d < today;
+}
+
+/**
+ * The target under a department's name. Turns red once the date has passed and
+ * that department still has work outstanding — a target nobody has met yet is
+ * the thing worth seeing at a glance.
+ */
+function Target({
+  date,
+  overdue,
+  label = "Target",
+}: {
+  date: string | null;
+  overdue: boolean;
+  label?: string;
+}) {
+  const text = formatDate(date);
+  if (!text) {
+    return (
+      <span className="block text-[10px] font-normal normal-case text-muted-foreground">
+        No target
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`block text-[10px] font-normal normal-case ${
+        overdue ? "text-danger" : "text-muted-foreground"
+      }`}
+    >
+      {label} {text}
+      {overdue ? " · overdue" : ""}
+    </span>
+  );
+}
 
 /**
  * Read-only snapshot of every department's status for one SO: SO-scope depts
@@ -120,19 +196,37 @@ export function DeptStatusModal({
                     [
                       { label: "Billing & Operations", cell: status.billing },
                       { label: "Accounts", cell: status.accounts },
-                      { label: "Dispatch", cell: status.dispatch },
+                      {
+                        label: "Dispatch",
+                        cell: status.dispatch,
+                        target: "dispatch",
+                      },
                     ] as const
-                  ).map((d) => (
-                    <div
-                      key={d.label}
-                      className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-background px-3 py-2.5"
-                    >
-                      <span className="text-xs font-medium text-foreground">
-                        {d.label}
-                      </span>
-                      <Badge cell={d.cell} />
-                    </div>
-                  ))}
+                  ).map((d) => {
+                    const target =
+                      "target" in d ? targetFor(status.targets, d.target) : null;
+                    return (
+                      <div
+                        key={d.label}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-card-border bg-background px-3 py-2.5"
+                      >
+                        <span className="text-xs font-medium text-foreground">
+                          {d.label}
+                          {target && (
+                            <Target
+                              date={target.date}
+                              label={target.label}
+                              overdue={
+                                isPast(target.date) &&
+                                d.cell.state === "pending"
+                              }
+                            />
+                          )}
+                        </span>
+                        <Badge cell={d.cell} />
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -140,6 +234,10 @@ export function DeptStatusModal({
               <div>
                 <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   EC level
+                  <span className="ml-2 font-normal normal-case tracking-normal">
+                    Target dates are set per order, so every EC below works to
+                    the same one.
+                  </span>
                 </p>
                 {status.ecs.length === 0 ? (
                   <p className="rounded-lg border border-card-border bg-background px-3 py-4 text-sm text-muted">
@@ -151,11 +249,33 @@ export function DeptStatusModal({
                       <thead className="bg-background">
                         <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                           <th className="px-3 py-2.5">EC No.</th>
-                          {EC_DEPTS.map((d) => (
-                            <th key={d.key} className="px-3 py-2.5 whitespace-nowrap">
-                              {d.label}
-                            </th>
-                          ))}
+                          {EC_DEPTS.map((d) => {
+                            const target = d.target
+                              ? targetFor(status.targets, d.target)
+                              : null;
+                            return (
+                              <th
+                                key={d.key}
+                                className="px-3 py-2.5 whitespace-nowrap align-top"
+                              >
+                                {d.label}
+                                {target && (
+                                  <Target
+                                    date={target.date}
+                                    label={target.label}
+                                    overdue={
+                                      isPast(target.date) &&
+                                      status.ecs.some(
+                                        (ec) =>
+                                          (ec[d.key] as DeptCell).state ===
+                                          "pending"
+                                      )
+                                    }
+                                  />
+                                )}
+                              </th>
+                            );
+                          })}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-card-border">

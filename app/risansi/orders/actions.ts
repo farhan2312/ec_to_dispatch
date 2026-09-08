@@ -53,7 +53,13 @@ import {
 } from "@/lib/roles";
 import { parsePiWorkbook } from "@/lib/pi-import";
 import { logAudit } from "@/lib/audit";
-import { emitNotification, notifySectionSaved } from "@/lib/notifications";
+import {
+  drawingHandoffDetail,
+  drawingHandoffEvents,
+  emitNotification,
+  notifySectionSaved,
+  type DrawingHandoffs,
+} from "@/lib/notifications";
 
 export type CreateOrderResult =
   | { ok: true; slNo: number }
@@ -638,6 +644,14 @@ export async function updateOrderChildAction(
       if (k === "actual" || k === "tentative") actualSlipKind = k;
     }
 
+    // Drawing revisions: capture the three hand-offs before the write so we
+    // notify only on the flip to Yes, not on every re-save of a row that was
+    // already Yes. Applies to every revision row, not just the first issue.
+    let drgBefore: DrawingHandoffs | null = null;
+    if (tbl === "order_drawing_revisions") {
+      drgBefore = await drawingHandoffs(id);
+    }
+
     await updateChildRow(tbl, id, clean);
 
     // For per-EC child tables (BOI items, packing slips) the `orderId` arg is
@@ -707,6 +721,31 @@ export async function updateOrderChildAction(
           message: `Tentative packing details updated for ${soLabel}`,
         });
       }
+    } else if (tbl === "order_drawing_revisions") {
+      // Approval is Central Visibility's call, so Drawing is the one waiting to
+      // hear it — that's what unblocks issuing to production. The two hand-offs
+      // Drawing itself makes (to Client, to Production) report up to Mitali,
+      // who is muted when she is the one saving. A "No" reports the same way a
+      // "Yes" does — not approved is the answer Drawing most needs to hear.
+      const after = await drawingHandoffs(id);
+      if (after && soOrderId) {
+        const events = drawingHandoffEvents(drgBefore, after, notifyMuted);
+        if (events.length > 0) {
+          const soLabel = (await getOrderLabel(soOrderId)) ?? soOrderId;
+          const detail = drawingHandoffDetail(soLabel, after);
+          for (const event of events) {
+            await emitNotification({
+              roles: event.roles,
+              orderId: soOrderId,
+              // Per-EC child: this action's `orderId` arg is the item id, so the
+              // bell can deep-link straight to the EC.
+              itemId: orderId,
+              type: "dept_update",
+              message: `Drawing ${event.what} — ${detail}`,
+            });
+          }
+        }
+      }
     } else if (tbl === "order_boi_items") {
       // Purchase BOI item save → Central Visibility, and Planning: a bought-out
       // receipt date is what unblocks their schedule, so they need to hear it
@@ -735,6 +774,19 @@ export async function updateOrderChildAction(
     console.error("updateOrderChild failed:", error);
     return { ok: false, error: "Could not save the row." };
   }
+}
+
+/** Read one revision's hand-off state, before and after the write. */
+async function drawingHandoffs(id: string): Promise<DrawingHandoffs | null> {
+  const result = await query<DrawingHandoffs>(
+    `SELECT rv.revision_no, it.ec_no, rv.issued_to_client, rv.approved,
+            rv.issued_to_production
+       FROM order_drawing_revisions rv
+       JOIN order_items it ON it.id = rv.item_id
+      WHERE rv.id = $1`,
+    [id]
+  );
+  return result.rows[0] ?? null;
 }
 
 /** Notify Accounts (and Central for oversight) when Billing files a new PI. */

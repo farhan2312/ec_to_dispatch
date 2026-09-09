@@ -261,13 +261,14 @@ export const ORDER_SECTIONS: OrderSection[] = [
       // Target dates (per SO — the same target applies across every EC on
       // this order). Set by Central Visibility at intake; departments see them
       // read-only in their workspaces.
-      { column: "drg_target_date", label: "Target Date for Drawing", type: "date", group: "Target Dates" },
+      { column: "drg_target_date", label: "Target Date for Drawing", type: "date", readOnly: true, group: "Target Dates" },
       // Purchase target is only meaningful when BOI = Yes (there's nothing
       // for Purchase to do otherwise).
       {
         column: "purchase_target_date",
         label: "Target Date for Purchase",
         type: "date",
+        readOnly: true,
         dependsOn: [{ column: "boi", value: "Yes" }],
         group: "Target Dates",
       },
@@ -276,6 +277,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
         column: "qc_doc_target_date",
         label: "Quality Target Date",
         type: "date",
+        readOnly: true,
         dependsOn: [{ column: "qc_required", value: "Yes" }],
         group: "Target Dates",
       },
@@ -283,13 +285,15 @@ export const ORDER_SECTIONS: OrderSection[] = [
         column: "dispatch_team_target_date",
         label: "Target Date for Packing Team",
         type: "date",
+        readOnly: true,
         group: "Target Dates",
       },
-      { column: "dispatch_target_date", label: "Dispatch Target Date", type: "date", group: "Target Dates" },
+      { column: "dispatch_target_date", label: "Dispatch Target Date", type: "date", readOnly: true, group: "Target Dates" },
       {
         column: "dispatch_target_revised_date",
         label: "Revised Dispatch Target Date",
         type: "date",
+        readOnly: true,
         group: "Target Dates",
       },
 

@@ -18,6 +18,8 @@ import { AddOnForm } from "./add-on-form";
 import { OrderChildList } from "./order-children";
 import { InvoiceLrCell } from "./invoice-lr-cell";
 import { OrderThread } from "./order-thread";
+import { TargetDatesPanel } from "./target-dates-panel";
+import type { TargetRevision } from "@/lib/target-dates";
 
 type Row = Record<string, unknown>;
 
@@ -55,10 +57,12 @@ export function OrderDetail({
   detail,
   orderId,
   role,
+  targetRevisions,
 }: {
   detail: OrderDetailData;
   orderId: string;
   role: string;
+  targetRevisions: TargetRevision[];
 }) {
   const router = useRouter();
   const order = detail.order;
@@ -202,6 +206,14 @@ export function OrderDetail({
           return (
             <>
               {coreSections.map(renderSection)}
+              {/* Targets sit with Order details: same scope, same owner. */}
+              {central && (
+                <TargetDatesPanel
+                  orderId={orderId}
+                  revisions={targetRevisions}
+                  canEdit={canManageItems}
+                />
+              )}
               {/* EC orders sits between Order details and Billing/Accounts. */}
               <EcOrdersPanel />
               {otherSections.map(renderSection)}

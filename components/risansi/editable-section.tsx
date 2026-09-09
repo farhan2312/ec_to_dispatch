@@ -228,9 +228,13 @@ export function EditableSection({
                 )}
                 <div className={gridClass}>
                   {bucket.fields.map((field) => {
+                    // readOnly fields are shown here but changed elsewhere —
+                    // target dates, for instance, are moved from the Target
+                    // Dates panel so every change lands in their history.
                     const fieldEditable =
                       editing &&
                       !field.computed &&
+                      !field.readOnly &&
                       (!field.centralOnly || canEditCentral);
                     return (
                       <div key={field.column}>
@@ -244,6 +248,11 @@ export function EditableSection({
                           {field.computed && (
                             <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500">
                               auto
+                            </span>
+                          )}
+                          {field.readOnly && !field.computed && (
+                            <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500">
+                              see Target Dates
                             </span>
                           )}
                         </div>

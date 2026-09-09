@@ -1616,3 +1616,62 @@ ALTER TABLE order_messages DROP COLUMN IF EXISTS resolves_id;
 ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS assembly_remarks TEXT;
 ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS packing_date     DATE;
 ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS packing_remarks  TEXT;
+
+-- ---------------------------------------------------------------------------
+-- Target date history (per SO, 1:many)
+-- ---------------------------------------------------------------------------
+-- Target dates move — a client pushes a date, a BOI slips — and how often a
+-- date moved is itself the delay signal. One row per value a target has ever
+-- held: seq 1 is the original, 2+ are revisions.
+--
+-- The current value stays denormalised on `orders` (drg_target_date and
+-- friends), because alerts.ts, reminders.ts, the Departments popup and the
+-- export all read those columns. This table is the history beside them, not a
+-- replacement for them.
+CREATE TABLE IF NOT EXISTS order_target_revisions (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id        UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    -- drawing | purchase | quality | packing | dispatch (see TARGET_DATES).
+    target_key      TEXT NOT NULL,
+    seq             INT  NOT NULL,
+    target_date     DATE NOT NULL,
+    reason          TEXT,
+    changed_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+    changed_by_role TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS order_target_revisions_order_idx
+    ON order_target_revisions (order_id, target_key, seq);
+-- Append-only: one row per revision number, so a double-submit can't create
+-- two "revision 3"s.
+CREATE UNIQUE INDEX IF NOT EXISTS order_target_revisions_seq_key
+    ON order_target_revisions (order_id, target_key, seq);
+
+-- Backfill: every target that already holds a date becomes its own revision 1,
+-- and a revised dispatch date becomes revision 2 of the dispatch target. Guarded
+-- so re-running the migration doesn't duplicate history.
+INSERT INTO order_target_revisions (order_id, target_key, seq, target_date, reason, created_at)
+SELECT o.id, t.key, 1, t.date, 'Original target (backfilled)', o.created_at
+  FROM orders o
+  CROSS JOIN LATERAL (VALUES
+        ('drawing',  o.drg_target_date),
+        ('purchase', o.purchase_target_date),
+        ('quality',  o.qc_doc_target_date),
+        ('packing',  o.dispatch_team_target_date),
+        ('dispatch', o.dispatch_target_date)
+      ) AS t(key, date)
+ WHERE t.date IS NOT NULL
+   AND NOT EXISTS (
+         SELECT 1 FROM order_target_revisions r
+          WHERE r.order_id = o.id AND r.target_key = t.key
+       );
+
+INSERT INTO order_target_revisions (order_id, target_key, seq, target_date, reason, created_at)
+SELECT o.id, 'dispatch', 2, o.dispatch_target_revised_date,
+       'Revised dispatch date (backfilled)', o.created_at
+  FROM orders o
+ WHERE o.dispatch_target_revised_date IS NOT NULL
+   AND NOT EXISTS (
+         SELECT 1 FROM order_target_revisions r
+          WHERE r.order_id = o.id AND r.target_key = 'dispatch' AND r.seq = 2
+       );

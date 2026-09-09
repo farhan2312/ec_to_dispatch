@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 
 /**
  * Shared PostgreSQL connection pool.
@@ -74,5 +74,34 @@ export async function query<
       return await pool.query<T>(text, params);
     }
     throw err;
+  }
+}
+
+/**
+ * Run several statements as one transaction on a single pooled client.
+ *
+ * Use it when two writes must not be able to drift apart — e.g. appending a
+ * target-date revision and updating the denormalised current value on `orders`.
+ * Rolls back on any throw. No retry: replaying half a transaction is worse than
+ * surfacing the error.
+ */
+export async function withTransaction<T>(
+  fn: (client: PoolClient) => Promise<T>
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await fn(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // The connection is already broken; the pool will discard it.
+    }
+    throw err;
+  } finally {
+    client.release();
   }
 }

@@ -21,6 +21,7 @@ import {
   getOrderLabel,
   insertQcDocument,
   listQcDocuments,
+  addTargetRevision,
   updateChildRow,
   updateOrderSection,
   upsertInvoiceFromPackingSlip,
@@ -52,6 +53,7 @@ import {
   isCentral,
 } from "@/lib/roles";
 import { parsePiWorkbook } from "@/lib/pi-import";
+import { isTargetKey, TARGET_BY_KEY } from "@/lib/target-dates";
 import { logAudit } from "@/lib/audit";
 import {
   drawingHandoffDetail,
@@ -1100,5 +1102,70 @@ export async function importPiExcelAction(
   } catch (error) {
     console.error("importPiExcelAction failed:", error);
     return { ok: false, error: "Could not read that workbook." };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Target date history
+// ---------------------------------------------------------------------------
+
+export type TargetRevisionResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+/**
+ * Move one of the SO's target dates, keeping the old value as history.
+ *
+ * Targets are Central Visibility's to set (departments read them), so the
+ * guard matches the Order details section rather than the department that
+ * works to the date.
+ */
+export async function addTargetRevisionAction(
+  orderId: string,
+  targetKey: string,
+  date: string,
+  reason: string
+): Promise<TargetRevisionResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canEditSection(user.role, "orders")) {
+    return { ok: false, error: "You don't have permission to set target dates." };
+  }
+  if (!isTargetKey(targetKey)) {
+    return { ok: false, error: "Unknown target date." };
+  }
+  // A date is the whole point of the row, so it is the one required field.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return { ok: false, error: "Choose a date." };
+  }
+
+  const target = TARGET_BY_KEY.get(targetKey)!;
+  try {
+    const { seq } = await addTargetRevision({
+      orderId,
+      target,
+      date,
+      reason: reason.trim() || null,
+      actorId: user.id,
+      actorRole: user.role,
+    });
+
+    const label = (await getOrderLabel(orderId)) ?? orderId;
+    await logAudit({
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: "order.target_date",
+      category: "activity",
+      target: label,
+      details:
+        seq === 1
+          ? `Set ${target.label} to ${date}`
+          : `Revised ${target.label} to ${date} (revision ${seq - 1})`,
+    });
+
+    revalidatePath(`/risansi/orders/${orderId}`);
+    return { ok: true };
+  } catch (error) {
+    console.error("addTargetRevision failed:", error);
+    return { ok: false, error: "Could not save the target date." };
   }
 }

@@ -1,4 +1,5 @@
-import { query } from "@/lib/db";
+import { query, withTransaction } from "@/lib/db";
+import type { TargetDate, TargetRevision } from "@/lib/target-dates";
 import {
   isPerEcDept,
   NOT_APPLICABLE,
@@ -567,7 +568,13 @@ export async function updateOrderSection(
   // they're derived server-side below.
   const fieldByColumn = new Map(section.fields.map((f) => [f.column, f]));
   const columns = Object.keys(values).filter(
-    (c) => fieldByColumn.has(c) && !fieldByColumn.get(c)!.computed
+    // Computed values are derived server-side; readOnly ones are owned by a
+    // dedicated flow (target dates keep a revision history), so neither is
+    // written from a section save even if the request carries them.
+    (c) =>
+      fieldByColumn.has(c) &&
+      !fieldByColumn.get(c)!.computed &&
+      !fieldByColumn.get(c)!.readOnly
   );
 
   if (columns.length > 0) {
@@ -2063,4 +2070,84 @@ export async function resolveFocusOrderId(
     [id]
   );
   return viaItem.rows[0]?.order_id ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Target date history
+// ---------------------------------------------------------------------------
+
+/** Every value each of the SO's targets has held, oldest first. */
+export async function listTargetRevisions(
+  orderId: string
+): Promise<TargetRevision[]> {
+  if (!UUID_RE.test(orderId)) return [];
+  const result = await query<TargetRevision>(
+    `SELECT r.id, r.target_key, r.seq::int AS seq,
+            to_char(r.target_date, 'YYYY-MM-DD') AS target_date,
+            r.reason, u.email AS changed_by_email, r.changed_by_role,
+            to_char(r.created_at AT TIME ZONE 'UTC',
+                    'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
+       FROM order_target_revisions r
+       LEFT JOIN users u ON u.id = r.changed_by
+      WHERE r.order_id = $1
+      ORDER BY r.target_key, r.seq`,
+    [orderId]
+  );
+  return result.rows;
+}
+
+/**
+ * Record a new value for one target and make it the current one.
+ *
+ * The history row and the denormalised column on `orders` are written in one
+ * transaction: everything else in the app still reads the column, so the two
+ * must never drift. `seq` is taken inside the transaction and the table has a
+ * unique index on (order_id, target_key, seq), so a double-submit fails loudly
+ * instead of writing two revision 3s.
+ */
+export async function addTargetRevision(input: {
+  orderId: string;
+  target: TargetDate;
+  date: string;
+  reason: string | null;
+  actorId: string;
+  actorRole: string;
+}): Promise<{ seq: number }> {
+  return withTransaction(async (client) => {
+    const next = await client.query<{ seq: number }>(
+      `SELECT COALESCE(MAX(seq), 0) + 1 AS seq
+         FROM order_target_revisions
+        WHERE order_id = $1 AND target_key = $2`,
+      [input.orderId, input.target.key]
+    );
+    const seq = Number(next.rows[0]?.seq ?? 1);
+
+    await client.query(
+      `INSERT INTO order_target_revisions
+         (order_id, target_key, seq, target_date, reason, changed_by, changed_by_role)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        input.orderId,
+        input.target.key,
+        seq,
+        input.date,
+        input.reason,
+        input.actorId,
+        input.actorRole,
+      ]
+    );
+
+    // Dispatch keeps its original date and moves revisions into the "revised"
+    // column, because that is the pair every existing reader COALESCEs.
+    const column =
+      seq > 1 && input.target.revisedColumn
+        ? input.target.revisedColumn
+        : input.target.column;
+    await client.query(
+      `UPDATE orders SET ${column} = $2 WHERE id = $1`,
+      [input.orderId, input.date]
+    );
+
+    return { seq };
+  });
 }

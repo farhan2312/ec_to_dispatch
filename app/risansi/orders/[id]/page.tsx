@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { getOrderDetail } from "@/lib/orders";
+import { getOrderDetail, listTargetRevisions } from "@/lib/orders";
 import { getCurrentUser } from "@/lib/session";
 import { OrderDetail } from "@/components/risansi/order-detail";
 
@@ -22,5 +22,16 @@ export default async function OrderDetailPage({
   const detail = await getOrderDetail(id);
   if (!detail) notFound();
 
-  return <OrderDetail detail={detail} orderId={id} role={user.role} />;
+  // Target dates keep their full history; the panel shows the current value
+  // with every earlier one behind it.
+  const targetRevisions = await listTargetRevisions(id);
+
+  return (
+    <OrderDetail
+      detail={detail}
+      orderId={id}
+      role={user.role}
+      targetRevisions={targetRevisions}
+    />
+  );
 }

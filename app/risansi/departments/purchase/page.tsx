@@ -6,6 +6,7 @@ import { canEditChild, canEditSection, reminderDeptForTable } from "@/lib/roles"
 import {
   listItemsForPurchasePage,
   resolveFocusOrderId,
+  listDeptCompletions,
 } from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
 import { listRemindersForDepartment } from "@/lib/reminders";
@@ -43,6 +44,11 @@ export default async function PurchaseWorkspacePage({
   ]);
 
   // Unread discussion messages per SO, for the row badge.
+  // Purchase's sign-offs for the SOs on this page, for the EC cards.
+  const completions = await listDeptCompletions([
+    ...new Set(queue.rows.map((o) => String(o.order_id ?? o.id))),
+  ]);
+
   const unreadThreads = await unreadByOrder(
     [...new Set(queue.rows.map((r) => String(r.order_id)))],
     user
@@ -69,6 +75,7 @@ export default async function PurchaseWorkspacePage({
       <RemindersPanel reminders={reminders} />
 
       <PurchaseWorkspace
+        completions={completions}
         openThreadId={thread}
         focusOrderId={focusOrderId ?? undefined}
         role={user.role}

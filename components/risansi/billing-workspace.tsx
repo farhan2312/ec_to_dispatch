@@ -13,6 +13,8 @@ import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { useFocusRow } from "./use-focus-row";
 import type { PageResult } from "@/lib/pagination";
 import { OrderThreadModal } from "./order-thread-modal";
+import { completionFor, DeptCompleteCheck } from "./dept-complete-check";
+import type { DeptCompletion } from "@/lib/dept-completion";
 
 type Row = Record<string, unknown>;
 
@@ -46,10 +48,14 @@ export function BillingWorkspace({
   focusOrderId,
   role,
   unreadThreads = {},
+  completions = [],
 }: {
   // One server-fetched page; search and paging ran in SQL.
   queue: PageResult<BillingQueueRow>;
   canEdit: boolean;
+  // Billing's sign-offs for the SOs on this page. Billing is SO-scope, so a
+  // single tick covers the order rather than one of its ECs.
+  completions?: DeptCompletion[];
   openOrderId?: string;
   // Deep-link from the discussion icon: open this SO's thread on load.
   openThreadId?: string;
@@ -129,6 +135,7 @@ export function BillingWorkspace({
                 <th className="px-4 py-3">Payment Terms</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
                 <th className="px-4 py-3">Dispatch Status</th>
+                <th className="px-4 py-3">Complete</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -202,6 +209,20 @@ export function BillingWorkspace({
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <DeptCompleteCheck
+                          scopeId={String(row.id)}
+                          dept="billing"
+                          label={String(row.so_no ?? row.sl_no ?? "")}
+                          completion={completionFor(
+                            completions,
+                            "billing",
+                            String(row.id),
+                            false
+                          )}
+                          canEdit={canEdit}
+                        />
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-right">
                         <button

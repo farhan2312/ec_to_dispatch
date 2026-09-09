@@ -6,6 +6,7 @@ import { canEditChild, canEditSection } from "@/lib/roles";
 import {
   listOrdersForBillingPage,
   resolveFocusOrderId,
+  listDeptCompletions,
 } from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
 import { unreadByOrder } from "@/lib/order-messages";
@@ -38,6 +39,12 @@ export default async function BillingWorkspacePage({
   });
 
   // Unread discussion messages per SO, for the row badge.
+  // Billing's sign-offs for the SOs on this page.
+  // Billing rows are SOs, so the row id is the order id.
+  const completions = await listDeptCompletions([
+    ...new Set(queue.rows.map((o) => String(o.id))),
+  ]);
+
   const unreadThreads = await unreadByOrder(
     [...new Set(queue.rows.map((r) => String(r.id)))],
     user
@@ -62,6 +69,7 @@ export default async function BillingWorkspacePage({
       </div>
 
       <BillingWorkspace
+        completions={completions}
         openThreadId={thread}
         focusOrderId={focusOrderId ?? undefined}
         role={user.role}

@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
 import { listItemsForSectionPage,
   resolveFocusOrderId,
+  listDeptCompletions,
 } from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
 import { listRemindersForDepartment } from "@/lib/reminders";
@@ -53,6 +54,13 @@ export default async function PlanningWorkspacePage({
 
   // Unread discussion messages per SO, for the row badge. Rows are ECs in
   // the item-scope workspaces (order_id) and SOs in the SO-scope ones (id).
+  // This department's sign-offs for the SOs on this page, for the Complete
+  // column. Rows are ECs in the item-scope workspaces and SOs in the others,
+  // so the order id comes from whichever the row carries.
+  const completions = await listDeptCompletions([
+    ...new Set(queue.rows.map((o) => String(o.order_id ?? o.id))),
+  ]);
+
   const unreadThreads = await unreadByOrder(
     [...new Set(queue.rows.map((o) => String(o.order_id ?? o.id)))],
     user
@@ -78,6 +86,7 @@ export default async function PlanningWorkspacePage({
       <RemindersPanel reminders={reminders} />
 
       <DepartmentWorkspace
+        completions={completions}
         openThreadId={thread}
         focusOrderId={focusOrderId ?? undefined}
         role={user.role}

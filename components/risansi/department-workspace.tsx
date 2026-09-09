@@ -36,6 +36,12 @@ import {
   TargetHistoryCell,
   targetForColumn,
 } from "./target-history-cell";
+import { completionFor, DeptCompleteCheck } from "./dept-complete-check";
+import {
+  deptForTable,
+  isPerEcDept,
+  type DeptCompletion,
+} from "@/lib/dept-completion";
 import type { QcDocTable } from "@/lib/orders";
 
 // Only the QC workspace passes this today; kept generic (a list, so more than
@@ -117,6 +123,7 @@ export function DepartmentWorkspace({
   focusOrderId,
   role,
   unreadThreads = {},
+  completions = [],
 }: {
   table: OrderTable;
   fields: OrderField[];
@@ -140,6 +147,8 @@ export function DepartmentWorkspace({
   role: string;
   // Unread discussion messages keyed by order id, for the row badge.
   unreadThreads?: Record<string, number>;
+  // This department's sign-offs across the SOs on this page.
+  completions?: DeptCompletion[];
 }) {
   const [editRow, setEditRow] = useState<Row | null>(null);
   const [docsPanel, setDocsPanel] = useState<{ row: Row; config: DocumentsConfig } | null>(
@@ -205,6 +214,23 @@ export function DepartmentWorkspace({
   // table — Planning's Assembly Date, say — differs per EC and has to sit
   // in the EC subtable, or the SO row would show the first EC's value as
   // if it applied to all of them.
+  // Which department this workspace signs off, and at which level — derived
+  // from the section rather than passed in, since the workspace already knows.
+  const dept = deptForTable(table);
+  const completePerEc = dept ? isPerEcDept(dept) : false;
+  function completeCell(scopeId: string, label: string) {
+    if (!dept) return null;
+    return (
+      <DeptCompleteCheck
+        scopeId={scopeId}
+        dept={dept}
+        label={label}
+        completion={completionFor(completions, dept, scopeId, completePerEc)}
+        canEdit={canEdit}
+      />
+    );
+  }
+
   const soContext = readonlyFields.filter((f) => !f.from || f.from === "orders");
 
   // A department works to its target dates but cannot set them, so the value
@@ -368,7 +394,10 @@ export function DepartmentWorkspace({
                         {doc.label}
                       </th>
                     ))}
-                    {canEdit && <th className="px-4 py-3 text-right">Edit</th>}
+                    {dept && !completePerEc && (
+                  <th className="px-3 py-3">Complete</th>
+                )}
+                {canEdit && <th className="px-4 py-3 text-right">Edit</th>}
                   </>
                 )}
               </tr>
@@ -437,6 +466,14 @@ export function DepartmentWorkspace({
                         </button>
                       </td>
                     ))}
+                    {dept && !completePerEc && (
+                      <td className="px-3 py-3">
+                        {completeCell(
+                          String(order.id),
+                          toInput(order.so_no) || String(order.sl_no ?? "")
+                        )}
+                      </td>
+                    )}
                     {canEdit && (
                       <td className="px-4 py-3 text-right">
                         <button
@@ -540,6 +577,9 @@ export function DepartmentWorkspace({
                                         {doc.label}
                                       </th>
                                     ))}
+                                    {dept && completePerEc && (
+                                      <th className="px-3 py-2">Complete</th>
+                                    )}
                                     {canEdit && (
                                       <th className="px-3 py-2 text-right">Edit</th>
                                     )}
@@ -593,6 +633,14 @@ export function DepartmentWorkspace({
                                           </button>
                                         </td>
                                       ))}
+                                      {dept && completePerEc && (
+                                        <td className="px-3 py-2">
+                                          {completeCell(
+                                            String(ec.id),
+                                            toInput(ec.ec_no) || String(ec.id)
+                                          )}
+                                        </td>
+                                      )}
                                       {canEdit && (
                                         <td className="px-3 py-2 text-right">
                                           <button

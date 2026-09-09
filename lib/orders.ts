@@ -1,6 +1,15 @@
 import { query, withTransaction } from "@/lib/db";
 import type { PoolClient } from "pg";
-import type { TargetDate, TargetRevision } from "@/lib/target-dates";
+import {
+  TARGET_BY_KEY,
+  type TargetDate,
+  type TargetRevision,
+} from "@/lib/target-dates";
+import {
+  targetKeyForDept,
+  type DeptCompletion,
+  type DeptKey,
+} from "@/lib/dept-completion";
 import {
   isPerEcDept,
   NOT_APPLICABLE,
@@ -2241,4 +2250,136 @@ export async function addTargetRevision(input: {
     await syncTargetColumns(client, input.orderId, input.target);
     return { seq };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Department completion
+// ---------------------------------------------------------------------------
+
+// The business runs on IST calendar days; the DB session is UTC. Same constant
+// the reminders and overdue engines use, so "today" means one thing.
+const TODAY_IST = "(now() AT TIME ZONE 'Asia/Kolkata')::date";
+
+/** Sign-offs for a set of SOs, for the queue's checkbox column. */
+export async function listDeptCompletions(
+  orderIds: string[]
+): Promise<DeptCompletion[]> {
+  const ids = orderIds.filter((id) => UUID_RE.test(id));
+  if (ids.length === 0) return [];
+  const result = await query<DeptCompletion>(
+    `SELECT c.id, c.order_id, c.item_id, c.dept,
+            to_char(c.completed_on, 'YYYY-MM-DD') AS completed_on,
+            to_char(c.target_date, 'YYYY-MM-DD') AS target_date,
+            c.days_taken::int AS days_taken,
+            u.email AS completed_by_email, c.completed_by_role
+       FROM order_dept_completions c
+       LEFT JOIN users u ON u.id = c.completed_by
+      WHERE c.order_id = ANY($1)`,
+    [ids]
+  );
+  return result.rows;
+}
+
+/**
+ * The target a department was ORIGINALLY given: revision 1 of its target date,
+ * falling back to the column when an order predates the revision history.
+ *
+ * Deliberately not the current value — measuring against a date that has since
+ * been pushed out would make every late department look on time.
+ */
+async function originalTargetFor(
+  orderId: string,
+  dept: DeptKey
+): Promise<string | null> {
+  const key = targetKeyForDept(dept);
+  if (!key) return null;
+  const target = TARGET_BY_KEY.get(key)!;
+
+  const first = await query<{ d: string }>(
+    `SELECT to_char(target_date, 'YYYY-MM-DD') AS d
+       FROM order_target_revisions
+      WHERE order_id = $1 AND target_key = $2
+      ORDER BY seq
+      LIMIT 1`,
+    [orderId, key]
+  );
+  if (first.rows[0]) return first.rows[0].d;
+
+  const column = await query<{ d: string | null }>(
+    `SELECT to_char(${target.column}, 'YYYY-MM-DD') AS d FROM orders WHERE id = $1`,
+    [orderId]
+  );
+  return column.rows[0]?.d ?? null;
+}
+
+/**
+ * Record a department as finished with an SO (or one EC of it). `scopeId` is
+ * the item id for the per-EC departments and the order id for the rest.
+ *
+ * The target and the day count are frozen here rather than derived on read: a
+ * target revised after sign-off must not rewrite how long the work took.
+ */
+export async function completeDept(input: {
+  scopeId: string;
+  dept: DeptKey;
+  actorId: string;
+  actorRole: string;
+}): Promise<DeptCompletion | null> {
+  if (!UUID_RE.test(input.scopeId)) return null;
+  const perEc = isPerEcDept(input.dept);
+
+  const orderId = perEc
+    ? (
+        await query<{ order_id: string }>(
+          `SELECT order_id FROM order_items WHERE id = $1`,
+          [input.scopeId]
+        )
+      ).rows[0]?.order_id
+    : input.scopeId;
+  if (!orderId) return null;
+
+  const target = await originalTargetFor(orderId, input.dept);
+  const inserted = await query<{ id: string }>(
+    `INSERT INTO order_dept_completions
+       (order_id, item_id, dept, completed_on, target_date, days_taken,
+        completed_by, completed_by_role)
+     VALUES ($1, $2, $3, ${TODAY_IST}, $4::date,
+             CASE WHEN $4::date IS NULL THEN NULL
+                  ELSE (${TODAY_IST} - $4::date)::int END,
+             $5, $6)
+     ON CONFLICT DO NOTHING
+     RETURNING id`,
+    [orderId, perEc ? input.scopeId : null, input.dept, target, input.actorId, input.actorRole]
+  );
+  // ON CONFLICT means it was already signed off — return what stands.
+  if (!inserted.rows[0]) {
+    const existing = await listDeptCompletions([orderId]);
+    return (
+      existing.find(
+        (c) =>
+          c.dept === input.dept &&
+          (perEc ? c.item_id === input.scopeId : c.item_id === null)
+      ) ?? null
+    );
+  }
+  const all = await listDeptCompletions([orderId]);
+  return all.find((c) => c.id === inserted.rows[0].id) ?? null;
+}
+
+/** Undo a sign-off. Returns the order it belonged to, for revalidation. */
+export async function uncompleteDept(
+  scopeId: string,
+  dept: DeptKey
+): Promise<string | null> {
+  if (!UUID_RE.test(scopeId)) return null;
+  const perEc = isPerEcDept(dept);
+  const result = await query<{ order_id: string }>(
+    perEc
+      ? `DELETE FROM order_dept_completions
+          WHERE item_id = $1 AND dept = $2 RETURNING order_id`
+      : `DELETE FROM order_dept_completions
+          WHERE order_id = $1 AND item_id IS NULL AND dept = $2 RETURNING order_id`,
+    [scopeId, dept]
+  );
+  return result.rows[0]?.order_id ?? null;
 }

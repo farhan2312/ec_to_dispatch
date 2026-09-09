@@ -1675,3 +1675,39 @@ SELECT o.id, 'dispatch', 2, o.dispatch_target_revised_date,
          SELECT 1 FROM order_target_revisions r
           WHERE r.order_id = o.id AND r.target_key = 'dispatch' AND r.seq = 2
        );
+
+-- ---------------------------------------------------------------------------
+-- Department completion (per SO, or per EC for the per-EC departments)
+-- ---------------------------------------------------------------------------
+-- The statuses shown elsewhere are inferred from whatever a department has
+-- filled in, which answers "has anything been recorded?" rather than "are you
+-- done?". This is the explicit sign-off — and because it captures the target
+-- the department was ORIGINALLY given, it is what makes the time taken
+-- measurable: completed_on − target_date.
+--
+-- One row per department per scope. item_id is NULL for the SO-scope
+-- departments (Billing, Accounts, Dispatch); removing the row un-completes.
+CREATE TABLE IF NOT EXISTS order_dept_completions (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id          UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    item_id           UUID REFERENCES order_items(id) ON DELETE CASCADE,
+    -- drawing | purchase | quality | planning | assembly | billing | accounts
+    -- | dispatch (see lib/dept-completion.ts).
+    dept              TEXT NOT NULL,
+    completed_on      DATE NOT NULL,
+    -- Snapshotted at sign-off: revising a target afterwards must not rewrite
+    -- how long the department actually took.
+    target_date       DATE,
+    days_taken        INT,
+    completed_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+    completed_by_role TEXT,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- NULLs compare as distinct in a plain unique index, so the two scopes need
+-- one partial index each to keep sign-offs to one per department.
+CREATE UNIQUE INDEX IF NOT EXISTS order_dept_completions_so_key
+    ON order_dept_completions (order_id, dept) WHERE item_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS order_dept_completions_ec_key
+    ON order_dept_completions (item_id, dept) WHERE item_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS order_dept_completions_order_idx
+    ON order_dept_completions (order_id);

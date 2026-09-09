@@ -22,8 +22,10 @@ import {
   insertQcDocument,
   listQcDocuments,
   addTargetRevision,
+  completeDept,
   deleteLatestTargetRevision,
   listTargetRevisions,
+  uncompleteDept,
   updateChildRow,
   updateOrderSection,
   upsertInvoiceFromPackingSlip,
@@ -55,6 +57,13 @@ import {
   isCentral,
 } from "@/lib/roles";
 import { parsePiWorkbook } from "@/lib/pi-import";
+import { DEPT_FILTER_KEYS } from "@/lib/dept-status";
+import {
+  describeDays,
+  DEPT_LABELS,
+  type DeptCompletion,
+  type DeptKey,
+} from "@/lib/dept-completion";
 import {
   isTargetKey,
   TARGET_BY_KEY,
@@ -1283,4 +1292,103 @@ export async function getTargetHistoryAction(
   if (!user || !isTargetKey(targetKey)) return [];
   const all = await listTargetRevisions(orderId);
   return all.filter((r) => r.target_key === targetKey);
+}
+
+// ---------------------------------------------------------------------------
+// Department completion
+// ---------------------------------------------------------------------------
+
+export type DeptCompleteResult =
+  | { ok: true; completion: DeptCompletion | null }
+  | { ok: false; error: string };
+
+/** Section table each department signs off through, for the permission check. */
+const DEPT_SECTION: Record<DeptKey, OrderTable> = {
+  drawing: "order_drawing",
+  purchase: "order_purchase",
+  quality: "order_qc",
+  planning: "order_planning",
+  assembly: "order_assembly_dispatch",
+  billing: "order_billing",
+  accounts: "order_accounts",
+  // Dispatch status is derived from the invoices, which Billing owns.
+  dispatch: "order_billing",
+};
+
+/**
+ * Tick or untick a department's sign-off. `scopeId` is the EC's item id for the
+ * per-EC departments and the SO's order id for the rest.
+ *
+ * Whoever may edit the department's own section may sign it off — the same rule
+ * that governs every other write it makes — and Central Visibility can too.
+ */
+export async function setDeptCompleteAction(
+  scopeId: string,
+  dept: string,
+  complete: boolean
+): Promise<DeptCompleteResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!(DEPT_FILTER_KEYS as readonly string[]).includes(dept)) {
+    return { ok: false, error: "Unknown department." };
+  }
+  const key = dept as DeptKey;
+  if (!canEditSection(user.role, DEPT_SECTION[key])) {
+    return {
+      ok: false,
+      error: "You don't have permission to complete this department.",
+    };
+  }
+
+  try {
+    if (!complete) {
+      const orderId = await uncompleteDept(scopeId, key);
+      if (!orderId) return { ok: false, error: "Nothing to undo." };
+      await logAudit({
+        actor: { id: user.id, email: user.email, role: user.role },
+        action: "order.dept_complete",
+        category: "activity",
+        target: (await getOrderLabel(orderId)) ?? orderId,
+        details: `Reopened ${DEPT_LABELS[key]}`,
+      });
+      revalidatePath(`/risansi/orders/${orderId}`);
+      return { ok: true, completion: null };
+    }
+
+    const completion = await completeDept({
+      scopeId,
+      dept: key,
+      actorId: user.id,
+      actorRole: user.role,
+    });
+    if (!completion) return { ok: false, error: "Could not find that record." };
+
+    const label = (await getOrderLabel(completion.order_id)) ?? completion.order_id;
+    const took = describeDays(completion.days_taken);
+    await logAudit({
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: "order.dept_complete",
+      category: "activity",
+      target: label,
+      details: `Completed ${DEPT_LABELS[key]}${took ? ` — ${took}` : ""}`,
+    });
+
+    // Central Visibility tracks the pipeline, so a department finishing is
+    // exactly the kind of event they should not have to go looking for.
+    if (user.role !== "central_visibility") {
+      await emitNotification({
+        roles: ["central_visibility"],
+        orderId: completion.order_id,
+        itemId: completion.item_id,
+        type: "dept_update",
+        message: `${DEPT_LABELS[key]} completed for ${label}${took ? ` — ${took}` : ""}`,
+      });
+    }
+
+    revalidatePath(`/risansi/orders/${completion.order_id}`);
+    return { ok: true, completion };
+  } catch (error) {
+    console.error("setDeptComplete failed:", error);
+    return { ok: false, error: "Could not save. Please try again." };
+  }
 }

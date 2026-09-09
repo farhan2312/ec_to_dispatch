@@ -10,6 +10,8 @@ import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { useFocusRow } from "./use-focus-row";
 import type { PageResult } from "@/lib/pagination";
 import { OrderThreadModal } from "./order-thread-modal";
+import { completionFor, DeptCompleteCheck } from "./dept-complete-check";
+import type { DeptCompletion } from "@/lib/dept-completion";
 
 type Row = Record<string, unknown>;
 
@@ -36,6 +38,7 @@ export function PurchaseWorkspace({
   focusOrderId,
   role,
   unreadThreads = {},
+  completions = [],
 }: {
   // One server-fetched page of SOs, with every EC of those SOs.
   queue: PageResult<PurchaseQueueRow>;
@@ -49,6 +52,8 @@ export function PurchaseWorkspace({
   role: string;
   // Unread discussion messages keyed by order id, for the row badge.
   unreadThreads?: Record<string, number>;
+  // Purchase's sign-offs for the SOs on this page.
+  completions?: DeptCompletion[];
 }) {
   const rows = queue.rows;
   const { get: getParam } = useUrlTable();
@@ -214,10 +219,22 @@ export function PurchaseWorkspace({
                                   String(row.id)
                                 )}`}
                               >
-                                <div className="mb-2 flex items-center gap-2 text-sm">
+                                <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-sm">
                                   <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                                     EC · {row.ec_no ?? "—"}
                                   </span>
+                                  <DeptCompleteCheck
+                                    scopeId={String(row.id)}
+                                    dept="purchase"
+                                    label={String(row.ec_no ?? row.id)}
+                                    completion={completionFor(
+                                      completions,
+                                      "purchase",
+                                      String(row.id),
+                                      true
+                                    )}
+                                    canEdit={canEdit}
+                                  />
                                 </div>
                                 {boiYes ? (
                                   // Central Visibility decides which items are

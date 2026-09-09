@@ -486,8 +486,15 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
     sl_no: number;
     so_no: string | null;
     client_name: string | null;
+    // The three SO-scope departments, on the SO line where they belong: they
+    // hold one value for the whole order, so repeating them per EC said
+    // nothing. Their deadlines ride along.
+    has_pi: boolean;
     payment_status: string | null;
+    payment_terms: string | null;
     dispatch_status: string | null;
+    dispatch_target: string | null;
+    dispatch_done: boolean;
     order_value: string | null;
     ecs: OrderOverviewRow[];
   };
@@ -502,8 +509,12 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
         sl_no: r.sl_no,
         so_no: r.so_no,
         client_name: r.client_name,
+        has_pi: r.has_pi,
         payment_status: r.payment_status,
+        payment_terms: r.payment_terms,
         dispatch_status: r.dispatch_status,
+        dispatch_target: dispatchTarget(r),
+        dispatch_done: done.dispatch(r),
         order_value: r.order_value,
         ecs: [r],
       });
@@ -783,7 +794,8 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                 <th className="px-4 py-3">Sl.</th>
                 <th className="px-4 py-3">SO No.</th>
                 <th className="px-4 py-3">Client Name</th>
-                <th className="px-3 py-3">Payment</th>
+                <th className="px-3 py-3">Billing</th>
+                <th className="px-3 py-3">Accounts</th>
                 <th className="px-3 py-3">Dispatch</th>
                 <th className="px-3 py-3 text-center normal-case">ECs</th>
                 <th className="px-3 py-3" />
@@ -822,16 +834,30 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                         {card.so_no ?? "—"}
                       </td>
                       <td className="px-4 py-3">{card.client_name ?? "—"}</td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3 align-top">
+                        <Chip
+                          value={card.has_pi ? "PI done" : null}
+                          tone={card.has_pi ? "green" : "neutral"}
+                        />
+                      </td>
+                      <td className="px-3 py-3 align-top">
                         <Chip
                           value={card.payment_status}
                           tone={paymentTone(card.payment_status)}
                         />
+                        {/* Payment terms are the deadline behind both Billing
+                            and Accounts; printed once, under the department
+                            that chases it. */}
+                        <DeptDeadline value={card.payment_terms} isDate={false} />
                       </td>
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-3 align-top">
                         <Chip
                           value={card.dispatch_status}
                           tone={dispatchTone(card.dispatch_status)}
+                        />
+                        <DeptDeadline
+                          value={card.dispatch_target}
+                          overdue={late(card.dispatch_target, card.dispatch_done)}
                         />
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums">
@@ -842,85 +868,13 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
 
                     {isOpen && (
                       <tr className="bg-background/40">
-                        <td colSpan={8} className="p-0">
-                          {/* Same shape as the Departments popup on the order
-                              list: the three SO-scope departments up top, then
-                              a per-EC matrix with each column's target date in
-                              its header rather than repeated down every row. */}
-                          <div className="space-y-4 px-4 py-3">
-                            <div>
-                              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                                Order level
-                              </p>
-                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                                {(() => {
-                                  const head = card.ecs[0];
-                                  if (!head) return null;
-                                  return [
-                                    {
-                                      label: "Billing & Operations",
-                                      chip: (
-                                        <Chip
-                                          value={head.has_pi ? "PI done" : null}
-                                          tone={head.has_pi ? "green" : "neutral"}
-                                        />
-                                      ),
-                                      deadline: (
-                                        <DeptDeadline
-                                          value={head.payment_terms}
-                                          isDate={false}
-                                        />
-                                      ),
-                                    },
-                                    {
-                                      label: "Accounts",
-                                      chip: (
-                                        <Chip
-                                          value={head.payment_status}
-                                          tone={paymentTone(head.payment_status)}
-                                        />
-                                      ),
-                                      deadline: (
-                                        <DeptDeadline
-                                          value={head.payment_terms}
-                                          isDate={false}
-                                        />
-                                      ),
-                                    },
-                                    {
-                                      label: "Dispatch",
-                                      chip: (
-                                        <Chip
-                                          value={head.dispatch_status}
-                                          tone={dispatchTone(head.dispatch_status)}
-                                        />
-                                      ),
-                                      deadline: (
-                                        <DeptDeadline
-                                          value={dispatchTarget(head)}
-                                          overdue={late(
-                                            dispatchTarget(head),
-                                            done.dispatch(head)
-                                          )}
-                                        />
-                                      ),
-                                    },
-                                  ].map((dept) => (
-                                    <div
-                                      key={dept.label}
-                                      className="flex items-start justify-between gap-2 rounded-lg border border-card-border bg-surface px-3 py-2.5"
-                                    >
-                                      <span className="text-xs font-medium text-foreground">
-                                        {dept.label}
-                                        {dept.deadline}
-                                      </span>
-                                      {dept.chip}
-                                    </div>
-                                  ));
-                                })()}
-                              </div>
-                            </div>
-
+                        <td colSpan={9} className="p-0">
+                          {/* The per-EC half of the Departments popup: one column
+                              per department, each with the target date it is
+                              judged against in its header rather than repeated
+                              down every row. The three SO-scope departments sit
+                              on the SO line above. */}
+                          <div className="px-4 py-3">
                             <div>
                               <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                                 EC level

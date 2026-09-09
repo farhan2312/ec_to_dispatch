@@ -1068,6 +1068,9 @@ export type OrderOverviewRow = {
   qc_submitted: boolean;
   qc_required: string | null;
   planning_status: string | null;
+  // Assembly & Packing is per EC, like the four above it — the Departments
+  // popup shows all five side by side, and the pipeline matches it.
+  assembly_done: boolean;
   dispatch_status: string | null;
   // Each department's own deadline, so the pipeline can show a status beside
   // the date it is being judged against. All live on the SO — one target
@@ -1125,6 +1128,7 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             (qc.qc_doc_actual_date IS NOT NULL) AS qc_submitted,
             o.qc_required,
             pl.planning_status,
+            (ad.actual_packing_date IS NOT NULL) AS assembly_done,
             o.dispatch_status,
             o.payment_terms,
             to_char(o.drg_target_date, 'YYYY-MM-DD') AS drg_target_date,
@@ -1141,6 +1145,7 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
        LEFT JOIN order_drawing dr           ON dr.item_id = it.id
        LEFT JOIN order_qc qc                ON qc.item_id = it.id
        LEFT JOIN order_planning pl          ON pl.item_id = it.id
+       LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
       ORDER BY o.sl_no ASC, it.seq ASC`
   );
   return result.rows;

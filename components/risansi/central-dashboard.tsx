@@ -340,7 +340,9 @@ function DeptDeadline({
   if (!text) return null;
   return (
     <div
-      className={`mt-0.5 text-[10px] ${
+      // Sits inside uppercase table headers as well as normal-case cards, so it
+      // resets the casing rather than inheriting "24 AUG 2026".
+      className={`mt-0.5 text-[10px] font-normal normal-case tracking-normal ${
         overdue ? "font-medium text-rose-600" : "text-muted-foreground"
       }`}
     >
@@ -349,6 +351,78 @@ function DeptDeadline({
     </div>
   );
 }
+
+/** Dispatch status has its own colour scale in both places it is shown. */
+function dispatchTone(value: string | null): Tone {
+  const v = (value ?? "").toLowerCase();
+  if (v === "fully dispatch") return "green";
+  if (v === "lot dispatch") return "blue";
+  if (v === "pending") return "amber";
+  return "neutral";
+}
+
+/**
+ * The per-EC half of the pipeline, matching the Departments popup: the same
+ * five departments, each with the deadline it works to. Planning has no target
+ * of its own — it schedules to the dispatch date.
+ */
+const EC_DEPTS: {
+  label: string;
+  target: (row: OrderOverviewRow) => string | null;
+  done: (row: OrderOverviewRow) => boolean;
+  chip: (row: OrderOverviewRow) => React.ReactNode;
+}[] = [
+  {
+    label: "Drawing",
+    target: (r) => r.drg_target_date,
+    done: done.drawing,
+    chip: (r) => <Chip value={r.drg_status} />,
+  },
+  {
+    label: "Purchase",
+    target: (r) => r.purchase_target_date,
+    done: done.purchase,
+    chip: (r) => (
+      <Chip
+        value={
+          (r.boi ?? "") !== "Yes"
+            ? "No BOI"
+            : r.purchase_done
+              ? "BOI received"
+              : "BOI pending"
+        }
+      />
+    ),
+  },
+  {
+    label: "Quality",
+    target: (r) => r.qc_doc_target_date,
+    done: done.qc,
+    chip: (r) => (
+      <Chip
+        value={r.qc_submitted ? "Submitted" : null}
+        tone={r.qc_submitted ? "green" : "neutral"}
+      />
+    ),
+  },
+  {
+    label: "Planning",
+    target: dispatchTarget,
+    done: done.planning,
+    chip: (r) => <Chip value={r.planning_status} />,
+  },
+  {
+    label: "Assembly & Packing",
+    target: (r) => r.dispatch_team_target_date,
+    done: (r) => r.assembly_done,
+    chip: (r) => (
+      <Chip
+        value={r.assembly_done ? "Packed" : null}
+        tone={r.assembly_done ? "green" : "neutral"}
+      />
+    ),
+  },
+];
 
 export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }) {
   const router = useRouter();
@@ -757,15 +831,7 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                       <td className="px-3 py-3">
                         <Chip
                           value={card.dispatch_status}
-                          tone={
-                            (card.dispatch_status ?? "").toLowerCase() === "fully dispatch"
-                              ? "green"
-                              : (card.dispatch_status ?? "").toLowerCase() === "lot dispatch"
-                                ? "blue"
-                                : (card.dispatch_status ?? "").toLowerCase() === "pending"
-                                  ? "amber"
-                                  : "neutral"
-                          }
+                          tone={dispatchTone(card.dispatch_status)}
                         />
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums">
@@ -777,30 +843,125 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                     {isOpen && (
                       <tr className="bg-background/40">
                         <td colSpan={8} className="p-0">
-                          <div className="px-4 py-3">
-                            <div className="overflow-x-auto rounded-lg border border-card-border bg-surface">
-                              <table className="w-full min-w-[900px] text-sm">
-                                <thead>
-                                  <tr className="border-b border-card-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
-                                    <th className="px-3 py-2">EC · Type</th>
-                                    <th className="px-3 py-2">Billing</th>
-                                    <th className="px-3 py-2">Accounts</th>
-                                    <th className="px-3 py-2">Drawing</th>
-                                    <th className="px-3 py-2">Purchase</th>
-                                    <th className="px-3 py-2">Quality</th>
-                                    <th className="px-3 py-2">Planning</th>
-                                    <th className="px-3 py-2">Dispatch</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-card-border">
-                                  {card.ecs.map((row) => {
-                                    const purchase =
-                                      (row.boi ?? "") !== "Yes"
-                                        ? "No BOI"
-                                        : row.purchase_done
-                                          ? "BOI received"
-                                          : "BOI pending";
-                                    return (
+                          {/* Same shape as the Departments popup on the order
+                              list: the three SO-scope departments up top, then
+                              a per-EC matrix with each column's target date in
+                              its header rather than repeated down every row. */}
+                          <div className="space-y-4 px-4 py-3">
+                            <div>
+                              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                Order level
+                              </p>
+                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                                {(() => {
+                                  const head = card.ecs[0];
+                                  if (!head) return null;
+                                  return [
+                                    {
+                                      label: "Billing & Operations",
+                                      chip: (
+                                        <Chip
+                                          value={head.has_pi ? "PI done" : null}
+                                          tone={head.has_pi ? "green" : "neutral"}
+                                        />
+                                      ),
+                                      deadline: (
+                                        <DeptDeadline
+                                          value={head.payment_terms}
+                                          isDate={false}
+                                        />
+                                      ),
+                                    },
+                                    {
+                                      label: "Accounts",
+                                      chip: (
+                                        <Chip
+                                          value={head.payment_status}
+                                          tone={paymentTone(head.payment_status)}
+                                        />
+                                      ),
+                                      deadline: (
+                                        <DeptDeadline
+                                          value={head.payment_terms}
+                                          isDate={false}
+                                        />
+                                      ),
+                                    },
+                                    {
+                                      label: "Dispatch",
+                                      chip: (
+                                        <Chip
+                                          value={head.dispatch_status}
+                                          tone={dispatchTone(head.dispatch_status)}
+                                        />
+                                      ),
+                                      deadline: (
+                                        <DeptDeadline
+                                          value={dispatchTarget(head)}
+                                          overdue={late(
+                                            dispatchTarget(head),
+                                            done.dispatch(head)
+                                          )}
+                                        />
+                                      ),
+                                    },
+                                  ].map((dept) => (
+                                    <div
+                                      key={dept.label}
+                                      className="flex items-start justify-between gap-2 rounded-lg border border-card-border bg-surface px-3 py-2.5"
+                                    >
+                                      <span className="text-xs font-medium text-foreground">
+                                        {dept.label}
+                                        {dept.deadline}
+                                      </span>
+                                      {dept.chip}
+                                    </div>
+                                  ));
+                                })()}
+                              </div>
+                            </div>
+
+                            <div>
+                              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                                EC level
+                                <span className="ml-2 font-normal normal-case tracking-normal">
+                                  Target dates are set per order, so every EC
+                                  below works to the same one.
+                                </span>
+                              </p>
+                              <div className="overflow-x-auto rounded-lg border border-card-border bg-surface">
+                                <table className="w-full min-w-[820px] text-sm">
+                                  <thead>
+                                    <tr className="border-b border-card-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted">
+                                      <th className="px-3 py-2 align-top">EC · Type</th>
+                                      {EC_DEPTS.map((dept) => {
+                                        const head = card.ecs[0];
+                                        const target = head
+                                          ? dept.target(head)
+                                          : null;
+                                        return (
+                                          <th
+                                            key={dept.label}
+                                            className="px-3 py-2 align-top whitespace-nowrap"
+                                          >
+                                            {dept.label}
+                                            <DeptDeadline
+                                              value={target}
+                                              overdue={
+                                                !!head &&
+                                                late(
+                                                  target,
+                                                  card.ecs.every((r) => dept.done(r))
+                                                )
+                                              }
+                                            />
+                                          </th>
+                                        );
+                                      })}
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-card-border">
+                                    {card.ecs.map((row) => (
                                       <tr key={row.id} className="text-foreground">
                                         <td className="px-3 py-2 whitespace-nowrap">
                                           <Link
@@ -815,83 +976,16 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                                             </div>
                                           )}
                                         </td>
-                                        <td className="px-3 py-2 align-top">
-                                          <Chip
-                                            value={row.has_pi ? "PI done" : null}
-                                            tone={row.has_pi ? "green" : "neutral"}
-                                          />
-                                          <DeptDeadline
-                                            value={row.payment_terms}
-                                            isDate={false}
-                                          />
-                                        </td>
-                                        <td className="px-3 py-2 align-top">
-                                          <Chip
-                                            value={row.payment_status}
-                                            tone={paymentTone(row.payment_status)}
-                                          />
-                                          <DeptDeadline
-                                            value={row.payment_terms}
-                                            isDate={false}
-                                          />
-                                        </td>
-                                        <td className="px-3 py-2 align-top">
-                                          <Chip value={row.drg_status} />
-                                          <DeptDeadline
-                                            value={row.drg_target_date}
-                                            overdue={late(row.drg_target_date, done.drawing(row))}
-                                          />
-                                        </td>
-                                        <td className="px-3 py-2 align-top">
-                                          <Chip value={purchase} />
-                                          <DeptDeadline
-                                            value={row.purchase_target_date}
-                                            overdue={late(row.purchase_target_date, done.purchase(row))}
-                                          />
-                                        </td>
-                                        <td className="px-3 py-2 align-top">
-                                          <Chip
-                                            value={row.qc_submitted ? "Submitted" : null}
-                                            tone={row.qc_submitted ? "green" : "neutral"}
-                                          />
-                                          <DeptDeadline
-                                            value={row.qc_doc_target_date}
-                                            overdue={late(row.qc_doc_target_date, done.qc(row))}
-                                          />
-                                        </td>
-                                        <td className="px-3 py-2 align-top">
-                                          <Chip value={row.planning_status} />
-                                          <DeptDeadline
-                                            value={dispatchTarget(row)}
-                                            overdue={late(dispatchTarget(row), done.planning(row))}
-                                          />
-                                        </td>
-                                        <td className="px-3 py-2 align-top">
-                                          <Chip
-                                            value={row.dispatch_status}
-                                            tone={
-                                              (row.dispatch_status ?? "").toLowerCase() === "fully dispatch"
-                                                ? "green"
-                                                : (row.dispatch_status ?? "").toLowerCase() === "lot dispatch"
-                                                  ? "blue"
-                                                  : (row.dispatch_status ?? "").toLowerCase() === "pending"
-                                                    ? "amber"
-                                                    : "neutral"
-                                            }
-                                          />
-                                          <DeptDeadline
-                                            value={row.dispatch_team_target_date}
-                                            overdue={late(
-                                              row.dispatch_team_target_date,
-                                              done.dispatch(row)
-                                            )}
-                                          />
-                                        </td>
+                                        {EC_DEPTS.map((dept) => (
+                                          <td key={dept.label} className="px-3 py-2">
+                                            {dept.chip(row)}
+                                          </td>
+                                        ))}
                                       </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
                             </div>
                           </div>
                         </td>

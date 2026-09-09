@@ -676,10 +676,19 @@ export function DepartmentWorkspace({
                                         key={`slips-${String(ec.id)}`}
                                         className="rounded-lg border border-card-border bg-surface p-3 shadow-sm"
                                       >
-                                        <div className="mb-2 flex items-center gap-2">
+                                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                                           <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                                             EC · {toInput(ec.ec_no) || "—"}
                                           </span>
+                                          {/* Sections with flat fields already
+                                              carry the sign-off in their EC
+                                              table; this is for the ones whose
+                                              ECs only appear here (Drawing). */}
+                                          {!hasFlatColumns &&
+                                            completeCell(
+                                              String(ec.id),
+                                              toInput(ec.ec_no) || String(ec.id)
+                                            )}
                                         </div>
                                         <OrderChildList
                                           orderId={String(ec.id)}

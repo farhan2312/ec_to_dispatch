@@ -135,7 +135,6 @@ export function BillingWorkspace({
                 <th className="px-4 py-3">Payment Terms</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
                 <th className="px-4 py-3">Dispatch Status</th>
-                <th className="px-4 py-3">Complete</th>
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -210,20 +209,6 @@ export function BillingWorkspace({
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
-                        <DeptCompleteCheck
-                          scopeId={String(row.id)}
-                          dept="billing"
-                          label={String(row.so_no ?? row.sl_no ?? "")}
-                          completion={completionFor(
-                            completions,
-                            "billing",
-                            String(row.id),
-                            false
-                          )}
-                          canEdit={canEdit}
-                        />
-                      </td>
                       <td className="px-4 py-3 whitespace-nowrap text-right">
                         <button
                           type="button"
@@ -252,9 +237,23 @@ export function BillingWorkspace({
                                 rows={(row.pi_docs ?? []) as Row[]}
                                 canEdit={canEdit}
                                 headerAction={
-                                  canEdit ? (
-                                    <PiExcelUpload orderId={row.id} />
-                                  ) : null
+                                  <>
+                                    <DeptCompleteCheck
+                                      scopeId={String(row.id)}
+                                      dept="billing"
+                                      label={`${row.so_no ?? row.sl_no ?? ""} · Operation`}
+                                      completion={completionFor(
+                                        completions,
+                                        "billing",
+                                        String(row.id),
+                                        false
+                                      )}
+                                      canEdit={canEdit}
+                                    />
+                                    {canEdit ? (
+                                      <PiExcelUpload orderId={row.id} />
+                                    ) : null}
+                                  </>
                                 }
                               />
                             )}
@@ -271,6 +270,20 @@ export function BillingWorkspace({
                               rows={(row.invoices ?? []) as Row[]}
                               canEdit={canEdit}
                               canAdd={false}
+                              headerAction={
+                                <DeptCompleteCheck
+                                  scopeId={String(row.id)}
+                                  dept="dispatch"
+                                  label={`${row.so_no ?? row.sl_no ?? ""} · Dispatch`}
+                                  completion={completionFor(
+                                    completions,
+                                    "dispatch",
+                                    String(row.id),
+                                    false
+                                  )}
+                                  canEdit={canEdit}
+                                />
+                              }
                               context={{ bill_type: row.bill_type }}
                               rowHeader={invoiceRowHeader}
                               renderExtra={{

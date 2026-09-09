@@ -10,6 +10,7 @@ import {
   type DeptCompletion,
   type DeptKey,
 } from "@/lib/dept-completion";
+import { ConfirmDialog } from "./confirm-dialog";
 
 function formatDate(value: string): string {
   const d = new Date(value);
@@ -25,8 +26,8 @@ function formatDate(value: string): string {
  * A department's sign-off on one SO or EC.
  *
  * Ticking it is a claim other people act on — Central stops chasing, the day
- * count is frozen — so it confirms first, and says what the answer will be
- * recorded as. Unticking confirms too, since reopening moves the number.
+ * count is frozen — so it confirms first, and the dialog says what will be
+ * recorded. Unticking confirms too, since reopening discards that number.
  */
 export function DeptCompleteCheck({
   scopeId,
@@ -37,28 +38,25 @@ export function DeptCompleteCheck({
 }: {
   scopeId: string;
   dept: DeptKey;
-  // What the row is, for the confirmation text: "EC/26/1/1385/39956".
+  // What the row is, for the confirmation: "EC/26/1/1385/39956".
   label: string;
   completion: DeptCompletion | null;
   canEdit: boolean;
 }) {
   const router = useRouter();
+  const [asking, setAsking] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const took = completion ? describeDays(completion.days_taken) : null;
+  const completing = !completion;
 
-  async function toggle() {
-    const complete = !completion;
-    const message = complete
-      ? `Mark ${DEPT_LABELS[dept]} complete for ${label}?\n\nThis records today as the completion date and how long it took against the original target. You can undo it.`
-      : `Reopen ${DEPT_LABELS[dept]} for ${label}?\n\nThe recorded completion date and day count will be discarded.`;
-    if (!confirm(message)) return;
-
+  async function apply() {
     setSaving(true);
     setError(null);
-    const result = await setDeptCompleteAction(scopeId, dept, complete);
+    const result = await setDeptCompleteAction(scopeId, dept, completing);
     setSaving(false);
+    setAsking(false);
     if (!result.ok) {
       setError(result.error);
       return;
@@ -82,40 +80,80 @@ export function DeptCompleteCheck({
   }
 
   return (
-    <span className="inline-flex flex-col items-start gap-0.5">
-      <label className="inline-flex cursor-pointer items-center gap-1.5">
-        <input
-          type="checkbox"
-          checked={!!completion}
-          disabled={saving}
-          onChange={toggle}
-          aria-label={`${DEPT_LABELS[dept]} complete for ${label}`}
-          className="h-4 w-4 cursor-pointer rounded border-input-border accent-emerald-600 disabled:cursor-not-allowed"
-        />
-        {saving ? (
-          <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-        ) : (
-          <span
-            className={`text-[11px] font-medium ${
-              completion ? "text-emerald-700" : "text-muted-foreground"
-            }`}
-          >
-            {completion ? "Done" : "Complete"}
+    <>
+      <span className="inline-flex flex-col items-start gap-0.5">
+        <label className="inline-flex cursor-pointer items-center gap-1.5">
+          <input
+            type="checkbox"
+            checked={!!completion}
+            disabled={saving}
+            onChange={() => {
+              setError(null);
+              setAsking(true);
+            }}
+            aria-label={`${DEPT_LABELS[dept]} complete for ${label}`}
+            className="h-4 w-4 cursor-pointer rounded border-input-border accent-emerald-600 disabled:cursor-not-allowed"
+          />
+          {saving ? (
+            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+          ) : (
+            <span
+              className={`text-[11px] font-medium ${
+                completion ? "text-emerald-700" : "text-muted-foreground"
+              }`}
+            >
+              {completion ? "Done" : "Complete"}
+            </span>
+          )}
+        </label>
+        {completion && (
+          <span className="text-[10px] text-muted-foreground">
+            {formatDate(completion.completed_on)}
+            {took ? ` · ${took}` : ""}
           </span>
         )}
-      </label>
-      {completion && (
-        <span className="text-[10px] text-muted-foreground">
-          {formatDate(completion.completed_on)}
-          {took ? ` · ${took}` : ""}
-        </span>
-      )}
-      {error && (
-        <span role="alert" className="text-[10px] text-danger">
-          {error}
-        </span>
-      )}
-    </span>
+        {error && (
+          <span role="alert" className="text-[10px] text-danger">
+            {error}
+          </span>
+        )}
+      </span>
+
+      <ConfirmDialog
+        open={asking}
+        busy={saving}
+        tone={completing ? "primary" : "danger"}
+        title={
+          completing
+            ? `Mark ${DEPT_LABELS[dept]} complete?`
+            : `Reopen ${DEPT_LABELS[dept]}?`
+        }
+        message={
+          completing
+            ? `${label} will be recorded as finished by ${DEPT_LABELS[dept]}.`
+            : `${label} goes back to in progress for ${DEPT_LABELS[dept]}.`
+        }
+        detail={
+          completing ? (
+            <>
+              Today&apos;s date is recorded as the completion date, along with
+              how long it took against the target this department was
+              originally given. You can undo this later.
+            </>
+          ) : (
+            <>
+              The completion date
+              {completion ? ` (${formatDate(completion.completed_on)}` : ""}
+              {completion && took ? `, ${took}` : ""}
+              {completion ? ")" : ""} will be discarded.
+            </>
+          )
+        }
+        confirmLabel={completing ? "Mark complete" : "Reopen"}
+        onConfirm={apply}
+        onCancel={() => setAsking(false)}
+      />
+    </>
   );
 }
 

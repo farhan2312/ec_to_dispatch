@@ -18,7 +18,7 @@ import { AddOnForm } from "./add-on-form";
 import { OrderChildList } from "./order-children";
 import { InvoiceLrCell } from "./invoice-lr-cell";
 import { OrderThread } from "./order-thread";
-import { TargetDatesPanel } from "./target-dates-panel";
+import { targetDateExtra } from "./target-date-control";
 import type { TargetRevision } from "@/lib/target-dates";
 
 type Row = Record<string, unknown>;
@@ -199,6 +199,13 @@ export function OrderDetail({
                 // Order details carries the client columns — offer the
                 // directory search there so a wrong client can be corrected.
                 clientLookup={section.table === "orders" && canManageItems}
+                // Target dates are never edited by the section form; each one
+                // carries its own revise button and change history instead.
+                fieldExtra={
+                  section.table === "orders"
+                    ? targetDateExtra(orderId, targetRevisions, canManageItems)
+                    : undefined
+                }
               />
             );
           };
@@ -206,14 +213,6 @@ export function OrderDetail({
           return (
             <>
               {coreSections.map(renderSection)}
-              {/* Targets sit with Order details: same scope, same owner. */}
-              {central && (
-                <TargetDatesPanel
-                  orderId={orderId}
-                  revisions={targetRevisions}
-                  canEdit={canManageItems}
-                />
-              )}
               {/* EC orders sits between Order details and Billing/Accounts. */}
               <EcOrdersPanel />
               {otherSections.map(renderSection)}

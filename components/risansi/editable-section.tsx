@@ -81,6 +81,7 @@ export function EditableSection({
   canEditCentral,
   documents = [],
   clientLookup = false,
+  fieldExtra,
 }: {
   targetId: string;
   section: OrderSection;
@@ -91,6 +92,10 @@ export function EditableSection({
   // Offers the Market Intell directory search while editing, to overwrite the
   // client columns of this section.
   clientLookup?: boolean;
+  // Renders alongside a field's value — for fields owned by their own flow
+  // rather than the section form, e.g. a target date's revise button and
+  // history. Returns null for fields it does not handle.
+  fieldExtra?: (field: OrderField) => React.ReactNode;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -250,11 +255,6 @@ export function EditableSection({
                               auto
                             </span>
                           )}
-                          {field.readOnly && !field.computed && (
-                            <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500">
-                              see Target Dates
-                            </span>
-                          )}
                         </div>
                         {fieldEditable ? (
                           field.type === "select" ? (
@@ -296,8 +296,9 @@ export function EditableSection({
                             />
                           )
                         ) : (
-                          <div className="text-[14px] text-foreground">
-                            {formatDisplay(field, data?.[field.column])}
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px] text-foreground">
+                            <span>{formatDisplay(field, data?.[field.column])}</span>
+                            {fieldExtra?.(field)}
                           </div>
                         )}
                       </div>

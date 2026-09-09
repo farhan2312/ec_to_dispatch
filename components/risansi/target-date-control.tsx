@@ -39,7 +39,9 @@ const TARGET_BY_COLUMN = new Map<string, TargetDate>(
  * rest of the order, not in a panel of their own.
  *
  * The date is never edited through the section form (the fields are readOnly);
- * every change goes through here so it lands in the history.
+ * every change goes through here so it lands in the history. Who made the
+ * change and when is recorded but not shown — the audit log is where that
+ * belongs; here the useful part is the date, the slip and the reason.
  */
 export function TargetDateControl({
   orderId,
@@ -188,8 +190,6 @@ export function TargetDateControl({
                   </span>
                 )}
                 {rev.reason && <span>· {rev.reason}</span>}
-                <span>· {rev.changed_by_email ?? "—"}</span>
-                <span>· {formatDate(rev.created_at)}</span>
               </li>
             );
           })}

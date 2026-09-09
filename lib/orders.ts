@@ -1068,8 +1068,17 @@ export type OrderOverviewRow = {
   qc_submitted: boolean;
   qc_required: string | null;
   planning_status: string | null;
-  dispatch_target_date: string | null;
   dispatch_status: string | null;
+  // Each department's own deadline, so the pipeline can show a status beside
+  // the date it is being judged against. All live on the SO — one target
+  // applies across every EC of the order.
+  payment_terms: string | null;
+  drg_target_date: string | null;
+  purchase_target_date: string | null;
+  qc_doc_target_date: string | null;
+  dispatch_team_target_date: string | null;
+  dispatch_target_date: string | null;
+  dispatch_target_revised_date: string | null;
 };
 
 /**
@@ -1116,8 +1125,15 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             (qc.qc_doc_actual_date IS NOT NULL) AS qc_submitted,
             o.qc_required,
             pl.planning_status,
+            o.dispatch_status,
+            o.payment_terms,
+            to_char(o.drg_target_date, 'YYYY-MM-DD') AS drg_target_date,
+            to_char(o.purchase_target_date, 'YYYY-MM-DD') AS purchase_target_date,
+            to_char(o.qc_doc_target_date, 'YYYY-MM-DD') AS qc_doc_target_date,
+            to_char(o.dispatch_team_target_date, 'YYYY-MM-DD') AS dispatch_team_target_date,
             to_char(o.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
-            o.dispatch_status
+            to_char(o.dispatch_target_revised_date, 'YYYY-MM-DD')
+              AS dispatch_target_revised_date
        FROM order_items it
        JOIN orders o ON o.id = it.order_id
        LEFT JOIN order_billing b            ON b.order_id = o.id

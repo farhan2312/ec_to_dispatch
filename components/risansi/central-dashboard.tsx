@@ -67,6 +67,17 @@ function todayIso(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 }
 
+/** A revised dispatch date supersedes the original wherever it is quoted. */
+function dispatchTarget(row: OrderOverviewRow): string | null {
+  return row.dispatch_target_revised_date ?? row.dispatch_target_date;
+}
+
+/** Past its date and still not finished. */
+function late(date: string | null, isDone: boolean): boolean {
+  if (!date || isDone) return false;
+  return date < todayIso();
+}
+
 function isOverdue(row: OrderOverviewRow): boolean {
   if (!row.dispatch_target_date) return false;
   if ((row.dispatch_status ?? "").trim() !== "") return false;
@@ -303,6 +314,41 @@ const done = {
   dispatch: (r: OrderOverviewRow) =>
     (r.dispatch_status ?? "").trim().toLowerCase() === "fully dispatch",
 };
+
+/**
+ * A department's deadline, shown under its status chip: the target date it
+ * works to, or the payment terms for the two that have no date of their own.
+ * Turns red once the date has passed and that department still isn't done —
+ * the same rule the reminders and the Departments popup use.
+ *
+ * These all live on the SO, so every EC of an order shows the same value.
+ */
+function DeptDeadline({
+  value,
+  isDate = true,
+  overdue = false,
+}: {
+  value: string | null;
+  isDate?: boolean;
+  overdue?: boolean;
+}) {
+  const text = value?.trim()
+    ? isDate
+      ? formatDate(value)
+      : value
+    : null;
+  if (!text) return null;
+  return (
+    <div
+      className={`mt-0.5 text-[10px] ${
+        overdue ? "font-medium text-rose-600" : "text-muted-foreground"
+      }`}
+    >
+      {text}
+      {overdue ? " · overdue" : ""}
+    </div>
+  );
+}
 
 export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }) {
   const router = useRouter();
@@ -744,12 +790,10 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                                     <th className="px-3 py-2">Quality</th>
                                     <th className="px-3 py-2">Planning</th>
                                     <th className="px-3 py-2">Dispatch</th>
-                                    <th className="px-3 py-2">Target</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-card-border">
                                   {card.ecs.map((row) => {
-                                    const overdueRow = isOverdue(row);
                                     const purchase =
                                       (row.boi ?? "") !== "Yes"
                                         ? "No BOI"
@@ -771,34 +815,58 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                                             </div>
                                           )}
                                         </td>
-                                        <td className="px-3 py-2">
+                                        <td className="px-3 py-2 align-top">
                                           <Chip
                                             value={row.has_pi ? "PI done" : null}
                                             tone={row.has_pi ? "green" : "neutral"}
                                           />
+                                          <DeptDeadline
+                                            value={row.payment_terms}
+                                            isDate={false}
+                                          />
                                         </td>
-                                        <td className="px-3 py-2">
+                                        <td className="px-3 py-2 align-top">
                                           <Chip
                                             value={row.payment_status}
                                             tone={paymentTone(row.payment_status)}
                                           />
+                                          <DeptDeadline
+                                            value={row.payment_terms}
+                                            isDate={false}
+                                          />
                                         </td>
-                                        <td className="px-3 py-2">
+                                        <td className="px-3 py-2 align-top">
                                           <Chip value={row.drg_status} />
+                                          <DeptDeadline
+                                            value={row.drg_target_date}
+                                            overdue={late(row.drg_target_date, done.drawing(row))}
+                                          />
                                         </td>
-                                        <td className="px-3 py-2">
+                                        <td className="px-3 py-2 align-top">
                                           <Chip value={purchase} />
+                                          <DeptDeadline
+                                            value={row.purchase_target_date}
+                                            overdue={late(row.purchase_target_date, done.purchase(row))}
+                                          />
                                         </td>
-                                        <td className="px-3 py-2">
+                                        <td className="px-3 py-2 align-top">
                                           <Chip
                                             value={row.qc_submitted ? "Submitted" : null}
                                             tone={row.qc_submitted ? "green" : "neutral"}
                                           />
+                                          <DeptDeadline
+                                            value={row.qc_doc_target_date}
+                                            overdue={late(row.qc_doc_target_date, done.qc(row))}
+                                          />
                                         </td>
-                                        <td className="px-3 py-2">
+                                        <td className="px-3 py-2 align-top">
                                           <Chip value={row.planning_status} />
+                                          <DeptDeadline
+                                            value={dispatchTarget(row)}
+                                            overdue={late(dispatchTarget(row), done.planning(row))}
+                                          />
                                         </td>
-                                        <td className="px-3 py-2">
+                                        <td className="px-3 py-2 align-top">
                                           <Chip
                                             value={row.dispatch_status}
                                             tone={
@@ -811,11 +879,13 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                                                     : "neutral"
                                             }
                                           />
-                                        </td>
-                                        <td className="px-3 py-2 whitespace-nowrap">
-                                          <span className={overdueRow ? "font-medium text-rose-600" : "text-muted"}>
-                                            {formatDate(row.dispatch_target_date)}
-                                          </span>
+                                          <DeptDeadline
+                                            value={row.dispatch_team_target_date}
+                                            overdue={late(
+                                              row.dispatch_team_target_date,
+                                              done.dispatch(row)
+                                            )}
+                                          />
                                         </td>
                                       </tr>
                                     );

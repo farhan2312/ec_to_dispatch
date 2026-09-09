@@ -346,3 +346,19 @@ export function drawingHandoffDetail(
     rev ? `Rev. ${rev}` : "first issue"
   }`;
 }
+
+/**
+ * Who hears about a target date, by its column on `orders`.
+ *
+ * Target dates are no longer written through notifySectionSaved — they have
+ * their own revision flow — but the recipients are the same, so both read this
+ * one map rather than keeping two lists in step.
+ */
+export function targetDateRecipients(
+  column: string
+): { label: string; roles: string[] } | null {
+  const match = (TARGET_DATE_RECIPIENTS.orders ?? []).find(
+    (t) => t.column === column
+  );
+  return match ? { label: match.label, roles: match.roles } : null;
+}

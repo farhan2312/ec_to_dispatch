@@ -32,6 +32,10 @@ import { OrderDetailsModal } from "./order-details-modal";
 import { BoiItemsModal } from "./boi-items-modal";
 import { ViewPisModal } from "./view-pis-modal";
 import { OrderThreadModal } from "./order-thread-modal";
+import {
+  TargetHistoryCell,
+  targetForColumn,
+} from "./target-history-cell";
 import type { QcDocTable } from "@/lib/orders";
 
 // Only the QC workspace passes this today; kept generic (a list, so more than
@@ -202,6 +206,19 @@ export function DepartmentWorkspace({
   // in the EC subtable, or the SO row would show the first EC's value as
   // if it applied to all of them.
   const soContext = readonlyFields.filter((f) => !f.from || f.from === "orders");
+
+  // A department works to its target dates but cannot set them, so the value
+  // carries the history behind it — a date that has moved twice reads very
+  // differently from one that never has.
+  function contextCell(f: OrderField, row: Row) {
+    const value = formatValue(f, row[f.column]);
+    const target = targetForColumn(f.column);
+    const orderId = toInput(row.order_id ?? row.id);
+    if (!target || !orderId) return value;
+    return (
+      <TargetHistoryCell orderId={orderId} target={target} value={value} />
+    );
+  }
   const ecContext = readonlyFields.filter((f) => f.from && f.from !== "orders");
 
   // Party is customer-identifying info; only Billing & Operations and
@@ -399,7 +416,7 @@ export function DepartmentWorkspace({
                         key={f.column}
                         className="px-3 py-3 whitespace-nowrap text-muted"
                       >
-                        {formatValue(f, order[f.column])}
+                        {contextCell(f, order)}
                       </td>
                     ))}
                     {visibleFields.map((f) => (
@@ -483,7 +500,7 @@ export function DepartmentWorkspace({
                             key={f.column}
                             className="px-3 py-3 whitespace-nowrap text-muted"
                           >
-                            {formatValue(f, g.head[f.column])}
+                            {contextCell(f, g.head)}
                           </td>
                         ))}
                         <td className="px-4 py-3 text-center tabular-nums">

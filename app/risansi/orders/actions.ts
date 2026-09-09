@@ -23,6 +23,7 @@ import {
   listQcDocuments,
   addTargetRevision,
   deleteLatestTargetRevision,
+  listTargetRevisions,
   updateChildRow,
   updateOrderSection,
   upsertInvoiceFromPackingSlip,
@@ -54,13 +55,18 @@ import {
   isCentral,
 } from "@/lib/roles";
 import { parsePiWorkbook } from "@/lib/pi-import";
-import { isTargetKey, TARGET_BY_KEY } from "@/lib/target-dates";
+import {
+  isTargetKey,
+  TARGET_BY_KEY,
+  type TargetRevision,
+} from "@/lib/target-dates";
 import { logAudit } from "@/lib/audit";
 import {
   drawingHandoffDetail,
   drawingHandoffEvents,
   emitNotification,
   notifySectionSaved,
+  targetDateRecipients,
   type DrawingHandoffs,
 } from "@/lib/notifications";
 
@@ -1110,6 +1116,17 @@ export async function importPiExcelAction(
 // Target date history
 // ---------------------------------------------------------------------------
 
+/** Dates read better in a notification than the ISO the input produces. */
+function formatTargetDate(value: string): string {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export type TargetRevisionResult =
   | { ok: true }
   | { ok: false; error: string };
@@ -1141,12 +1158,13 @@ export async function addTargetRevisionAction(
   }
 
   const target = TARGET_BY_KEY.get(targetKey)!;
+  const trimmedReason = reason.trim() || null;
   try {
     const { seq } = await addTargetRevision({
       orderId,
       target,
       date,
-      reason: reason.trim() || null,
+      reason: trimmedReason,
       actorId: user.id,
       actorRole: user.role,
     });
@@ -1162,6 +1180,27 @@ export async function addTargetRevisionAction(
           ? `Set ${target.label} to ${date}`
           : `Revised ${target.label} to ${date} (revision ${seq - 1})`,
     });
+
+    // The department working to this date has to hear it — both when it is
+    // first set and every time it moves, since a revision changes their
+    // deadline as much as the original did. The reason rides along: "moved to
+    // the 19th" is far less useful than knowing why.
+    // Target dates used to notify through notifySectionSaved; they are no
+    // longer written by a section save, so the emit happens here instead.
+    const recipients = targetDateRecipients(target.column);
+    if (recipients) {
+      const when = formatTargetDate(date);
+      const why = trimmedReason ? ` · ${trimmedReason}` : "";
+      await emitNotification({
+        roles: recipients.roles,
+        orderId,
+        type: "target_date",
+        message:
+          seq === 1
+            ? `${recipients.label} set for ${label} — ${when}${why}`
+            : `${recipients.label} revised for ${label} — ${when}${why}`,
+      });
+    }
 
     revalidatePath(`/risansi/orders/${orderId}`);
     return { ok: true };
@@ -1206,10 +1245,42 @@ export async function deleteTargetRevisionAction(
         : `Cleared ${target.label} (was ${removed})`,
     });
 
+    // Same reasoning as setting one: the department is working to this date,
+    // so being told it was withdrawn matters as much as being told it moved.
+    const recipients = targetDateRecipients(target.column);
+    if (recipients) {
+      await emitNotification({
+        roles: recipients.roles,
+        orderId,
+        type: "target_date",
+        message: now
+          ? `${recipients.label} reverted for ${label} — ${formatTargetDate(now)}`
+          : `${recipients.label} cleared for ${label}`,
+      });
+    }
+
     revalidatePath(`/risansi/orders/${orderId}`);
     return { ok: true };
   } catch (error) {
     console.error("deleteTargetRevision failed:", error);
     return { ok: false, error: "Could not remove the target date." };
   }
+}
+
+/**
+ * The change history of one target date, for the read-only view departments
+ * get in their queue. Any signed-in user may read it: the date is already
+ * shown to them, and why it moved is the part they actually need.
+ *
+ * Loaded on demand rather than joined into every queue page — most rows are
+ * never opened, and a target rarely has more than a couple of entries.
+ */
+export async function getTargetHistoryAction(
+  orderId: string,
+  targetKey: string
+): Promise<TargetRevision[]> {
+  const user = await getCurrentUser();
+  if (!user || !isTargetKey(targetKey)) return [];
+  const all = await listTargetRevisions(orderId);
+  return all.filter((r) => r.target_key === targetKey);
 }

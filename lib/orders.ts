@@ -1,4 +1,5 @@
 import { query, withTransaction } from "@/lib/db";
+import type { PoolClient } from "pg";
 import type { TargetDate, TargetRevision } from "@/lib/target-dates";
 import {
   isPerEcDept,
@@ -2076,6 +2077,48 @@ export async function resolveFocusOrderId(
 // Target date history
 // ---------------------------------------------------------------------------
 
+/**
+ * Undo the most recent value of one target: drop it and fall back to whatever
+ * came before, or clear the target when that was its only entry.
+ *
+ * Only the latest is removable. Deleting from the middle would leave a history
+ * that never happened — and the seq numbering, which the unique index relies
+ * on, would have a hole in it.
+ */
+export async function deleteLatestTargetRevision(
+  orderId: string,
+  target: TargetDate
+): Promise<{ removed: string | null; now: string | null }> {
+  return withTransaction(async (client) => {
+    const latest = await client.query<{ id: string; d: string }>(
+      `SELECT id, to_char(target_date, 'YYYY-MM-DD') AS d
+         FROM order_target_revisions
+        WHERE order_id = $1 AND target_key = $2
+        ORDER BY seq DESC
+        LIMIT 1
+        FOR UPDATE`,
+      [orderId, target.key]
+    );
+    const row = latest.rows[0];
+    if (!row) return { removed: null, now: null };
+
+    await client.query(`DELETE FROM order_target_revisions WHERE id = $1`, [
+      row.id,
+    ]);
+    await syncTargetColumns(client, orderId, target);
+
+    const remaining = await client.query<{ d: string }>(
+      `SELECT to_char(target_date, 'YYYY-MM-DD') AS d
+         FROM order_target_revisions
+        WHERE order_id = $1 AND target_key = $2
+        ORDER BY seq DESC
+        LIMIT 1`,
+      [orderId, target.key]
+    );
+    return { removed: row.d, now: remaining.rows[0]?.d ?? null };
+  });
+}
+
 /** Every value each of the SO's targets has held, oldest first. */
 export async function listTargetRevisions(
   orderId: string
@@ -2094,6 +2137,43 @@ export async function listTargetRevisions(
     [orderId]
   );
   return result.rows;
+}
+
+/**
+ * Point the `orders` columns at what the history now says.
+ *
+ * Both the add and the delete path go through here, so the denormalised
+ * current value can never disagree with the revisions behind it. Dispatch is
+ * the one target with two columns: the original stays put and the latest
+ * revision lands in the "revised" column, which is the pair every existing
+ * reader COALESCEs. Column names come from TARGET_DATES, never from input.
+ */
+async function syncTargetColumns(
+  client: PoolClient,
+  orderId: string,
+  target: TargetDate
+): Promise<void> {
+  const rows = await client.query<{ d: string }>(
+    `SELECT to_char(target_date, 'YYYY-MM-DD') AS d
+       FROM order_target_revisions
+      WHERE order_id = $1 AND target_key = $2
+      ORDER BY seq`,
+    [orderId, target.key]
+  );
+  const dates = rows.rows.map((r) => r.d);
+
+  if (target.revisedColumn) {
+    await client.query(
+      `UPDATE orders SET ${target.column} = $2, ${target.revisedColumn} = $3
+        WHERE id = $1`,
+      [orderId, dates[0] ?? null, dates.length > 1 ? dates[dates.length - 1] : null]
+    );
+    return;
+  }
+  await client.query(`UPDATE orders SET ${target.column} = $2 WHERE id = $1`, [
+    orderId,
+    dates[dates.length - 1] ?? null,
+  ]);
 }
 
 /**
@@ -2137,17 +2217,7 @@ export async function addTargetRevision(input: {
       ]
     );
 
-    // Dispatch keeps its original date and moves revisions into the "revised"
-    // column, because that is the pair every existing reader COALESCEs.
-    const column =
-      seq > 1 && input.target.revisedColumn
-        ? input.target.revisedColumn
-        : input.target.column;
-    await client.query(
-      `UPDATE orders SET ${column} = $2 WHERE id = $1`,
-      [input.orderId, input.date]
-    );
-
+    await syncTargetColumns(client, input.orderId, input.target);
     return { seq };
   });
 }

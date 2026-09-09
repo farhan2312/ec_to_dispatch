@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, Loader2, Plus, X } from "lucide-react";
+import { ChevronDown, Loader2, Plus, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { addTargetRevisionAction } from "@/app/risansi/orders/actions";
+import {
+  addTargetRevisionAction,
+  deleteTargetRevisionAction,
+} from "@/app/risansi/orders/actions";
 import type { OrderField } from "@/lib/order-schema";
 import {
   TARGET_DATES,
@@ -60,6 +63,7 @@ export function TargetDateControl({
   const [date, setDate] = useState("");
   const [reason, setReason] = useState("");
   const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const history = revisions
@@ -88,8 +92,38 @@ export function TargetDateControl({
     router.refresh();
   }
 
+  /** Undo the most recent value, falling back to the one before it. */
+  async function remove() {
+    const latest = history[history.length - 1];
+    const previous = history[history.length - 2];
+    const after = previous
+      ? `back to ${formatDate(previous.target_date)}`
+      : "clearing the target";
+    if (
+      !confirm(
+        `Remove ${formatDate(latest.target_date)} from ${target.label}, ${after}?`
+      )
+    ) {
+      return;
+    }
+    setRemoving(true);
+    setError(null);
+    const result = await deleteTargetRevisionAction(orderId, target.key);
+    setRemoving(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    router.refresh();
+  }
+
   return (
     <>
+      {error && !open && (
+        <span role="alert" className="text-[11px] text-danger">
+          {error}
+        </span>
+      )}
       {changes > 0 && (
         <button
           type="button"
@@ -190,6 +224,22 @@ export function TargetDateControl({
                   </span>
                 )}
                 {rev.reason && <span>· {rev.reason}</span>}
+                {canEdit && i === history.length - 1 && (
+                  <button
+                    type="button"
+                    onClick={remove}
+                    disabled={removing}
+                    aria-label={`Remove ${formatDate(rev.target_date)} from ${target.label}`}
+                    title="Remove this date"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-danger-bg hover:text-danger disabled:opacity-50"
+                  >
+                    {removing ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-3 w-3" />
+                    )}
+                  </button>
+                )}
               </li>
             );
           })}

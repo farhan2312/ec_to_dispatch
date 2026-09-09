@@ -22,6 +22,7 @@ import {
   insertQcDocument,
   listQcDocuments,
   addTargetRevision,
+  deleteLatestTargetRevision,
   updateChildRow,
   updateOrderSection,
   upsertInvoiceFromPackingSlip,
@@ -1167,5 +1168,48 @@ export async function addTargetRevisionAction(
   } catch (error) {
     console.error("addTargetRevision failed:", error);
     return { ok: false, error: "Could not save the target date." };
+  }
+}
+
+/**
+ * Undo the most recent value of a target date. Only the latest is removable —
+ * rewriting the middle of a history is what makes a history worthless.
+ */
+export async function deleteTargetRevisionAction(
+  orderId: string,
+  targetKey: string
+): Promise<TargetRevisionResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canEditSection(user.role, "orders")) {
+    return { ok: false, error: "You don't have permission to set target dates." };
+  }
+  if (!isTargetKey(targetKey)) {
+    return { ok: false, error: "Unknown target date." };
+  }
+
+  const target = TARGET_BY_KEY.get(targetKey)!;
+  try {
+    const { removed, now } = await deleteLatestTargetRevision(orderId, target);
+    if (removed === null) {
+      return { ok: false, error: "There is nothing to remove." };
+    }
+
+    const label = (await getOrderLabel(orderId)) ?? orderId;
+    await logAudit({
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: "order.target_date",
+      category: "activity",
+      target: label,
+      details: now
+        ? `Removed ${target.label} ${removed}, back to ${now}`
+        : `Cleared ${target.label} (was ${removed})`,
+    });
+
+    revalidatePath(`/risansi/orders/${orderId}`);
+    return { ok: true };
+  } catch (error) {
+    console.error("deleteTargetRevision failed:", error);
+    return { ok: false, error: "Could not remove the target date." };
   }
 }

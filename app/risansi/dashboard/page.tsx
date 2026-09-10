@@ -10,7 +10,7 @@ import { listDeptCompletions, listOrdersOverview } from "@/lib/orders";
 import { deptViewForRole } from "@/lib/dept-view";
 import { listRemindersForRole } from "@/lib/reminders";
 import { CentralDashboard } from "@/components/risansi/central-dashboard";
-import { DepartmentDashboard } from "@/components/risansi/department-dashboard";
+import { DEPT_DASHBOARDS } from "@/components/risansi/dept-dashboards";
 import { RemindersPanel } from "@/components/risansi/reminders-panel";
 
 export const metadata: Metadata = {
@@ -33,12 +33,13 @@ export default async function DashboardPage() {
     return <CentralDashboard rows={rows} completions={completions} />;
   }
 
-  // A department sees the same pipeline rows, read through its own lens: its
+  // A department sees the same pipeline rows through its own dashboard: its
   // status vocabulary, its target date, its sign-offs.
   const view = deptViewForRole(user.role);
+  const Dashboard = view ? DEPT_DASHBOARDS[view.key] : undefined;
   const reminders = await listRemindersForRole(user.role);
 
-  if (!view) {
+  if (!view || !Dashboard) {
     return (
       <div className="px-4 py-6 sm:px-8 sm:py-8">
         <div className="mb-6">
@@ -76,8 +77,7 @@ export default async function DashboardPage() {
         <RemindersPanel reminders={reminders} />
       </div>
 
-      <DepartmentDashboard
-        dept={view.key}
+      <Dashboard
         rows={rows}
         completions={completions}
         workspaceHref={departmentHrefForRole(user.role)}

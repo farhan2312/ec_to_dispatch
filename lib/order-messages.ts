@@ -10,11 +10,11 @@ import { ALL_ROLES, isCentral, type Role } from "@/lib/roles";
  * before departments could talk to each other, so nothing stored needs
  * rewriting.
  *
- * The two parties are therefore `dept_role` and `to_role ?? central`. A
- * department sees its own conversations and nothing else: with Central, and
- * with each other department. Admin / Central Visibility keep full oversight —
- * their view of a department shows everything that department is involved in,
- * including its conversations with other departments.
+ * The two parties are therefore `dept_role` and `to_role ?? central`, and a
+ * conversation is strictly between them. Everyone — Central included — sees
+ * only the conversations they are in: a department talks to Central and to
+ * each other department, Central talks to each department. Two departments
+ * talking to each other is theirs alone.
  *
  * Messages are append-only — nothing here updates or deletes them.
  */
@@ -101,26 +101,29 @@ export function canUsePeer(role: string, peer: string): boolean {
 }
 
 /**
- * Which messages belong to the viewer's conversation with `peer`.
+ * Which messages belong to the viewer's conversation with `peer`. Both sides
+ * are pinned, so nothing from a third party leaks in.
  *
- * For a department both sides are pinned, so a conversation is strictly
- * between the two. For Central the peer is a department and the filter is
- * everything that department is party to, which is what keeps oversight whole.
+ * Central is one side of every conversation it can open, and a message with no
+ * recipient is exactly the one addressed to Central — so their filter is the
+ * department plus that.
  *
- * `$viewerRole` and `$peer` are the parameter placeholders to substitute.
+ * `peerParam` and `roleParam` are the parameter placeholders to substitute.
  */
 function conversationSql(viewerRole: string, peerParam: string, roleParam: string) {
-  const parties = `(m.dept_role = ${peerParam}
-                    OR COALESCE(m.to_role, '${CENTRAL_PEER}') = ${peerParam})`;
-  if (isCentral(viewerRole)) return parties;
-  return `${parties}
+  if (isCentral(viewerRole)) {
+    return `(m.dept_role = ${peerParam} AND m.to_role IS NULL)`;
+  }
+  return `(m.dept_role = ${peerParam}
+           OR COALESCE(m.to_role, '${CENTRAL_PEER}') = ${peerParam})
           AND (m.dept_role = ${roleParam}
                OR COALESCE(m.to_role, '${CENTRAL_PEER}') = ${roleParam})`;
 }
 
 /** Every message this user may see at all, whatever conversation it is in. */
 function visibleSql(viewerRole: string, roleParam: string) {
-  if (isCentral(viewerRole)) return "TRUE";
+  // Central is a party to exactly the messages that name no other recipient.
+  if (isCentral(viewerRole)) return "m.to_role IS NULL";
   return `(m.dept_role = ${roleParam}
            OR COALESCE(m.to_role, '${CENTRAL_PEER}') = ${roleParam})`;
 }

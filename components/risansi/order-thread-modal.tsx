@@ -25,7 +25,7 @@ export function OrderThreadModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-2xl overflow-hidden rounded-t-2xl bg-surface shadow-xl sm:rounded-2xl"
+        className="w-full max-w-4xl overflow-hidden rounded-t-2xl bg-surface shadow-xl sm:rounded-2xl"
       >
         <div className="flex items-center justify-between border-b border-card-border px-5 py-3">
           <div className="min-w-0">

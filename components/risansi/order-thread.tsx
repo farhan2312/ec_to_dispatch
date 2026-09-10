@@ -220,9 +220,9 @@ export function OrderThread({
 
         <div className="flex flex-wrap items-center gap-3">
           <p className="hidden text-xs text-muted lg:block">
-            {central
-              ? "Each department is a separate conversation — they can't see each other's."
-              : `Visible to you and Central Visibility only${soLabel ? ` · SO ${soLabel}` : ""}.`}
+            {peerLabel
+              ? `Visible to you and ${peerLabel} only`
+              : "Pick who to talk to."}
           </p>
           <button
             type="button"
@@ -246,7 +246,7 @@ export function OrderThread({
       {/* Every conversation this user can hold on the SO. A department sees
           the other departments and Central; Central sees each department. */}
       {open && conversations.length > 0 && (
-        <div className="flex gap-1.5 overflow-x-auto border-b border-card-border px-4 py-2.5">
+        <div className="flex flex-wrap gap-1.5 border-b border-card-border px-4 py-2.5">
           {conversations.map((c) => {
             const active = c.peer === peer;
             return (
@@ -323,7 +323,9 @@ export function OrderThread({
                       </p>
                       <div className="mt-1.5 text-[11px] text-amber-800">
                         {m.author_name} · {roleLabel(m.author_role)}
-                        {m.to_role ? ` → ${roleLabel(m.to_role)}` : ""}
+                        {central && m.to_role
+                          ? ` → ${roleLabel(m.to_role)}`
+                          : ""}
                       </div>
                     </div>
                   );
@@ -349,9 +351,11 @@ export function OrderThread({
                           </span>
                         </div>
                       )}
-                      {/* An addressed message reads differently depending on
-                          which side you are: sent to them, or asked of you. */}
-                      {m.to_role && (
+                      {/* Inside a conversation the recipient is a given; it
+                          is only worth saying in Central's view, where a
+                          department's tab also carries its conversations with
+                          other departments. */}
+                      {central && m.to_role && (
                         <div
                           className={`mb-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
                             m.mine
@@ -360,9 +364,7 @@ export function OrderThread({
                           }`}
                         >
                           <ArrowRight className="h-2.5 w-2.5" />
-                          {m.mine
-                            ? `To ${roleLabel(m.to_role)}`
-                            : `Asked of ${roleLabel(m.to_role)}`}
+                          {roleLabel(m.dept_role)} → {roleLabel(m.to_role)}
                         </div>
                       )}
                       <p className="whitespace-pre-wrap break-words text-sm">

@@ -165,6 +165,16 @@ export function OrderThread({
   }
 
   const peerLabel = peer ? roleLabel(peer) : "";
+  // A delay is something Central logs against the order, so it is only worth
+  // raising in the conversation with them. Central's own tabs are all with a
+  // department, so every one of theirs qualifies.
+  const canLogDelay = central || peer === "central_visibility";
+
+  // Switching to a department tab hides the delay toggle; drop the mode with
+  // it so a half-composed delay is not posted as one into the wrong thread.
+  useEffect(() => {
+    if (!canLogDelay) setMode("note");
+  }, [canLogDelay]);
   // Header summary, so a collapsed card still shows there is something here.
   const totalUnread = conversations.reduce((n, c) => n + c.unread, 0);
   const totalMessages = conversations.reduce((n, c) => n + c.total, 0);
@@ -224,14 +234,16 @@ export function OrderThread({
               ? `Visible to you and ${peerLabel} only`
               : "Pick who to talk to."}
           </p>
-          <button
-            type="button"
-            onClick={() => setShowLogs(true)}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-semibold text-amber-900 transition-colors hover:bg-amber-100"
-          >
-            <AlertTriangle className="h-3.5 w-3.5" />
-            View delay logs
-          </button>
+          {central && (
+            <button
+              type="button"
+              onClick={() => setShowLogs(true)}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-semibold text-amber-900 transition-colors hover:bg-amber-100"
+            >
+              <AlertTriangle className="h-3.5 w-3.5" />
+              View delay logs
+            </button>
+          )}
         </div>
       </div>
 
@@ -397,8 +409,12 @@ export function OrderThread({
             onSubmit={send}
             className="space-y-2.5 border-t border-card-border px-5 py-4"
           >
-            {/* Note vs delay decides whether the structured fields appear. */}
-            <div className="inline-flex rounded-lg border border-card-border p-0.5">
+            {/* Only the conversation with Central offers the delay flag. */}
+            <div
+              className={`inline-flex rounded-lg border border-card-border p-0.5 ${
+                canLogDelay ? "" : "hidden"
+              }`}
+            >
               {(["note", "delay"] as const).map((value) => (
                 <button
                   key={value}

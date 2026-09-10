@@ -3,6 +3,7 @@
 import { getCurrentUser } from "@/lib/session";
 
 import {
+  canLogDelay,
   canUsePeer,
   insertMessage,
   isMessageKind,
@@ -101,7 +102,10 @@ export async function postMessageAction(
       authorName: user.full_name,
       authorRole: user.role,
       body: text,
-      kind: isMessageKind(kind) ? kind : "note",
+      // The UI hides the delay toggle outside the conversation with Central,
+      // but this is a public endpoint, so the rule is enforced here too.
+      kind:
+        isMessageKind(kind) && canLogDelay(user.role, peer) ? kind : "note",
     });
     await markConversationRead(user.id, orderId, peer);
 

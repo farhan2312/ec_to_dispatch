@@ -86,6 +86,15 @@ export function peersFor(role: string): string[] {
   return [...DEPARTMENT_LANES.filter((r) => r !== role), CENTRAL_PEER];
 }
 
+/**
+ * Whether a delay may be logged in this conversation. A delay goes on the
+ * order's record, which is Central's to keep — department-to-department is
+ * ordinary chatter, so it only carries notes.
+ */
+export function canLogDelay(role: string, peer: string): boolean {
+  return isCentral(role) ? isDepartmentLane(peer) : peer === CENTRAL_PEER;
+}
+
 /** Whether this user may open and post in the conversation with `peer`. */
 export function canUsePeer(role: string, peer: string): boolean {
   return peersFor(role).includes(peer);

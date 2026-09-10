@@ -1059,7 +1059,9 @@ export async function listDispatchRegister(): Promise<DispatchRegisterRow[]> {
 // ---------------------------------------------------------------------------
 
 export type OrderOverviewRow = {
-  id: string;
+  // The EC's id, or null on an order that has no ECs yet — those still get a
+  // row so the pipeline can list the SO.
+  id: string | null;
   order_id: string;
   sl_no: number;
   so_no: string | null;
@@ -1109,7 +1111,10 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             o.client_name,
             o.industry_type,
             o.market_type,
-            CASE WHEN it.seq = MIN(it.seq) OVER (PARTITION BY o.id)
+            -- Order value belongs to the SO, so it is printed once: on the
+            -- first EC, or on the bare SO row when there are none.
+            CASE WHEN it.seq IS NULL
+                   OR it.seq = MIN(it.seq) OVER (PARTITION BY o.id)
                  THEN o.order_value::text END AS order_value,
             -- Any PI exists? (Billing progress in the pipeline: Tax Invoice
             -- SOs are "done" once at least one PI is added; Challan SOs are
@@ -1147,15 +1152,15 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             to_char(o.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
             to_char(o.dispatch_target_revised_date, 'YYYY-MM-DD')
               AS dispatch_target_revised_date
-       FROM order_items it
-       JOIN orders o ON o.id = it.order_id
+       FROM orders o
+       LEFT JOIN order_items it             ON it.order_id = o.id
        LEFT JOIN order_billing b            ON b.order_id = o.id
        LEFT JOIN order_accounts a           ON a.order_id = o.id
        LEFT JOIN order_drawing dr           ON dr.item_id = it.id
        LEFT JOIN order_qc qc                ON qc.item_id = it.id
        LEFT JOIN order_planning pl          ON pl.item_id = it.id
        LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
-      ORDER BY o.sl_no ASC, it.seq ASC`
+      ORDER BY o.sl_no ASC, it.seq ASC NULLS FIRST`
   );
   return result.rows;
 }

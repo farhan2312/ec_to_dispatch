@@ -457,25 +457,28 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
     setTimeout(() => setRefreshing(false), 500);
   }
 
-  const total = rows.length;
-  const overdue = rows.filter(isOverdue).length;
+  // An order with no ECs contributes a row so the pipeline can list it, but
+  // it is not an EC — every per-EC figure counts only the real ones.
+  const ecRows = rows.filter((r) => r.id !== null);
+  const total = ecRows.length;
+  const overdue = ecRows.filter(isOverdue).length;
   // order_value is only emitted on the SO's first EC (see listOrdersOverview),
   // so summing across all rows gives the true book value.
-  const totalValue = rows.reduce((sum, r) => sum + (Number(r.order_value) || 0), 0);
+  const totalValue = ecRows.reduce((sum, r) => sum + (Number(r.order_value) || 0), 0);
 
   // Share of orders each department has completed. QC's denominator excludes
   // orders flagged "QC Needed = No", since that department isn't involved.
-  const qcApplicable = rows.filter(
+  const qcApplicable = ecRows.filter(
     (r) => (r.qc_required ?? "").trim().toLowerCase() !== "no"
   ).length;
   const departmentProgress: { label: string; done: number; of: number }[] = [
-    { label: "Billing & Operations", done: rows.filter(done.billing).length, of: total },
-    { label: "Accounts", done: rows.filter(done.accounts).length, of: total },
-    { label: "Drawing", done: rows.filter(done.drawing).length, of: total },
-    { label: "Purchase", done: rows.filter(done.purchase).length, of: total },
-    { label: "Quality", done: rows.filter(done.qc).length, of: qcApplicable },
-    { label: "Planning", done: rows.filter(done.planning).length, of: total },
-    { label: "Assembly & Packing", done: rows.filter(done.dispatch).length, of: total },
+    { label: "Billing & Operations", done: ecRows.filter(done.billing).length, of: total },
+    { label: "Accounts", done: ecRows.filter(done.accounts).length, of: total },
+    { label: "Drawing", done: ecRows.filter(done.drawing).length, of: total },
+    { label: "Purchase", done: ecRows.filter(done.purchase).length, of: total },
+    { label: "Quality", done: ecRows.filter(done.qc).length, of: qcApplicable },
+    { label: "Planning", done: ecRows.filter(done.planning).length, of: total },
+    { label: "Assembly & Packing", done: ecRows.filter(done.dispatch).length, of: total },
   ];
 
   // Group the per-EC rows into SO cards so each SO is one line with its ECs
@@ -503,21 +506,26 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
     for (const r of rows) {
       const key = r.order_id;
       const card = map.get(key);
-      if (card) card.ecs.push(r);
-      else map.set(key, {
-        order_id: r.order_id,
-        sl_no: r.sl_no,
-        so_no: r.so_no,
-        client_name: r.client_name,
-        has_pi: r.has_pi,
-        payment_status: r.payment_status,
-        payment_terms: r.payment_terms,
-        dispatch_status: r.dispatch_status,
-        dispatch_target: dispatchTarget(r),
-        dispatch_done: done.dispatch(r),
-        order_value: r.order_value,
-        ecs: [r],
-      });
+      // The placeholder row for an EC-less order carries the SO's values but
+      // is not an EC, so it seeds the card without joining its EC list.
+      if (card) {
+        if (r.id !== null) card.ecs.push(r);
+      } else {
+        map.set(key, {
+          order_id: r.order_id,
+          sl_no: r.sl_no,
+          so_no: r.so_no,
+          client_name: r.client_name,
+          has_pi: r.has_pi,
+          payment_status: r.payment_status,
+          payment_terms: r.payment_terms,
+          dispatch_status: r.dispatch_status,
+          dispatch_target: dispatchTarget(r),
+          dispatch_done: done.dispatch(r),
+          order_value: r.order_value,
+          ecs: r.id !== null ? [r] : [],
+        });
+      }
     }
     return [...map.values()].sort((a, b) => a.sl_no - b.sl_no);
   }, [rows]);
@@ -883,6 +891,11 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                                   below works to the same one.
                                 </span>
                               </p>
+                              {card.ecs.length === 0 ? (
+                                <p className="rounded-lg border border-card-border bg-surface px-3 py-4 text-sm text-muted">
+                                  No ECs on this order yet.
+                                </p>
+                              ) : (
                               <div className="overflow-x-auto rounded-lg border border-card-border bg-surface">
                                 <table className="w-full min-w-[820px] text-sm">
                                   <thead>
@@ -916,7 +929,7 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                                   </thead>
                                   <tbody className="divide-y divide-card-border">
                                     {card.ecs.map((row) => (
-                                      <tr key={row.id} className="text-foreground">
+                                      <tr key={String(row.id)} className="text-foreground">
                                         <td className="px-3 py-2 whitespace-nowrap">
                                           <Link
                                             href={`/risansi/orders/${row.order_id}/items/${row.id}`}
@@ -940,6 +953,7 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                                   </tbody>
                                 </table>
                               </div>
+                              )}
                             </div>
                           </div>
                         </td>

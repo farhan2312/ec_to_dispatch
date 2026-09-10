@@ -260,6 +260,27 @@ export async function unreadByOrder(
   return counts;
 }
 
+/**
+ * The newest thing the viewer can see on one SO — a change token for the
+ * long poll. Messages are append-only, so this only ever moves forward, and
+ * comparing it is enough to know something arrived in any conversation on the
+ * order, not just the one on screen.
+ */
+export async function latestActivity(
+  orderId: string,
+  viewer: { id: string; role: string }
+): Promise<string | null> {
+  if (peersFor(viewer.role).length === 0) return null;
+  const { param, params } = withRole(viewer, [orderId]);
+  const result = await query<{ at: string | null }>(
+    `SELECT to_char(MAX(m.created_at) AT TIME ZONE 'UTC', ${ISO}) AS at
+       FROM order_messages m
+      WHERE m.order_id = $1 AND ${visibleSql(viewer.role, param)}`,
+    params
+  );
+  return result.rows[0]?.at ?? null;
+}
+
 /** One unread discussion entry, for the header inbox. */
 export type InboxEntry = {
   id: string;

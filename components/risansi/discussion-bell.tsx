@@ -35,6 +35,45 @@ export function DiscussionBell({
   const [unread, setUnread] = useState(initialUnread);
   const wrapRef = useRef<HTMLDivElement>(null);
 
+  /**
+   * Long-poll the unread total so the badge moves without a reload. The token
+   * is the count itself — the only thing this icon renders — so the request
+   * comes back the moment it changes in either direction.
+   */
+  useEffect(() => {
+    const controller = new AbortController();
+    let stopped = false;
+    let since = String(initialUnread);
+
+    async function loop() {
+      while (!stopped) {
+        try {
+          const res = await fetch(
+            `/api/orders/discussion/poll?since=${encodeURIComponent(since)}`,
+            { signal: controller.signal, cache: "no-store" }
+          );
+          if (!res.ok) {
+            await new Promise((r) => setTimeout(r, 5000));
+            continue;
+          }
+          const data: { since: string | null; unread: number } = await res.json();
+          if (stopped) return;
+          since = String(data.since ?? "0");
+          setUnread(data.unread);
+        } catch {
+          if (stopped) return;
+          await new Promise((r) => setTimeout(r, 5000));
+        }
+      }
+    }
+    loop();
+
+    return () => {
+      stopped = true;
+      controller.abort();
+    };
+  }, [initialUnread]);
+
   // Close on an outside click or Escape.
   useEffect(() => {
     if (!open) return;

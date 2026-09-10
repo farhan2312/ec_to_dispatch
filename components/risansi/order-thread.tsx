@@ -44,9 +44,11 @@ function stamp(iso: string): string {
 }
 
 /**
- * One SO's discussion. Lanes are per department and never cross: a department
- * user sees only their own lane, Central Visibility / Admin pick which
- * department they're talking to.
+ * One SO's discussion, as a list of conversations. A department talks to every
+ * other department and to Central Visibility; Central talks to each
+ * department. Each conversation is strictly between its two sides.
+ *
+ * The open panel long-polls, so a reply lands without a reload.
  *
  * An entry is either a plain note or one flagged as a delay. A delay is the
  * same message, marked and dated by when it was logged, so the reason for a
@@ -80,13 +82,17 @@ export function OrderThread({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  // Newest message the poll has seen on this SO, and the conversation it is
+  // watching — both refs so a delivery doesn't restart the loop.
+  const sinceRef = useRef<string | null>(null);
+  const peerRef = useRef<string | null>(null);
 
   // Composer — a note, or the same message flagged as a delay.
   const [mode, setMode] = useState<"note" | "delay">("note");
   const [showLogs, setShowLogs] = useState(false);
   const [body, setBody] = useState("");
 
-  async function refreshLanes() {
+  async function refreshConversations() {
     const res = await listConversationsAction(orderId);
     if (res.ok) setConversations(res.conversations);
   }
@@ -117,7 +123,14 @@ export function OrderThread({
     };
   }, [orderId, central]);
 
-  // Load the selected lane — only once the panel is open.
+  // Switching conversation resets the poll cursor, or the new tab would look
+  // up to date before anything has been fetched for it.
+  useEffect(() => {
+    peerRef.current = peer;
+    sinceRef.current = null;
+  }, [peer]);
+
+  // Load the selected conversation — only once the panel is open.
   useEffect(() => {
     if (!peer || !open) return;
     let cancelled = false;
@@ -133,7 +146,7 @@ export function OrderThread({
       }
       setError(null);
       setMessages(res.messages);
-      // The lane is read now — clear its badge without another round trip.
+      // The conversation is read now — clear its badge without a round trip.
       setConversations((prev) =>
         prev.map((c) => (c.peer === peer ? { ...c, unread: 0 } : c))
       );
@@ -147,11 +160,65 @@ export function OrderThread({
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
 
+  /**
+   * Long-poll while the panel is open: each request is held server-side until
+   * something lands on this SO — in any conversation, not just the one on
+   * screen, so another tab's badge lights up too — then we ask again.
+   *
+   * The cursor lives in a ref rather than state: putting it in the dependency
+   * list would tear down and restart the loop on every delivery.
+   */
+  useEffect(() => {
+    if (!open || !peer) return;
+    const controller = new AbortController();
+    let stopped = false;
+
+    async function loop() {
+      while (!stopped) {
+        try {
+          const params = new URLSearchParams({ order: orderId, peer: peer! });
+          if (sinceRef.current) params.set("since", sinceRef.current);
+          const res = await fetch(`/api/orders/discussion/poll?${params}`, {
+            signal: controller.signal,
+            cache: "no-store",
+          });
+          if (!res.ok) {
+            await new Promise((r) => setTimeout(r, 5000));
+            continue;
+          }
+          const data: {
+            since: string | null;
+            changed: boolean;
+            messages: OrderMessage[] | null;
+            conversations: ConversationSummary[] | null;
+          } = await res.json();
+          // Ignore a late answer for a conversation we have since left.
+          if (stopped || peerRef.current !== peer) return;
+          sinceRef.current = data.since;
+          if (data.changed) {
+            if (data.messages) setMessages(data.messages);
+            if (data.conversations) setConversations(data.conversations);
+          }
+        } catch {
+          if (stopped) return;
+          // Network blip — back off before retrying so we don't spin.
+          await new Promise((r) => setTimeout(r, 5000));
+        }
+      }
+    }
+    loop();
+
+    return () => {
+      stopped = true;
+      controller.abort();
+    };
+  }, [orderId, peer, open]);
+
   async function send(event: FormEvent) {
     event.preventDefault();
     if (!peer || body.trim() === "" || sending) return;
     setSending(true);
-    const res = await postMessageAction(orderId, peer, body, mode);
+    const res = await postMessageAction(orderId, peer, body, composing);
     setSending(false);
     if (!res.ok) {
       setError(res.error);
@@ -161,7 +228,7 @@ export function OrderThread({
     setBody("");
     setMode("note");
     setMessages(res.messages);
-    refreshLanes();
+    refreshConversations();
   }
 
   const peerLabel = peer ? roleLabel(peer) : "";
@@ -170,11 +237,10 @@ export function OrderThread({
   // department, so every one of theirs qualifies.
   const canLogDelay = central || peer === "central_visibility";
 
-  // Switching to a department tab hides the delay toggle; drop the mode with
-  // it so a half-composed delay is not posted as one into the wrong thread.
-  useEffect(() => {
-    if (!canLogDelay) setMode("note");
-  }, [canLogDelay]);
+  // A conversation that cannot carry a delay always sends a note, whatever the
+  // toggle was last left on — derived, so switching tabs needs no reset and
+  // there is no window where the two disagree.
+  const composing = canLogDelay ? mode : "note";
   // Header summary, so a collapsed card still shows there is something here.
   const totalUnread = conversations.reduce((n, c) => n + c.unread, 0);
   const totalMessages = conversations.reduce((n, c) => n + c.total, 0);
@@ -450,7 +516,7 @@ export function OrderThread({
                 maxLength={MAX_MESSAGE_LENGTH}
                 disabled={!peer || sending}
                 placeholder={
-                  mode === "delay"
+                  composing === "delay"
                     ? "What exactly is holding it up?"
                     : peerLabel
                       ? `Message ${peerLabel}…`
@@ -462,19 +528,19 @@ export function OrderThread({
                 type="submit"
                 disabled={!peer || sending || body.trim() === ""}
                 className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-[10px] px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-                  mode === "delay"
+                  composing === "delay"
                     ? "bg-amber-600 text-white hover:bg-amber-700"
                     : "bg-primary text-primary-foreground hover:bg-primary-hover"
                 }`}
               >
                 {sending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
-                ) : mode === "delay" ? (
+                ) : composing === "delay" ? (
                   <AlertTriangle className="h-4 w-4" />
                 ) : (
                   <Send className="h-4 w-4" />
                 )}
-                {mode === "delay" ? "Log delay" : "Send"}
+                {composing === "delay" ? "Log delay" : "Send"}
               </button>
             </div>
           </form>

@@ -9,7 +9,13 @@
 // Plain module (no server imports): the dashboards are client components.
 
 import type { OrderOverviewRow } from "@/lib/orders";
-import { DEPT_FILTER_LABELS, isPerEcDept, type DeptFilterKey } from "@/lib/dept-status";
+import {
+  DEPT_FILTER_LABELS,
+  NOT_APPLICABLE,
+  PENDING,
+  isPerEcDept,
+  type DeptFilterKey,
+} from "@/lib/dept-status";
 
 export type DeptKey = DeptFilterKey;
 
@@ -51,7 +57,14 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     key: "drawing",
     label: DEPT_FILTER_LABELS.drawing,
     perEc: true,
-    status: (r) => text(r.drg_status) || "Pending",
+    // The column carries the raw wording ("Drg approved"); the filter and
+    // the popup say "Approved". One vocabulary, so say theirs.
+    status: (r) =>
+      same(r.drg_status, "drg approved")
+        ? "Approved"
+        : same(r.drg_status, "drg. issued to client")
+          ? "Issued to Client"
+          : PENDING,
     done: (r) => same(r.drg_status, "drg approved"),
     na: never,
     target: (r) => r.drg_target_date,
@@ -65,10 +78,10 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     // check has to come first or every non-BOI order reads as finished.
     status: (r) =>
       !same(r.boi, "yes")
-        ? "No BOI"
+        ? NOT_APPLICABLE
         : r.purchase_done
           ? "Received"
-          : "Pending",
+          : PENDING,
     done: (r) => same(r.boi, "yes") && r.purchase_done,
     na: (r) => !same(r.boi, "yes"),
     target: (r) => r.purchase_target_date,
@@ -80,10 +93,10 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     perEc: true,
     status: (r) =>
       same(r.qc_required, "no")
-        ? "Not required"
+        ? NOT_APPLICABLE
         : r.qc_submitted
           ? "Submitted"
-          : "Pending",
+          : PENDING,
     done: (r) => !same(r.qc_required, "no") && r.qc_submitted,
     na: (r) => same(r.qc_required, "no"),
     target: (r) => r.qc_doc_target_date,
@@ -93,8 +106,11 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     key: "planning",
     label: DEPT_FILTER_LABELS.planning,
     perEc: true,
-    status: (r) => text(r.planning_status) || "Pending",
-    done: (r) => same(r.planning_status, "completed"),
+    status: (r) => text(r.planning_status) || PENDING,
+    // Any status recorded counts as done — the rule getOrderDeptStatus uses,
+    // and the one the Departments popup shows. ("Completed" was never one of
+    // the values Planning can file, so the old check never matched.)
+    done: (r) => !!text(r.planning_status),
     na: never,
     // Planning has no target of its own; it schedules to the dispatch date.
     target: dispatchTarget,
@@ -104,7 +120,7 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     key: "assembly",
     label: DEPT_FILTER_LABELS.assembly,
     perEc: true,
-    status: (r) => (r.assembly_done ? "Packed" : "Pending"),
+    status: (r) => (r.assembly_done ? "Packed" : PENDING),
     done: (r) => r.assembly_done,
     na: never,
     target: (r) => r.dispatch_team_target_date,
@@ -116,7 +132,7 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     perEc: false,
     status: (r) =>
       !r.has_pi
-        ? "Pending"
+        ? PENDING
         : same(r.bill_type, "challan")
           ? "Challan filed"
           : "PI raised",
@@ -132,8 +148,8 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     // A Challan order carries no receivable, so Accounts never acts on it.
     status: (r) =>
       same(r.bill_type, "challan")
-        ? "N/A"
-        : text(r.payment_status) || "Pending",
+        ? NOT_APPLICABLE
+        : text(r.payment_status) || PENDING,
     done: (r) =>
       !same(r.bill_type, "challan") &&
       (same(r.payment_status, "payment rcvd") ||
@@ -146,7 +162,7 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     key: "dispatch",
     label: DEPT_FILTER_LABELS.dispatch,
     perEc: false,
-    status: (r) => text(r.dispatch_status) || "Pending",
+    status: (r) => text(r.dispatch_status) || PENDING,
     done: (r) => same(r.dispatch_status, "fully dispatch"),
     na: never,
     target: dispatchTarget,

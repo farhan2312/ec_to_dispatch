@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+import { Loader2 } from "lucide-react";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { roleLabel } from "@/lib/roles";
 import type { AuditEvent, AuditStats, AuditUserRow } from "@/lib/audit";
@@ -77,7 +79,17 @@ export function AuditLogView({
   users: PageResult<AuditUserRow> | null;
   events: PageResult<AuditEvent> | null;
 }) {
-  const { setParams } = useUrlTable();
+  const { setParams, pending } = useUrlTable();
+  // Changing a tab or a range is a server round trip, so the button has to
+  // show the click straight away rather than sitting inert until the rows come
+  // back. `pending` is the whole reset: while the transition runs the clicked
+  // value wins, and once the props are authoritative again a stale intent is
+  // simply ignored.
+  const [wantTab, setWantTab] = useState<string | null>(null);
+  const [wantRange, setWantRange] = useState<string | null>(null);
+  const shownTab = pending && wantTab ? wantTab : tab;
+  const shownRange = pending && wantRange ? wantRange : range;
+
   const isByUser = tab === "by_user";
   const result = (isByUser ? users : events) ?? {
     rows: [],
@@ -119,14 +131,20 @@ export function AuditLogView({
           <button
             key={t.key}
             type="button"
-            onClick={() => setParams({ tab: t.key === "by_user" ? null : t.key })}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
-              tab === t.key
+            onClick={() => {
+              setWantTab(t.key);
+              setParams({ tab: t.key === "by_user" ? null : t.key });
+            }}
+            className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+              shownTab === t.key
                 ? "border-primary text-primary"
                 : "border-transparent text-muted hover:text-foreground"
             }`}
           >
             {t.label}
+            {shownTab === t.key && pending && (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            )}
           </button>
         ))}
       </div>
@@ -138,14 +156,20 @@ export function AuditLogView({
             <button
               key={r.key}
               type="button"
-              onClick={() => setParams({ range: r.key === "7d" ? null : r.key })}
-              className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-                range === r.key
+              onClick={() => {
+                setWantRange(r.key);
+                setParams({ range: r.key === "7d" ? null : r.key });
+              }}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                shownRange === r.key
                   ? "border-primary bg-primary text-primary-foreground"
                   : "border-input-border text-foreground hover:bg-background"
               }`}
             >
               {r.label}
+              {shownRange === r.key && pending && (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              )}
             </button>
           ))}
         </div>

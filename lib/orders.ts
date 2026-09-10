@@ -1153,7 +1153,13 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
              END) AS purchase_done,
             (qc.qc_doc_actual_date IS NOT NULL) AS qc_submitted,
             o.qc_required,
-            pl.planning_status,
+            -- Planning files its status on whichever of the three columns
+            -- applies, so read them in the same order getOrderDeptStatus and
+            -- the order-list filter do. Reading planning_status alone showed
+            -- only the free-text one and missed both selects.
+            COALESCE(NULLIF(pl.actual_pump_status, ''),
+                     NULLIF(pl.actual_spare_status, ''),
+                     NULLIF(pl.planning_status, '')) AS planning_status,
             (ad.actual_packing_date IS NOT NULL) AS assembly_done,
             ${DISPATCH_STATUS} AS dispatch_status,
             o.payment_terms,

@@ -3,21 +3,19 @@
 import { getCurrentUser } from "@/lib/session";
 
 import {
-  canUseLane,
+  canUsePeer,
   insertMessage,
   isMessageKind,
+  listConversations,
   listDelayLogs,
   listDiscussionInbox,
-  listLanes,
-  lanesOf,
   listMessages,
-  markLanesRead,
-  resolveLane,
-  resolveRecipient,
+  markConversationRead,
+  sidesFor,
   MAX_MESSAGE_LENGTH,
+  type ConversationSummary,
   type DelayLogReport,
   type InboxEntry,
-  type LaneSummary,
   type OrderMessage,
 } from "@/lib/order-messages";
 
@@ -25,31 +23,28 @@ export type ThreadResult =
   | { ok: true; messages: OrderMessage[] }
   | { ok: false; error: string };
 
-export type LanesResult =
-  | { ok: true; lanes: LaneSummary[] }
+export type ConversationsResult =
+  | { ok: true; conversations: ConversationSummary[] }
   | { ok: false; error: string };
 
 /**
- * Read one conversation on an SO and mark it read. The lane is authorized
- * against the caller's role, so a department user can only ever open their own
- * no matter what the browser asks for — but the thread also carries whatever
- * other departments have addressed to that lane.
+ * Read one conversation on an SO and mark it read. The peer is authorized
+ * against the caller's role, so a department can only ever open a conversation
+ * it is part of, no matter what the browser asks for.
  */
 export async function openThreadAction(
   orderId: string,
-  lane: string
+  peer: string
 ): Promise<ThreadResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
-  if (!canUseLane(user.role, lane)) {
+  if (!canUsePeer(user.role, peer)) {
     return { ok: false, error: "You don't have access to that conversation." };
   }
 
   try {
-    const messages = await listMessages(orderId, lane, user.id);
-    // A thread spans every lane it drew from, so mark them all read rather
-    // than leaving another department's message showing unread forever.
-    await markLanesRead(user.id, orderId, [lane, ...lanesOf(messages)]);
+    const messages = await listMessages(orderId, peer, user);
+    await markConversationRead(user.id, orderId, peer);
     return { ok: true, messages };
   } catch (error) {
     console.error("openThreadAction failed:", error);
@@ -57,38 +52,36 @@ export async function openThreadAction(
   }
 }
 
-/** Lane summaries for one SO — a department user gets exactly one. */
-export async function listLanesAction(orderId: string): Promise<LanesResult> {
+/** Every conversation the caller may hold on one SO, with its unread count. */
+export async function listConversationsAction(
+  orderId: string
+): Promise<ConversationsResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
   try {
-    return { ok: true, lanes: await listLanes(orderId, user) };
+    return { ok: true, conversations: await listConversations(orderId, user) };
   } catch (error) {
-    console.error("listLanesAction failed:", error);
+    console.error("listConversationsAction failed:", error);
     return { ok: false, error: "Could not load the conversation." };
   }
 }
 
 /**
- * Post to a lane. Central Visibility / Admin name the department they are
- * replying to; a department user's message always lands in their own lane.
- *
- * `toRole` addresses another department: the message stays in the author's
- * lane and also shows up in that department's thread. Without it nothing
- * crosses a lane.
+ * Post into one conversation. The peer names the other side: a department for
+ * Central, and for a department either another department or Central
+ * Visibility. Which columns that lands in is sidesFor's business.
  */
 export async function postMessageAction(
   orderId: string,
-  requestedLane: string,
+  peer: string,
   body: string,
-  kind = "note",
-  toRole: string | null = null
+  kind = "note"
 ): Promise<ThreadResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
 
-  const lane = resolveLane(user.role, requestedLane);
-  if (!lane) return { ok: false, error: "Pick a department to reply to." };
+  const sides = sidesFor(user.role, peer);
+  if (!sides) return { ok: false, error: "Pick who to send this to." };
 
   const text = body.trim();
   if (text === "") return { ok: false, error: "Type a message first." };
@@ -102,17 +95,17 @@ export async function postMessageAction(
   try {
     await insertMessage({
       orderId,
-      lane,
+      deptRole: sides.deptRole,
+      toRole: sides.toRole,
       authorId: user.id,
       authorName: user.full_name,
       authorRole: user.role,
       body: text,
       kind: isMessageKind(kind) ? kind : "note",
-      toRole: toRole ? resolveRecipient(lane, toRole) : null,
     });
+    await markConversationRead(user.id, orderId, peer);
 
-    const messages = await listMessages(orderId, lane, user.id);
-    await markLanesRead(user.id, orderId, [lane, ...lanesOf(messages)]);
+    const messages = await listMessages(orderId, peer, user);
     return { ok: true, messages };
   } catch (error) {
     console.error("postMessageAction failed:", error);
@@ -132,7 +125,7 @@ export async function discussionInboxAction(): Promise<InboxResult> {
     return { ok: true, entries: await listDiscussionInbox(user) };
   } catch (error) {
     console.error("discussionInboxAction failed:", error);
-    return { ok: false, error: "Could not load your discussions." };
+    return { ok: false, error: "Could not load discussions." };
   }
 }
 
@@ -140,7 +133,7 @@ export type DelayLogsResult =
   | { ok: true; report: DelayLogReport }
   | { ok: false; error: string };
 
-/** Every delay logged on one SO, for the delay-log table. */
+/** The delay log of one SO, for the modal and the PDF. */
 export async function delayLogsAction(
   orderId: string
 ): Promise<DelayLogsResult> {

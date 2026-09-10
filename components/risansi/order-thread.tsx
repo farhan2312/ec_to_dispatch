@@ -10,10 +10,13 @@ import {
   MessageSquare,
   Send,
 } from "lucide-react";
-import { ALL_ROLES, isCentral, roleLabel } from "@/lib/roles";
-import type { LaneSummary, OrderMessage } from "@/lib/order-messages";
+import { isCentral, roleLabel } from "@/lib/roles";
+import type {
+  ConversationSummary,
+  OrderMessage,
+} from "@/lib/order-messages";
 import {
-  listLanesAction,
+  listConversationsAction,
   openThreadAction,
   postMessageAction,
 } from "@/app/risansi/orders/thread-actions";
@@ -21,12 +24,6 @@ import { DelayLogsModal } from "./delay-logs-modal";
 
 const MAX_MESSAGE_LENGTH = 2000;
 
-// Departments a message can be addressed to: every lane but the one it is
-// posted in. Derived from lib/roles rather than lib/order-messages, which
-// pulls in the database driver and must not reach the browser.
-function recipientsFor(lane: string): string[] {
-  return ALL_ROLES.filter((r) => !isCentral(r) && r !== lane);
-}
 
 function stamp(iso: string): string {
   const d = new Date(iso);
@@ -74,11 +71,10 @@ export function OrderThread({
 }) {
   const central = isCentral(role);
   const [open, setOpen] = useState(collapsible ? defaultOpen : true);
-  const [lanes, setLanes] = useState<LaneSummary[]>([]);
-  const [lane, setLane] = useState<string | null>(central ? null : role);
-  // Who the next message goes to. Null keeps it inside the lane, which is how
-  // the thread has always worked; naming a department also puts it in theirs.
-  const [toRole, setToRole] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  // The conversation on screen — who it is with. Everyone starts on the one
+  // most worth reading, picked once the summaries arrive.
+  const [peer, setPeer] = useState<string | null>(null);
   const [messages, setMessages] = useState<OrderMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -91,31 +87,30 @@ export function OrderThread({
   const [body, setBody] = useState("");
 
   async function refreshLanes() {
-    const res = await listLanesAction(orderId);
-    if (res.ok) setLanes(res.lanes);
+    const res = await listConversationsAction(orderId);
+    if (res.ok) setConversations(res.conversations);
   }
 
-  // Pick the lane worth showing first: unread, else most recently active,
-  // else the first department. Department users only ever have their own.
+  // Open on the conversation worth reading first: one with unread, else the
+  // most recently active, else the first in the list.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const res = await listLanesAction(orderId);
+      const res = await listConversationsAction(orderId);
       if (cancelled) return;
       if (!res.ok) {
         setError(res.error);
         setLoading(false);
         return;
       }
-      setLanes(res.lanes);
-      if (!central) return; // lane already fixed to the user's own role
+      setConversations(res.conversations);
       const best =
-        res.lanes.find((l) => l.unread > 0) ??
-        [...res.lanes]
-          .filter((l) => l.last_at)
+        res.conversations.find((c) => c.unread > 0) ??
+        [...res.conversations]
+          .filter((c) => c.last_at)
           .sort((a, b) => (a.last_at! < b.last_at! ? 1 : -1))[0] ??
-        res.lanes[0];
-      setLane(best?.dept_role ?? null);
+        res.conversations[0];
+      setPeer((prev) => prev ?? best?.peer ?? null);
     })();
     return () => {
       cancelled = true;
@@ -124,11 +119,11 @@ export function OrderThread({
 
   // Load the selected lane — only once the panel is open.
   useEffect(() => {
-    if (!lane || !open) return;
+    if (!peer || !open) return;
     let cancelled = false;
     setLoading(true);
     (async () => {
-      const res = await openThreadAction(orderId, lane);
+      const res = await openThreadAction(orderId, peer);
       if (cancelled) return;
       setLoading(false);
       if (!res.ok) {
@@ -139,14 +134,14 @@ export function OrderThread({
       setError(null);
       setMessages(res.messages);
       // The lane is read now — clear its badge without another round trip.
-      setLanes((prev) =>
-        prev.map((l) => (l.dept_role === lane ? { ...l, unread: 0 } : l))
+      setConversations((prev) =>
+        prev.map((c) => (c.peer === peer ? { ...c, unread: 0 } : c))
       );
     })();
     return () => {
       cancelled = true;
     };
-  }, [orderId, lane, open]);
+  }, [orderId, peer, open]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -154,9 +149,9 @@ export function OrderThread({
 
   async function send(event: FormEvent) {
     event.preventDefault();
-    if (!lane || body.trim() === "" || sending) return;
+    if (!peer || body.trim() === "" || sending) return;
     setSending(true);
-    const res = await postMessageAction(orderId, lane, body, mode, toRole);
+    const res = await postMessageAction(orderId, peer, body, mode);
     setSending(false);
     if (!res.ok) {
       setError(res.error);
@@ -165,15 +160,14 @@ export function OrderThread({
     setError(null);
     setBody("");
     setMode("note");
-    setToRole(null);
     setMessages(res.messages);
     refreshLanes();
   }
 
-  const laneLabel = lane ? roleLabel(lane) : "";
+  const peerLabel = peer ? roleLabel(peer) : "";
   // Header summary, so a collapsed card still shows there is something here.
-  const totalUnread = lanes.reduce((n, l) => n + l.unread, 0);
-  const totalMessages = lanes.reduce((n, l) => n + l.total, 0);
+  const totalUnread = conversations.reduce((n, c) => n + c.unread, 0);
+  const totalMessages = conversations.reduce((n, c) => n + c.total, 0);
   const Toggle = collapsible ? "button" : "div";
 
   const delayCount = messages.filter((m) => m.kind === "delay").length;
@@ -249,24 +243,25 @@ export function OrderThread({
         />
       )}
 
-      {/* Central picks the department lane; a department user has just one. */}
-      {open && central && lanes.length > 0 && (
+      {/* Every conversation this user can hold on the SO. A department sees
+          the other departments and Central; Central sees each department. */}
+      {open && conversations.length > 0 && (
         <div className="flex gap-1.5 overflow-x-auto border-b border-card-border px-4 py-2.5">
-          {lanes.map((l) => {
-            const active = l.dept_role === lane;
+          {conversations.map((c) => {
+            const active = c.peer === peer;
             return (
               <button
-                key={l.dept_role}
+                key={c.peer}
                 type="button"
-                onClick={() => setLane(l.dept_role)}
+                onClick={() => setPeer(c.peer)}
                 className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
                   active
                     ? "bg-primary text-primary-foreground"
                     : "border border-card-border bg-background text-muted hover:text-foreground"
                 }`}
               >
-                {roleLabel(l.dept_role)}
-                {l.unread > 0 ? (
+                {roleLabel(c.peer)}
+                {c.unread > 0 ? (
                   <span
                     className={`inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
                       active
@@ -274,14 +269,14 @@ export function OrderThread({
                         : "bg-rose-600 text-white"
                     }`}
                   >
-                    {l.unread}
+                    {c.unread}
                   </span>
                 ) : (
-                  l.total > 0 && (
+                  c.total > 0 && (
                     <span
                       className={`text-[10px] font-medium ${active ? "opacity-80" : "opacity-70"}`}
                     >
-                      {l.total}
+                      {c.total}
                     </span>
                   )
                 )}
@@ -302,7 +297,7 @@ export function OrderThread({
             ) : messages.length === 0 ? (
               <p className="text-sm text-muted">
                 No messages yet
-                {central && laneLabel ? ` with ${laneLabel}` : ""}. Post an
+                {peerLabel ? ` with ${peerLabel}` : ""}. Post an
                 update, or log a delay so the reason stays on this order.
               </p>
             ) : (
@@ -420,27 +415,6 @@ export function OrderThread({
               ))}
             </div>
 
-            {/* Ask another department. Without one the message stays in this
-                lane, so a conversation is private unless it is addressed. */}
-            {lane && (
-              <label className="ml-2 inline-flex items-center gap-1.5 text-xs text-muted">
-                To
-                <select
-                  value={toRole ?? ""}
-                  onChange={(e) => setToRole(e.target.value || null)}
-                  className="h-7 rounded-md border border-input-border bg-surface px-2 text-xs text-foreground focus:border-primary focus:outline-none"
-                >
-                  <option value="">
-                    {central ? `${laneLabel} only` : "My department only"}
-                  </option>
-                  {recipientsFor(lane).map((r) => (
-                    <option key={r} value={r}>
-                      {roleLabel(r)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
 
             <div className="flex items-end gap-2">
               <textarea
@@ -455,19 +429,19 @@ export function OrderThread({
                 }}
                 rows={2}
                 maxLength={MAX_MESSAGE_LENGTH}
-                disabled={!lane || sending}
+                disabled={!peer || sending}
                 placeholder={
                   mode === "delay"
                     ? "What exactly is holding it up?"
-                    : central && laneLabel
-                      ? `Message ${laneLabel}…`
+                    : peerLabel
+                      ? `Message ${peerLabel}…`
                       : "Add an update…"
                 }
                 className="min-h-[2.75rem] flex-1 resize-y rounded-[10px] border border-input-border bg-surface px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:opacity-60"
               />
               <button
                 type="submit"
-                disabled={!lane || sending || body.trim() === ""}
+                disabled={!peer || sending || body.trim() === ""}
                 className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-[10px] px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
                   mode === "delay"
                     ? "bg-amber-600 text-white hover:bg-amber-700"

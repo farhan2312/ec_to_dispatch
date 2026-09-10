@@ -2,16 +2,19 @@ import { query } from "@/lib/db";
 import { ALL_ROLES, isCentral, type Role } from "@/lib/roles";
 
 /**
- * Per-SO discussion threads.
+ * Per-SO discussion, as two-party conversations.
  *
- * Every message sits in a *lane* named by a department role, and a lane is
- * private: a department reads its own, Admin / Central Visibility read all of
- * them and choose which one they are replying in.
+ * A message names its author's side (`dept_role`) and, optionally, the
+ * department it was sent to (`to_role`). A message with no recipient is
+ * addressed to Central Visibility — which is the shape every message had
+ * before departments could talk to each other, so nothing stored needs
+ * rewriting.
  *
- * A message may also name a recipient department (`to_role`). It stays in its
- * author's lane — so the sender keeps it in their own thread — and appears in
- * the named department's too. That is the only way one department reaches
- * another; without a recipient nothing crosses a lane, as before.
+ * The two parties are therefore `dept_role` and `to_role ?? central`. A
+ * department sees its own conversations and nothing else: with Central, and
+ * with each other department. Admin / Central Visibility keep full oversight —
+ * their view of a department shows everything that department is involved in,
+ * including its conversations with other departments.
  *
  * Messages are append-only — nothing here updates or deletes them.
  */
@@ -19,7 +22,7 @@ import { ALL_ROLES, isCentral, type Role } from "@/lib/roles";
 export type OrderMessage = {
   id: string;
   dept_role: string;
-  /** The department this was addressed to, or null for a private note. */
+  /** Who it was sent to, or null for Central Visibility. */
   to_role: string | null;
   author_id: string | null;
   author_name: string;
@@ -37,9 +40,10 @@ export function isMessageKind(value: string): value is MessageKind {
   return value === "note" || value === "delay";
 }
 
-/** One department lane on an SO, with its activity summary. */
-export type LaneSummary = {
-  dept_role: Role;
+/** One conversation on an SO — who it is with, and its activity. */
+export type ConversationSummary = {
+  /** The other side: a department role, or 'central_visibility'. */
+  peer: string;
   total: number;
   unread: number;
   last_at: string | null;
@@ -50,135 +54,161 @@ const ISO = `'YYYY-MM-DD"T"HH24:MI:SS"Z"'`;
 
 // Every column the UI renders for a message, aliased consistently so the
 // read and the insert-returning share one shape.
-const MESSAGE_COLUMNS = `m.id, m.dept_role, m.to_role, m.author_id, m.author_name,
-            m.author_role, m.kind, m.body,
+const MESSAGE_COLUMNS = `m.id, m.dept_role, m.to_role, m.author_id,
+            m.author_name, m.author_role, m.kind, m.body,
             to_char(m.created_at AT TIME ZONE 'UTC', ${ISO}) AS created_at`;
 
 export const MAX_MESSAGE_LENGTH = 2000;
 
-/** The roles a lane can be named after — every role except the central ones. */
+/** The department roles a conversation can be with — every non-central role. */
 export const DEPARTMENT_LANES: Role[] = ALL_ROLES.filter((r) => !isCentral(r));
+
+/** Central Visibility as a conversation partner. Admin shares this side. */
+export const CENTRAL_PEER = "central_visibility";
 
 function isDepartmentLane(value: string): value is Role {
   return (DEPARTMENT_LANES as string[]).includes(value);
 }
 
-/**
- * A message is visible when it sits in a lane you can read, or when it was
- * addressed to one. `$n` is the lane array parameter.
- */
-const visibleIn = (param: string) =>
-  `(m.dept_role = ANY(${param}) OR m.to_role = ANY(${param}))`;
-
-/**
- * Lanes the user may read on any SO: their own for a department user, all of
- * them for Admin / Central Visibility.
- */
-export function lanesFor(role: string): Role[] {
-  if (isCentral(role)) return DEPARTMENT_LANES;
-  return isDepartmentLane(role) ? [role] : [];
+function isPeer(value: string): boolean {
+  return value === CENTRAL_PEER || isDepartmentLane(value);
 }
 
 /**
- * Who a message may be addressed to: any department other than the author's
- * own lane. Addressing your own lane is what a private note already is.
+ * Who this user can hold a conversation with on an SO.
+ *
+ * A department talks to every other department and to Central; Central talks
+ * to each department — one conversation per department, as before.
  */
-export function recipientsFor(lane: string): Role[] {
-  return DEPARTMENT_LANES.filter((r) => r !== lane);
+export function peersFor(role: string): string[] {
+  if (isCentral(role)) return [...DEPARTMENT_LANES];
+  if (!isDepartmentLane(role)) return [];
+  return [...DEPARTMENT_LANES.filter((r) => r !== role), CENTRAL_PEER];
 }
 
-/** Validate a requested recipient, or null for a private note. */
-export function resolveRecipient(lane: string, requested: string): Role | null {
-  return isDepartmentLane(requested) && requested !== lane
-    ? (requested as Role)
-    : null;
-}
-
-/** Whether `role` may read and post in `lane`. */
-export function canUseLane(role: string, lane: string): boolean {
-  return isDepartmentLane(lane) && lanesFor(role).includes(lane);
+/** Whether this user may open and post in the conversation with `peer`. */
+export function canUsePeer(role: string, peer: string): boolean {
+  return peersFor(role).includes(peer);
 }
 
 /**
- * The lane a message from this author belongs in. A department user only ever
- * writes to their own lane, so their choice is ignored; Central must name one.
+ * Which messages belong to the viewer's conversation with `peer`.
+ *
+ * For a department both sides are pinned, so a conversation is strictly
+ * between the two. For Central the peer is a department and the filter is
+ * everything that department is party to, which is what keeps oversight whole.
+ *
+ * `$viewerRole` and `$peer` are the parameter placeholders to substitute.
  */
-export function resolveLane(role: string, requested: string): Role | null {
-  if (!isCentral(role)) return isDepartmentLane(role) ? role : null;
-  return isDepartmentLane(requested) ? requested : null;
+function conversationSql(viewerRole: string, peerParam: string, roleParam: string) {
+  const parties = `(m.dept_role = ${peerParam}
+                    OR COALESCE(m.to_role, '${CENTRAL_PEER}') = ${peerParam})`;
+  if (isCentral(viewerRole)) return parties;
+  return `${parties}
+          AND (m.dept_role = ${roleParam}
+               OR COALESCE(m.to_role, '${CENTRAL_PEER}') = ${roleParam})`;
+}
+
+/** Every message this user may see at all, whatever conversation it is in. */
+function visibleSql(viewerRole: string, roleParam: string) {
+  if (isCentral(viewerRole)) return "TRUE";
+  return `(m.dept_role = ${roleParam}
+           OR COALESCE(m.to_role, '${CENTRAL_PEER}') = ${roleParam})`;
+}
+
+/**
+ * Which conversation a message counts towards for this viewer — the key its
+ * read marker is stored under. Central files everything under the author's
+ * department, so their unread never double-counts a department-to-department
+ * message that involves two of their conversations.
+ */
+function peerOfSql(viewerRole: string, roleParam: string) {
+  if (isCentral(viewerRole)) return "m.dept_role";
+  return `CASE WHEN m.to_role IS NULL THEN '${CENTRAL_PEER}'
+               WHEN m.dept_role = ${roleParam} THEN m.to_role
+               ELSE m.dept_role END`;
+}
+
+/**
+ * Append the viewer's role to a query's parameters, but only when the SQL will
+ * reference it: every predicate above collapses to a constant for Central, and
+ * Postgres rejects a parameter the statement never binds.
+ */
+function withRole(
+  viewer: { role: string },
+  params: unknown[]
+): { param: string; params: unknown[] } {
+  if (isCentral(viewer.role)) return { param: "", params };
+  return { param: `$${params.length + 1}`, params: [...params, viewer.role] };
 }
 
 // ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
 
-/**
- * One conversation: everything in `lane` plus anything another department
- * addressed to it. A department passes its own lane; Central passes the lane
- * it is looking at.
- */
+/** One conversation on one SO, oldest first. */
 export async function listMessages(
   orderId: string,
-  lane: string,
-  viewerId: string
+  peer: string,
+  viewer: { id: string; role: string }
 ): Promise<OrderMessage[]> {
+  if (!canUsePeer(viewer.role, peer)) return [];
+  const { param, params } = withRole(viewer, [orderId, peer, viewer.id]);
   const result = await query<OrderMessage>(
     `SELECT ${MESSAGE_COLUMNS},
             (m.author_id = $3) AS mine
        FROM order_messages m
-      WHERE m.order_id = $1 AND ${visibleIn("ARRAY[$2]::text[]")}
+      WHERE m.order_id = $1
+        AND ${conversationSql(viewer.role, "$2", param)}
       ORDER BY m.created_at ASC`,
-    [orderId, lane, viewerId]
+    params
   );
   return result.rows;
 }
 
-/** The lanes a thread's messages live in — what to mark read when it opens. */
-export function lanesOf(messages: OrderMessage[]): string[] {
-  return [...new Set(messages.map((m) => m.dept_role))];
-}
-
 /**
- * Every lane the viewer may see on one SO, including the empty ones, so
- * Central can start a conversation with a department that has not posted yet.
+ * Every conversation the viewer may hold on one SO, including the empty ones,
+ * so a department can start one with a department that has not posted yet.
  */
-export async function listLanes(
+export async function listConversations(
   orderId: string,
   viewer: { id: string; role: string }
-): Promise<LaneSummary[]> {
-  const lanes = lanesFor(viewer.role);
-  if (lanes.length === 0) return [];
+): Promise<ConversationSummary[]> {
+  const peers = peersFor(viewer.role);
+  if (peers.length === 0) return [];
 
+  const { param, params } = withRole(viewer, [orderId, viewer.id]);
   const result = await query<{
-    dept_role: string;
+    peer: string;
     total: string;
     unread: string;
     last_at: string | null;
     last_body: string | null;
   }>(
-    `SELECT m.dept_role,
+    `SELECT ${peerOfSql(viewer.role, param)} AS peer,
             COUNT(*)::text AS total,
             COUNT(*) FILTER (
-              WHERE m.author_id <> $3
+              WHERE m.author_id <> $2
                 AND (r.last_read_at IS NULL OR m.created_at > r.last_read_at)
             )::text AS unread,
             to_char(MAX(m.created_at) AT TIME ZONE 'UTC', ${ISO}) AS last_at,
             (ARRAY_AGG(m.body ORDER BY m.created_at DESC))[1] AS last_body
        FROM order_messages m
        LEFT JOIN order_message_reads r
-              ON r.user_id = $3
+              ON r.user_id = $2
              AND r.order_id = m.order_id
-             AND r.dept_role = m.dept_role
-      WHERE m.order_id = $1 AND ${visibleIn("$2")}
-      GROUP BY m.dept_role`,
-    [orderId, lanes, viewer.id]
+             AND r.dept_role = ${peerOfSql(viewer.role, param)}
+      WHERE m.order_id = $1
+        AND ${visibleSql(viewer.role, param)}
+      GROUP BY 1`,
+    params
   );
 
-  const bySlug = new Map(result.rows.map((r) => [r.dept_role, r]));
-  return lanes.map((dept_role) => {
-    const row = bySlug.get(dept_role);
+  const bySlug = new Map(result.rows.map((r) => [r.peer, r]));
+  return peers.map((peer) => {
+    const row = bySlug.get(peer);
     return {
-      dept_role,
+      peer,
       total: row ? Number(row.total) : 0,
       unread: row ? Number(row.unread) : 0,
       last_at: row?.last_at ?? null,
@@ -188,29 +218,29 @@ export async function listLanes(
 }
 
 /**
- * Unread counts keyed by order id, for badging a list of SOs. Counts only the
- * lanes the viewer can see, and never their own messages.
+ * Unread counts keyed by order id, for badging a list of SOs. Counts only what
+ * the viewer can see, and never their own messages.
  */
 export async function unreadByOrder(
   orderIds: string[],
   viewer: { id: string; role: string }
 ): Promise<Record<string, number>> {
-  const lanes = lanesFor(viewer.role);
-  if (lanes.length === 0 || orderIds.length === 0) return {};
+  if (peersFor(viewer.role).length === 0 || orderIds.length === 0) return {};
 
+  const { param, params } = withRole(viewer, [orderIds, viewer.id]);
   const result = await query<{ order_id: string; unread: string }>(
     `SELECT m.order_id, COUNT(*)::text AS unread
        FROM order_messages m
        LEFT JOIN order_message_reads r
-              ON r.user_id = $3
+              ON r.user_id = $2
              AND r.order_id = m.order_id
-             AND r.dept_role = m.dept_role
+             AND r.dept_role = ${peerOfSql(viewer.role, param)}
       WHERE m.order_id = ANY($1)
-        AND ${visibleIn("$2")}
-        AND m.author_id <> $3
+        AND ${visibleSql(viewer.role, param)}
+        AND m.author_id <> $2
         AND (r.last_read_at IS NULL OR m.created_at > r.last_read_at)
       GROUP BY m.order_id`,
-    [orderIds, lanes, viewer.id]
+    params
   );
 
   const counts: Record<string, number> = {};
@@ -226,6 +256,8 @@ export type InboxEntry = {
   sl_no: number;
   dept_role: string;
   to_role: string | null;
+  /** The conversation it belongs to from the viewer's side. */
+  peer: string;
   author_name: string;
   author_role: string;
   kind: string;
@@ -234,32 +266,32 @@ export type InboxEntry = {
 };
 
 /**
- * Unread discussion entries across every SO, newest first — what the
- * header's discussion icon shows. Same lane rule as everywhere else, and a
- * user never sees their own messages here.
+ * Unread discussion entries across every SO, newest first — what the header's
+ * discussion icon shows. A user never sees their own messages here.
  */
 export async function listDiscussionInbox(
   viewer: { id: string; role: string },
   limit = 20
 ): Promise<InboxEntry[]> {
-  const lanes = lanesFor(viewer.role);
-  if (lanes.length === 0) return [];
+  if (peersFor(viewer.role).length === 0) return [];
+  const { param, params } = withRole(viewer, [viewer.id, limit]);
   const result = await query<InboxEntry>(
     `SELECT m.id, m.order_id, o.so_no, o.sl_no::int AS sl_no, m.dept_role,
-            m.to_role, m.author_name, m.author_role, m.kind, m.body,
+            m.to_role, ${peerOfSql(viewer.role, param)} AS peer,
+            m.author_name, m.author_role, m.kind, m.body,
             to_char(m.created_at AT TIME ZONE 'UTC', ${ISO}) AS created_at
        FROM order_messages m
        JOIN orders o ON o.id = m.order_id
        LEFT JOIN order_message_reads r
               ON r.user_id = $1
              AND r.order_id = m.order_id
-             AND r.dept_role = m.dept_role
-      WHERE ${visibleIn("$2")}
+             AND r.dept_role = ${peerOfSql(viewer.role, param)}
+      WHERE ${visibleSql(viewer.role, param)}
         AND m.author_id <> $1
         AND (r.last_read_at IS NULL OR m.created_at > r.last_read_at)
       ORDER BY m.created_at DESC
-      LIMIT $3`,
-    [viewer.id, lanes, limit]
+      LIMIT $2`,
+    params
   );
   return result.rows;
 }
@@ -269,19 +301,19 @@ export async function countDiscussionUnread(viewer: {
   id: string;
   role: string;
 }): Promise<number> {
-  const lanes = lanesFor(viewer.role);
-  if (lanes.length === 0) return 0;
+  if (peersFor(viewer.role).length === 0) return 0;
+  const { param, params } = withRole(viewer, [viewer.id]);
   const result = await query<{ n: string }>(
     `SELECT COUNT(*)::text AS n
        FROM order_messages m
        LEFT JOIN order_message_reads r
               ON r.user_id = $1
              AND r.order_id = m.order_id
-             AND r.dept_role = m.dept_role
-      WHERE ${visibleIn("$2")}
+             AND r.dept_role = ${peerOfSql(viewer.role, param)}
+      WHERE ${visibleSql(viewer.role, param)}
         AND m.author_id <> $1
         AND (r.last_read_at IS NULL OR m.created_at > r.last_read_at)`,
-    [viewer.id, lanes]
+    params
   );
   return Number(result.rows[0]?.n ?? 0);
 }
@@ -305,14 +337,13 @@ export type DelayLogReport = {
 };
 
 /**
- * Every delay logged against one SO, oldest first. Lane rule applies: a
- * department user sees only the delays in their own lane.
+ * Every delay logged against one SO, oldest first. A department sees the
+ * delays in conversations it is part of; Central sees all of them.
  */
 export async function listDelayLogs(
   orderId: string,
   viewer: { id: string; role: string }
 ): Promise<DelayLogReport> {
-  const lanes = lanesFor(viewer.role);
   const order = await query<{
     so_no: string | null;
     sl_no: number;
@@ -334,19 +365,20 @@ export async function listDelayLogs(
   const row = order.rows[0];
   const { so_no = null, sl_no = 0, ...targets } = row ?? {};
 
-  if (lanes.length === 0) {
+  if (peersFor(viewer.role).length === 0) {
     return { so_no, sl_no, targets, logs: [] };
   }
 
+  const { param, params } = withRole(viewer, [orderId]);
   const result = await query<DelayLog>(
     `SELECT m.id, m.dept_role, m.author_name, m.author_role, m.body,
             to_char(m.created_at AT TIME ZONE 'UTC', ${ISO}) AS created_at
        FROM order_messages m
       WHERE m.order_id = $1
-        AND ${visibleIn("$2")}
+        AND ${visibleSql(viewer.role, param)}
         AND m.kind = 'delay'
       ORDER BY m.created_at ASC`,
-    [orderId, lanes]
+    params
   );
 
   return { so_no, sl_no, targets, logs: result.rows };
@@ -356,9 +388,28 @@ export async function listDelayLogs(
 // Writes
 // ---------------------------------------------------------------------------
 
+/**
+ * The two sides a message is stored as.
+ *
+ * Central's messages keep the original shape — the department in `dept_role`,
+ * no recipient — so their conversations read exactly as they always have. A
+ * department writes its own role as the author side, and names the department
+ * it is asking; addressing Central means no recipient, which is the same shape
+ * again.
+ */
+export function sidesFor(
+  role: string,
+  peer: string
+): { deptRole: string; toRole: string | null } | null {
+  if (!canUsePeer(role, peer) || !isPeer(peer)) return null;
+  if (isCentral(role)) return { deptRole: peer, toRole: null };
+  return { deptRole: role, toRole: peer === CENTRAL_PEER ? null : peer };
+}
+
 export async function insertMessage(input: {
   orderId: string;
-  lane: string;
+  deptRole: string;
+  toRole: string | null;
   authorId: string;
   authorName: string;
   authorRole: string;
@@ -366,13 +417,11 @@ export async function insertMessage(input: {
   // 'delay' flags the entry as a delay; the date it happened is its
   // created_at, so nothing else is stored.
   kind?: MessageKind;
-  // The department being asked, or null to keep it inside the lane.
-  toRole?: string | null;
 }): Promise<OrderMessage> {
   const result = await query<OrderMessage>(
     `INSERT INTO order_messages
-        (order_id, dept_role, author_id, author_name, author_role, body, kind,
-         to_role)
+        (order_id, dept_role, to_role, author_id, author_name, author_role,
+         body, kind)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING id, dept_role, to_role, author_id, author_name, author_role,
                kind, body,
@@ -380,35 +429,36 @@ export async function insertMessage(input: {
                true AS mine`,
     [
       input.orderId,
-      input.lane,
+      input.deptRole,
+      input.toRole,
       input.authorId,
       input.authorName,
       input.authorRole,
       input.body,
       input.kind ?? "note",
-      input.toRole ?? null,
     ]
   );
   return result.rows[0];
 }
+
 /**
- * Mark a thread read up to now.
+ * Mark one conversation read up to now.
  *
- * Read state is per lane, and a thread can span several once other departments
- * address it — so every lane the viewer just saw is marked, not only their own.
+ * Read state is keyed by conversation, not by lane: two departments talking to
+ * each other and each talking to Central are separate threads, and reading one
+ * must not clear another.
  */
-export async function markLanesRead(
+export async function markConversationRead(
   userId: string,
   orderId: string,
-  lanes: string[]
+  peer: string
 ): Promise<void> {
-  const unique = [...new Set(lanes.filter(isDepartmentLane))];
-  if (unique.length === 0) return;
+  if (!isPeer(peer)) return;
   await query(
     `INSERT INTO order_message_reads (user_id, order_id, dept_role, last_read_at)
-     SELECT $1, $2, lane, now() FROM unnest($3::text[]) AS lane
+     VALUES ($1, $2, $3, now())
      ON CONFLICT (user_id, order_id, dept_role)
      DO UPDATE SET last_read_at = now()`,
-    [userId, orderId, unique]
+    [userId, orderId, peer]
   );
 }

@@ -7,7 +7,6 @@ import {
   Bell,
   KeyRound,
   LogOut,
-  MessageSquare,
   MoreHorizontal,
   X,
   type LucideIcon,
@@ -42,13 +41,11 @@ export function BottomNav({
   alertCount = 0,
   reminderCount = 0,
   notifUnread = 0,
-  messageUnread = 0,
 }: {
   user: ShellUser;
   alertCount?: number;
   reminderCount?: number;
   notifUnread?: number;
-  messageUnread?: number;
 }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -93,10 +90,6 @@ export function BottomNav({
     {
       item: { label: "Alerts", href: "/risansi/notifications", icon: Bell },
       badge: notifBadge,
-    },
-    {
-      item: { label: "Chat", href: "/risansi/messages", icon: MessageSquare },
-      badge: messageUnread,
     },
   ].slice(0, 4);
 

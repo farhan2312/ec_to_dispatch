@@ -10,7 +10,6 @@ import {
   ChevronsUpDown,
   KeyRound,
   LogOut,
-  MessageSquare,
 } from "lucide-react";
 import { logout } from "@/app/risansi/actions";
 import {
@@ -40,13 +39,11 @@ export function Sidebar({
   alertCount = 0,
   reminderCount = 0,
   notifUnread = 0,
-  messageUnread = 0,
 }: {
   user: SidebarUser;
   alertCount?: number;
   reminderCount?: number;
   notifUnread?: number;
-  messageUnread?: number;
 }) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -128,14 +125,6 @@ export function Sidebar({
                 icon: Bell,
               }}
               badge={notifBadge}
-            />
-            <NavLink
-              item={{
-                label: "Messages",
-                href: "/risansi/messages",
-                icon: MessageSquare,
-              }}
-              badge={messageUnread}
             />
           </div>
         </div>

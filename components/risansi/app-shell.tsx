@@ -62,7 +62,6 @@ export function AppShell({
   alertCount,
   reminderCount,
   notifUnread,
-  messageUnread,
   openBugCount,
   discussionUnread,
   children,
@@ -71,7 +70,6 @@ export function AppShell({
   alertCount: number;
   reminderCount: number;
   notifUnread: number;
-  messageUnread: number;
   openBugCount: number;
   // Unread SO-discussion messages — its own icon, not the bug bell.
   discussionUnread: number;
@@ -94,7 +92,6 @@ export function AppShell({
         alertCount={alertCount}
         reminderCount={reminderCount}
         notifUnread={notifUnread}
-        messageUnread={messageUnread}
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -207,7 +204,6 @@ export function AppShell({
         alertCount={alertCount}
         reminderCount={reminderCount}
         notifUnread={notifUnread}
-        messageUnread={messageUnread}
       />
     </div>
   );

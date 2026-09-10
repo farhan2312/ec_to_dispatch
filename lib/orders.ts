@@ -1129,11 +1129,8 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             CASE WHEN it.seq IS NULL
                    OR it.seq = MIN(it.seq) OVER (PARTITION BY o.id)
                  THEN o.order_value::text END AS order_value,
-            -- Any PI exists? (Billing progress in the pipeline: Tax Invoice
-            -- SOs are "done" once at least one PI is added; Challan SOs are
-            -- done once a challan number is filled on order_billing.)
-            (EXISTS (SELECT 1 FROM order_billing_docs d WHERE d.order_id = o.id)
-             OR b.challan_no IS NOT NULL) AS has_pi,
+            -- Billing's progress: a PI with a number on it, or a challan.
+            ${BILLING_RAISED} AS has_pi,
             a.payment_status,
             -- Drawing progress now derives from the EC revision list:
             -- approved on any revision wins, else issued-to-client, else null.
@@ -1497,6 +1494,23 @@ function detailSelect(alias: string, f: { column: string; type: string }): strin
   return `${alias}.${f.column}`;
 }
 
+/**
+ * Whether Billing has actually raised a PI (or filed a challan) on this SO.
+ *
+ * Adding a PI inserts a blank row, so testing that a row exists reported an
+ * untouched card as done. The PI number is what identifies a PI — the same
+ * field the "PI created" notification waits for — so that is the test.
+ *
+ * Self-contained subqueries rather than a joined alias, so every caller can
+ * drop it in wherever `o` is the order.
+ */
+const BILLING_RAISED = `(EXISTS (SELECT 1 FROM order_billing_docs d
+                                 WHERE d.order_id = o.id
+                                   AND COALESCE(d.pi_no, '') <> '')
+                         OR EXISTS (SELECT 1 FROM order_billing bl
+                                     WHERE bl.order_id = o.id
+                                       AND COALESCE(bl.challan_no, '') <> ''))`;
+
 // ---------------------------------------------------------------------------
 // Master SO list
 // ---------------------------------------------------------------------------
@@ -1567,10 +1581,7 @@ const PLANNING_ANY = `EXISTS (SELECT 1 FROM order_planning pl
 const NO_BOI = `COALESCE(o.boi, '') <> 'Yes'`;
 const NO_QC = `COALESCE(o.qc_required, '') = 'No'`;
 const IS_CHALLAN = `COALESCE(o.bill_type, '') = 'Challan'`;
-const BILL_RAISED = `(EXISTS (SELECT 1 FROM order_billing_docs d WHERE d.order_id = o.id)
-                      OR EXISTS (SELECT 1 FROM order_billing b
-                                  WHERE b.order_id = o.id
-                                    AND b.challan_no IS NOT NULL))`;
+const BILL_RAISED = BILLING_RAISED;
 const PAYMENT_SET = `EXISTS (SELECT 1 FROM order_accounts a
                              WHERE a.order_id = o.id
                                AND COALESCE(a.payment_status, '') <> '')`;
@@ -1996,8 +2007,7 @@ export async function getOrderDeptStatus(
     dispatch_target_revised_date: string | null;
   }>(
     `SELECT o.dispatch_status, o.bill_type,
-            (EXISTS (SELECT 1 FROM order_billing_docs d WHERE d.order_id = o.id)
-             OR b.challan_no IS NOT NULL) AS has_pi,
+            ${BILLING_RAISED} AS has_pi,
             a.payment_status,
             to_char(o.drg_target_date, 'YYYY-MM-DD') AS drg_target_date,
             to_char(o.purchase_target_date, 'YYYY-MM-DD') AS purchase_target_date,

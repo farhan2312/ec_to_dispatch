@@ -409,29 +409,30 @@ export function OrderThread({
             onSubmit={send}
             className="space-y-2.5 border-t border-card-border px-5 py-4"
           >
-            {/* Only the conversation with Central offers the delay flag. */}
-            <div
-              className={`inline-flex rounded-lg border border-card-border p-0.5 ${
-                canLogDelay ? "" : "hidden"
-              }`}
-            >
-              {(["note", "delay"] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setMode(value)}
-                  className={`h-7 rounded-md px-3 text-xs font-semibold transition-colors ${
-                    mode === value
-                      ? value === "delay"
-                        ? "bg-amber-600 text-white"
-                        : "bg-primary text-primary-foreground"
-                      : "text-muted hover:text-foreground"
-                  }`}
-                >
-                  {value === "note" ? "Note" : "Log a delay"}
-                </button>
-              ))}
-            </div>
+            {/* Only the conversation with Central offers the delay flag. Not
+                rendered rather than hidden by a class: `hidden` and
+                `inline-flex` both set display, and which one wins depends on
+                the order Tailwind emits them, not on the order written here. */}
+            {canLogDelay && (
+              <div className="inline-flex rounded-lg border border-card-border p-0.5">
+                {(["note", "delay"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setMode(value)}
+                    className={`h-7 rounded-md px-3 text-xs font-semibold transition-colors ${
+                      mode === value
+                        ? value === "delay"
+                          ? "bg-amber-600 text-white"
+                          : "bg-primary text-primary-foreground"
+                        : "text-muted hover:text-foreground"
+                    }`}
+                  >
+                    {value === "note" ? "Note" : "Log a delay"}
+                  </button>
+                ))}
+              </div>
+            )}
 
 
             <div className="flex items-end gap-2">

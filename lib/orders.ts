@@ -1068,8 +1068,15 @@ export type OrderOverviewRow = {
   ec_no: string | null;
   item_type: string | null;
   client_name: string | null;
+  client_code: string | null;
   industry_type: string | null;
   market_type: string | null;
+  // Filter dimensions: who owns the order, where it is, and when it started.
+  zone: string | null;
+  reps: string | null;
+  order_type: string | null;
+  so_date: string | null;
+  ec_date: string | null;
   order_value: string | null;
   has_pi: boolean;
   payment_status: string | null;
@@ -1109,8 +1116,14 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             it.ec_no,
             it.item_type,
             o.client_name,
+            o.client_code,
             o.industry_type,
             o.market_type,
+            o.zone,
+            o.reps,
+            o.order_type,
+            to_char(o.so_date, 'YYYY-MM-DD') AS so_date,
+            to_char(it.ec_date, 'YYYY-MM-DD') AS ec_date,
             -- Order value belongs to the SO, so it is printed once: on the
             -- first EC, or on the bare SO row when there are none.
             CASE WHEN it.seq IS NULL

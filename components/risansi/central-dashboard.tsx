@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -9,13 +9,27 @@ import {
   ClipboardList,
   FileText,
   IndianRupee,
+  Check,
   Loader2,
   PauseCircle,
+  Search,
   Plus,
   RotateCw,
   X,
 } from "lucide-react";
 import type { OrderOverviewRow } from "@/lib/orders";
+import {
+  MultiSelectFilter,
+  SingleSelectFilter,
+} from "./multi-select-filter";
+import {
+  DEPT_LABELS,
+  describeDays,
+  isPerEcDept,
+  type DeptCompletion,
+  type DeptKey,
+} from "@/lib/dept-completion";
+import { DEPT_FILTER_KEYS } from "@/lib/dept-status";
 import { PAYMENT_STATUS_OPTIONS } from "@/lib/order-schema";
 import { Pagination } from "./table-tools";
 
@@ -76,6 +90,66 @@ function dispatchTarget(row: OrderOverviewRow): string | null {
 function late(date: string | null, isDone: boolean): boolean {
   if (!date || isDone) return false;
   return date < todayIso();
+}
+
+/**
+ * Which date the range filter applies to. An order's progress is asked about
+ * from several directions — when it was raised, when it is due out, when a
+ * department signed it off — so the field is part of the filter, not fixed.
+ */
+const DATE_FIELDS = [
+  { value: "dispatch_target_date", label: "Dispatch target" },
+  { value: "so_date", label: "SO date" },
+  { value: "ec_date", label: "EC date" },
+  { value: "completed_on", label: "Completed on" },
+] as const;
+type DateField = (typeof DATE_FIELDS)[number]["value"];
+
+const DATE_PRESETS = [
+  "Today",
+  "Yesterday",
+  "Last 7 days",
+  "Last 30 days",
+  "This month",
+  "This year",
+] as const;
+type DatePreset = (typeof DATE_PRESETS)[number];
+
+/** A preset's [from, to] as IST calendar dates, matching how dates serialize. */
+function presetRange(preset: DatePreset): [string, string] {
+  const today = todayIso();
+  const shift = (days: number) => {
+    const d = new Date(`${today}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+  };
+  switch (preset) {
+    case "Today":
+      return [today, today];
+    case "Yesterday":
+      return [shift(-1), shift(-1)];
+    case "Last 7 days":
+      return [shift(-6), today];
+    case "Last 30 days":
+      return [shift(-29), today];
+    case "This month":
+      return [`${today.slice(0, 7)}-01`, today];
+    default:
+      return [`${today.slice(0, 4)}-01-01`, today];
+  }
+}
+
+/** "Signed off 10 Sept · 6 days late" under a department's status. */
+function Signed({ completion }: { completion: DeptCompletion | null }) {
+  if (!completion) return null;
+  const took = describeDays(completion.days_taken);
+  return (
+    <div className="mt-0.5 flex items-center gap-1 text-[10px] font-medium text-emerald-700">
+      <Check className="h-3 w-3" />
+      {formatDate(completion.completed_on)}
+      {took ? ` · ${took}` : ""}
+    </div>
+  );
 }
 
 function isOverdue(row: OrderOverviewRow): boolean {
@@ -367,18 +441,21 @@ function dispatchTone(value: string | null): Tone {
  * of its own — it schedules to the dispatch date.
  */
 const EC_DEPTS: {
+  key: DeptKey;
   label: string;
   target: (row: OrderOverviewRow) => string | null;
   done: (row: OrderOverviewRow) => boolean;
   chip: (row: OrderOverviewRow) => React.ReactNode;
 }[] = [
   {
+    key: "drawing",
     label: "Drawing",
     target: (r) => r.drg_target_date,
     done: done.drawing,
     chip: (r) => <Chip value={r.drg_status} />,
   },
   {
+    key: "purchase",
     label: "Purchase",
     target: (r) => r.purchase_target_date,
     done: done.purchase,
@@ -395,6 +472,7 @@ const EC_DEPTS: {
     ),
   },
   {
+    key: "quality",
     label: "Quality",
     target: (r) => r.qc_doc_target_date,
     done: done.qc,
@@ -406,12 +484,14 @@ const EC_DEPTS: {
     ),
   },
   {
+    key: "planning",
     label: "Planning",
     target: dispatchTarget,
     done: done.planning,
     chip: (r) => <Chip value={r.planning_status} />,
   },
   {
+    key: "assembly",
     label: "Assembly & Packing",
     target: (r) => r.dispatch_team_target_date,
     done: (r) => r.assembly_done,
@@ -424,30 +504,144 @@ const EC_DEPTS: {
   },
 ];
 
-export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }) {
+/** Sign-offs indexed for lookup by EC (per-EC departments) or by SO. */
+function indexCompletions(completions: DeptCompletion[]) {
+  const byScope = new Map<string, DeptCompletion>();
+  for (const c of completions) {
+    const scope = c.item_id ?? c.order_id;
+    byScope.set(`${scope}:${c.dept}`, c);
+  }
+  return byScope;
+}
+
+export function CentralDashboard({
+  rows: allRows,
+  completions = [],
+}: {
+  rows: OrderOverviewRow[];
+  completions?: DeptCompletion[];
+}) {
   const router = useRouter();
   // Date range filter (inclusive) on each item's dispatch_target_date.
   // ISO YYYY-MM-DD compares as strings, matching how the column is serialized
   // in listOrdersOverview — no Date-object timezone drift.
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [dateField, setDateField] = useState<DateField>("dispatch_target_date");
+  const [preset, setPreset] = useState<string | null>(null);
+  const [text, setText] = useState("");
+  const [zones, setZones] = useState<string[]>([]);
+  const [reps, setReps] = useState<string[]>([]);
+  const [markets, setMarkets] = useState<string[]>([]);
+  const [types, setTypes] = useState<string[]>([]);
+  const [dept, setDept] = useState<string | null>(null);
+  const [signOff, setSignOff] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  const byScope = useMemo(() => indexCompletions(completions), [completions]);
+  /** This row's sign-off for a department, at whichever level it lives. */
+  const completionOf = useCallback(
+    (row: OrderOverviewRow, key: DeptKey) => {
+      const scope = isPerEcDept(key) ? row.id : row.order_id;
+      return scope ? (byScope.get(`${scope}:${key}`) ?? null) : null;
+    },
+    [byScope]
+  );
+
+  // Facet values come from the data, so a zone nobody uses never appears.
+  const optionsOf = (pick: (r: OrderOverviewRow) => string | null) =>
+    [...new Set(allRows.map(pick).filter((v): v is string => !!v?.trim()))].sort();
+  const zoneOptions = optionsOf((r) => r.zone);
+  const repOptions = optionsOf((r) => r.reps);
+  const marketOptions = optionsOf((r) => r.market_type);
+  const typeOptions = optionsOf((r) => r.item_type ?? r.order_type);
+
   const rows = useMemo(() => {
-    if (!fromDate && !toDate) return allRows;
+    const needle = text.trim().toLowerCase();
+    const has = (v: string | null, list: string[]) =>
+      list.length === 0 || (v ? list.includes(v.trim()) : false);
+
     return allRows.filter((r) => {
-      const d = r.dispatch_target_date ?? "";
-      if (!d) return false;
-      if (fromDate && d < fromDate) return false;
-      if (toDate && d > toDate) return false;
+      if (needle) {
+        const hay = [r.so_no, r.ec_no, r.client_name, r.client_code]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!hay.includes(needle)) return false;
+      }
+      if (!has(r.zone, zones)) return false;
+      if (!has(r.reps, reps)) return false;
+      if (!has(r.market_type, markets)) return false;
+      if (!has(r.item_type ?? r.order_type, types)) return false;
+
+      if (dept) {
+        const key = dept as DeptKey;
+        const done = completionOf(r, key);
+        if (signOff === "Completed" && !done) return false;
+        if (signOff === "Not completed" && done) return false;
+      }
+
+      if (fromDate || toDate) {
+        // "Completed on" reads the sign-off rather than a column, and only
+        // makes sense once a department is chosen.
+        const d =
+          dateField === "completed_on"
+            ? (dept ? (completionOf(r, dept as DeptKey)?.completed_on ?? "") : "")
+            : ((r[dateField] as string | null) ?? "");
+        if (!d) return false;
+        if (fromDate && d < fromDate) return false;
+        if (toDate && d > toDate) return false;
+      }
       return true;
     });
-  }, [allRows, fromDate, toDate]);
-  const filterActive = !!fromDate || !!toDate;
+  }, [
+    allRows,
+    text,
+    zones,
+    reps,
+    markets,
+    types,
+    dept,
+    signOff,
+    dateField,
+    fromDate,
+    toDate,
+    completionOf,
+  ]);
+
+  const filterActive =
+    !!fromDate ||
+    !!toDate ||
+    !!text.trim() ||
+    zones.length > 0 ||
+    reps.length > 0 ||
+    markets.length > 0 ||
+    types.length > 0 ||
+    !!dept;
+
+  function applyPreset(next: string | null) {
+    setPreset(next);
+    if (!next) {
+      setFromDate("");
+      setToDate("");
+      return;
+    }
+    const [from, to] = presetRange(next as DatePreset);
+    setFromDate(from);
+    setToDate(to);
+  }
 
   function clearFilter() {
     setFromDate("");
     setToDate("");
+    setPreset(null);
+    setText("");
+    setZones([]);
+    setReps([]);
+    setMarkets([]);
+    setTypes([]);
+    setDept(null);
+    setSignOff(null);
   }
   function refresh() {
     setRefreshing(true);
@@ -498,6 +692,8 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
     dispatch_status: string | null;
     dispatch_target: string | null;
     dispatch_done: boolean;
+    // Sign-offs for the three SO-scope departments, shown on the SO line.
+    signed: Record<"billing" | "accounts" | "dispatch", DeptCompletion | null>;
     order_value: string | null;
     ecs: OrderOverviewRow[];
   };
@@ -522,13 +718,18 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
           dispatch_status: r.dispatch_status,
           dispatch_target: dispatchTarget(r),
           dispatch_done: done.dispatch(r),
+          signed: {
+            billing: completionOf(r, "billing"),
+            accounts: completionOf(r, "accounts"),
+            dispatch: completionOf(r, "dispatch"),
+          },
           order_value: r.order_value,
           ecs: r.id !== null ? [r] : [],
         });
       }
     }
     return [...map.values()].sort((a, b) => a.sl_no - b.sl_no);
-  }, [rows]);
+  }, [rows, completionOf]);
 
   // Expand/collapse each SO card individually.
   const [expandedSo, setExpandedSo] = useState<Set<string>>(new Set());
@@ -632,50 +833,7 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
           </p>
         </div>
 
-        {/* Date range (on dispatch_target_date) + refresh. */}
         <div className="flex flex-wrap items-end gap-2">
-          <div className="flex flex-col">
-            <label
-              htmlFor="dash-from"
-              className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
-            >
-              From
-            </label>
-            <input
-              id="dash-from"
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              max={toDate || undefined}
-              className="h-9 rounded-lg border border-input-border bg-surface px-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
-            />
-          </div>
-          <div className="flex flex-col">
-            <label
-              htmlFor="dash-to"
-              className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
-            >
-              To
-            </label>
-            <input
-              id="dash-to"
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              min={fromDate || undefined}
-              className="h-9 rounded-lg border border-input-border bg-surface px-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
-            />
-          </div>
-          {filterActive && (
-            <button
-              type="button"
-              onClick={clearFilter}
-              className="inline-flex h-9 items-center gap-1 rounded-lg border border-input-border bg-surface px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
-            >
-              <X className="h-3.5 w-3.5" />
-              Clear
-            </button>
-          )}
           <button
             type="button"
             onClick={refresh}
@@ -693,12 +851,158 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
         </div>
       </div>
 
+      {/* Filters. Everything here narrows the pipeline and every figure above
+          it, so the stat cards answer the same question the table does. */}
+      <div className="mb-4 space-y-2 rounded-xl border border-card-border bg-surface p-3 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Search SO, EC, client…"
+              aria-label="Search orders"
+              className="h-9 w-64 rounded-lg border border-input-border bg-surface pl-8 pr-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
+            />
+          </div>
+          <MultiSelectFilter
+            label="Zone"
+            options={zoneOptions}
+            selected={zones}
+            onChange={setZones}
+          />
+          <MultiSelectFilter
+            label="Rep"
+            options={repOptions}
+            selected={reps}
+            onChange={setReps}
+          />
+          <MultiSelectFilter
+            label="Market"
+            options={marketOptions}
+            selected={markets}
+            onChange={setMarkets}
+          />
+          <MultiSelectFilter
+            label="Type"
+            options={typeOptions}
+            selected={types}
+            onChange={setTypes}
+          />
+          <SingleSelectFilter
+            label="Department"
+            allLabel="All departments"
+            options={DEPT_FILTER_KEYS.map((k) => ({
+              value: k,
+              label: DEPT_LABELS[k],
+            }))}
+            selected={dept}
+            onChange={(next) => {
+              setDept(next);
+              if (!next) setSignOff(null);
+            }}
+          />
+          <SingleSelectFilter
+            label="Sign-off"
+            allLabel="Any"
+            disabled={!dept}
+            options={[
+              { value: "Completed", label: "Completed" },
+              { value: "Not completed", label: "Not completed" },
+            ]}
+            selected={signOff}
+            onChange={setSignOff}
+          />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <SingleSelectFilter
+            label="Date"
+            allLabel="Dispatch target"
+            options={DATE_FIELDS.map((f) => ({ value: f.value, label: f.label }))}
+            selected={dateField}
+            onChange={(next) => setDateField((next as DateField) ?? "dispatch_target_date")}
+          />
+          {DATE_PRESETS.map((label) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => applyPreset(preset === label ? null : label)}
+              className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors ${
+                preset === label
+                  ? "border-primary/40 bg-primary/[0.06] text-foreground"
+                  : "border-input-border bg-surface text-muted hover:bg-background hover:text-foreground"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+          <div className="flex flex-col">
+            <label
+              htmlFor="dash-from"
+              className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              From
+            </label>
+            <input
+              id="dash-from"
+              type="date"
+              value={fromDate}
+              onChange={(e) => {
+                setPreset(null);
+                setFromDate(e.target.value);
+              }}
+              max={toDate || undefined}
+              className="h-9 rounded-lg border border-input-border bg-surface px-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
+            />
+          </div>
+          <div className="flex flex-col">
+            <label
+              htmlFor="dash-to"
+              className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+            >
+              To
+            </label>
+            <input
+              id="dash-to"
+              type="date"
+              value={toDate}
+              onChange={(e) => {
+                setPreset(null);
+                setToDate(e.target.value);
+              }}
+              min={fromDate || undefined}
+              className="h-9 rounded-lg border border-input-border bg-surface px-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
+            />
+          </div>
+          {filterActive && (
+            <button
+              type="button"
+              onClick={clearFilter}
+              className="inline-flex h-9 items-center gap-1 rounded-lg border border-input-border bg-surface px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+            >
+              <X className="h-3.5 w-3.5" />
+              Clear all
+            </button>
+          )}
+        </div>
+      </div>
+
       {filterActive && (
         <div className="mb-4 rounded-lg border border-card-border bg-surface px-3 py-2 text-xs text-muted">
-          Showing <span className="font-semibold text-foreground">{total}</span>{" "}
-          of {allRows.length} items with a dispatch target date
-          {fromDate ? ` from ${fromDate}` : ""}
-          {toDate ? ` to ${toDate}` : ""}.
+          Showing{" "}
+          <span className="font-semibold text-foreground">{soTotal}</span> of{" "}
+          {new Set(allRows.map((r) => r.order_id)).size} orders
+          {dept ? ` · ${DEPT_LABELS[dept as DeptKey]}` : ""}
+          {dept && signOff ? ` ${signOff.toLowerCase()}` : ""}
+          {fromDate || toDate
+            ? ` · ${
+                DATE_FIELDS.find((f) => f.value === dateField)?.label ?? "date"
+              }${fromDate ? ` from ${fromDate}` : ""}${
+                toDate ? ` to ${toDate}` : ""
+              }`
+            : ""}
+          .
         </div>
       )}
 
@@ -839,7 +1143,12 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                         </Link>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap font-medium">
-                        {card.so_no ?? "—"}
+                        <Link
+                          href={`/risansi/orders/${card.order_id}`}
+                          className="text-primary hover:text-primary-hover"
+                        >
+                          {card.so_no ?? "—"}
+                        </Link>
                       </td>
                       <td className="px-4 py-3">{card.client_name ?? "—"}</td>
                       <td className="px-3 py-3 align-top">
@@ -847,6 +1156,7 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                           value={card.has_pi ? "PI done" : null}
                           tone={card.has_pi ? "green" : "neutral"}
                         />
+                        <Signed completion={card.signed.billing} />
                       </td>
                       <td className="px-3 py-3 align-top">
                         <Chip
@@ -857,6 +1167,7 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                             and Accounts; printed once, under the department
                             that chases it. */}
                         <DeptDeadline value={card.payment_terms} isDate={false} />
+                        <Signed completion={card.signed.accounts} />
                       </td>
                       <td className="px-3 py-3 align-top">
                         <Chip
@@ -867,6 +1178,7 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                           value={card.dispatch_target}
                           overdue={late(card.dispatch_target, card.dispatch_done)}
                         />
+                        <Signed completion={card.signed.dispatch} />
                       </td>
                       <td className="px-3 py-3 text-center tabular-nums">
                         {card.ecs.length}
@@ -943,9 +1255,15 @@ export function CentralDashboard({ rows: allRows }: { rows: OrderOverviewRow[] }
                                             </div>
                                           )}
                                         </td>
-                                        {EC_DEPTS.map((dept) => (
-                                          <td key={dept.label} className="px-3 py-2">
-                                            {dept.chip(row)}
+                                        {EC_DEPTS.map((d) => (
+                                          <td
+                                            key={d.label}
+                                            className="px-3 py-2 align-top"
+                                          >
+                                            {d.chip(row)}
+                                            <Signed
+                                              completion={completionOf(row, d.key)}
+                                            />
                                           </td>
                                         ))}
                                       </tr>

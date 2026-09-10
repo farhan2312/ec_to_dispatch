@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
 import { canSeeCentralDashboard, roleLabel } from "@/lib/roles";
-import { listOrdersOverview } from "@/lib/orders";
+import { listDeptCompletions, listOrdersOverview } from "@/lib/orders";
 import { listRemindersForRole } from "@/lib/reminders";
 import { CentralDashboard } from "@/components/risansi/central-dashboard";
 import { RemindersPanel } from "@/components/risansi/reminders-panel";
@@ -19,7 +19,12 @@ export default async function DashboardPage() {
 
   if (canSeeCentralDashboard(user.role)) {
     const rows = await listOrdersOverview();
-    return <CentralDashboard rows={rows} />;
+    // Every department's sign-offs, so the pipeline can show what is finished
+    // and when, not just what has been recorded.
+    const completions = await listDeptCompletions([
+      ...new Set(rows.map((r) => r.order_id)),
+    ]);
+    return <CentralDashboard rows={rows} completions={completions} />;
   }
 
   // Department roles get a light landing view with their upcoming deadlines.

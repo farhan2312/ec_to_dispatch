@@ -1075,6 +1075,7 @@ export type OrderOverviewRow = {
   zone: string | null;
   reps: string | null;
   order_type: string | null;
+  bill_type: string | null;
   so_date: string | null;
   ec_date: string | null;
   order_value: string | null;
@@ -1122,6 +1123,7 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             o.zone,
             o.reps,
             o.order_type,
+            o.bill_type,
             to_char(o.so_date, 'YYYY-MM-DD') AS so_date,
             to_char(it.ec_date, 'YYYY-MM-DD') AS ec_date,
             -- Order value belongs to the SO, so it is printed once: on the

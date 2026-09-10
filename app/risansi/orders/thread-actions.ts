@@ -9,9 +9,11 @@ import {
   listDelayLogs,
   listDiscussionInbox,
   listLanes,
+  lanesOf,
   listMessages,
-  markLaneRead,
+  markLanesRead,
   resolveLane,
+  resolveRecipient,
   MAX_MESSAGE_LENGTH,
   type DelayLogReport,
   type InboxEntry,
@@ -28,9 +30,10 @@ export type LanesResult =
   | { ok: false; error: string };
 
 /**
- * Read one lane of an SO thread and mark it read. The lane is authorized
- * against the caller's role, so a department user can only ever open their
- * own lane no matter what the browser asks for.
+ * Read one conversation on an SO and mark it read. The lane is authorized
+ * against the caller's role, so a department user can only ever open their own
+ * no matter what the browser asks for — but the thread also carries whatever
+ * other departments have addressed to that lane.
  */
 export async function openThreadAction(
   orderId: string,
@@ -44,7 +47,9 @@ export async function openThreadAction(
 
   try {
     const messages = await listMessages(orderId, lane, user.id);
-    await markLaneRead(user.id, orderId, lane);
+    // A thread spans every lane it drew from, so mark them all read rather
+    // than leaving another department's message showing unread forever.
+    await markLanesRead(user.id, orderId, [lane, ...lanesOf(messages)]);
     return { ok: true, messages };
   } catch (error) {
     console.error("openThreadAction failed:", error);
@@ -67,13 +72,17 @@ export async function listLanesAction(orderId: string): Promise<LanesResult> {
 /**
  * Post to a lane. Central Visibility / Admin name the department they are
  * replying to; a department user's message always lands in their own lane.
- * The other side of the lane is notified.
+ *
+ * `toRole` addresses another department: the message stays in the author's
+ * lane and also shows up in that department's thread. Without it nothing
+ * crosses a lane.
  */
 export async function postMessageAction(
   orderId: string,
   requestedLane: string,
   body: string,
-  kind = "note"
+  kind = "note",
+  toRole: string | null = null
 ): Promise<ThreadResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
@@ -99,10 +108,11 @@ export async function postMessageAction(
       authorRole: user.role,
       body: text,
       kind: isMessageKind(kind) ? kind : "note",
+      toRole: toRole ? resolveRecipient(lane, toRole) : null,
     });
-    await markLaneRead(user.id, orderId, lane);
 
     const messages = await listMessages(orderId, lane, user.id);
+    await markLanesRead(user.id, orderId, [lane, ...lanesOf(messages)]);
     return { ok: true, messages };
   } catch (error) {
     console.error("postMessageAction failed:", error);

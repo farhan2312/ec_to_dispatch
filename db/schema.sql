@@ -1711,3 +1711,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS order_dept_completions_ec_key
     ON order_dept_completions (item_id, dept) WHERE item_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS order_dept_completions_order_idx
     ON order_dept_completions (order_id);
+
+-- Cross-department messages. A message still belongs to its author's lane, so
+-- everything already stored keeps working and a department's conversation stays
+-- private by default; naming a recipient also puts it in front of that
+-- department, which is the only way one department can reach another.
+ALTER TABLE order_messages ADD COLUMN IF NOT EXISTS to_role TEXT;
+CREATE INDEX IF NOT EXISTS order_messages_to_role_idx
+    ON order_messages (order_id, to_role) WHERE to_role IS NOT NULL;

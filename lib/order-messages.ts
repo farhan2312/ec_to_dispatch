@@ -4,16 +4,23 @@ import { ALL_ROLES, isCentral, type Role } from "@/lib/roles";
 /**
  * Per-SO discussion threads.
  *
- * There is no cross-department visibility: every message sits in a *lane*
- * named by a department role. A department user reads and writes only their
- * own lane; Admin / Central Visibility see every lane and choose which one
- * they are replying in. Messages are append-only — nothing here updates or
- * deletes them.
+ * Every message sits in a *lane* named by a department role, and a lane is
+ * private: a department reads its own, Admin / Central Visibility read all of
+ * them and choose which one they are replying in.
+ *
+ * A message may also name a recipient department (`to_role`). It stays in its
+ * author's lane — so the sender keeps it in their own thread — and appears in
+ * the named department's too. That is the only way one department reaches
+ * another; without a recipient nothing crosses a lane, as before.
+ *
+ * Messages are append-only — nothing here updates or deletes them.
  */
 
 export type OrderMessage = {
   id: string;
   dept_role: string;
+  /** The department this was addressed to, or null for a private note. */
+  to_role: string | null;
   author_id: string | null;
   author_name: string;
   author_role: string;
@@ -43,7 +50,7 @@ const ISO = `'YYYY-MM-DD"T"HH24:MI:SS"Z"'`;
 
 // Every column the UI renders for a message, aliased consistently so the
 // read and the insert-returning share one shape.
-const MESSAGE_COLUMNS = `m.id, m.dept_role, m.author_id, m.author_name,
+const MESSAGE_COLUMNS = `m.id, m.dept_role, m.to_role, m.author_id, m.author_name,
             m.author_role, m.kind, m.body,
             to_char(m.created_at AT TIME ZONE 'UTC', ${ISO}) AS created_at`;
 
@@ -57,12 +64,34 @@ function isDepartmentLane(value: string): value is Role {
 }
 
 /**
+ * A message is visible when it sits in a lane you can read, or when it was
+ * addressed to one. `$n` is the lane array parameter.
+ */
+const visibleIn = (param: string) =>
+  `(m.dept_role = ANY(${param}) OR m.to_role = ANY(${param}))`;
+
+/**
  * Lanes the user may read on any SO: their own for a department user, all of
  * them for Admin / Central Visibility.
  */
 export function lanesFor(role: string): Role[] {
   if (isCentral(role)) return DEPARTMENT_LANES;
   return isDepartmentLane(role) ? [role] : [];
+}
+
+/**
+ * Who a message may be addressed to: any department other than the author's
+ * own lane. Addressing your own lane is what a private note already is.
+ */
+export function recipientsFor(lane: string): Role[] {
+  return DEPARTMENT_LANES.filter((r) => r !== lane);
+}
+
+/** Validate a requested recipient, or null for a private note. */
+export function resolveRecipient(lane: string, requested: string): Role | null {
+  return isDepartmentLane(requested) && requested !== lane
+    ? (requested as Role)
+    : null;
 }
 
 /** Whether `role` may read and post in `lane`. */
@@ -83,6 +112,11 @@ export function resolveLane(role: string, requested: string): Role | null {
 // Reads
 // ---------------------------------------------------------------------------
 
+/**
+ * One conversation: everything in `lane` plus anything another department
+ * addressed to it. A department passes its own lane; Central passes the lane
+ * it is looking at.
+ */
 export async function listMessages(
   orderId: string,
   lane: string,
@@ -92,11 +126,16 @@ export async function listMessages(
     `SELECT ${MESSAGE_COLUMNS},
             (m.author_id = $3) AS mine
        FROM order_messages m
-      WHERE m.order_id = $1 AND m.dept_role = $2
+      WHERE m.order_id = $1 AND ${visibleIn("ARRAY[$2]::text[]")}
       ORDER BY m.created_at ASC`,
     [orderId, lane, viewerId]
   );
   return result.rows;
+}
+
+/** The lanes a thread's messages live in — what to mark read when it opens. */
+export function lanesOf(messages: OrderMessage[]): string[] {
+  return [...new Set(messages.map((m) => m.dept_role))];
 }
 
 /**
@@ -130,7 +169,7 @@ export async function listLanes(
               ON r.user_id = $3
              AND r.order_id = m.order_id
              AND r.dept_role = m.dept_role
-      WHERE m.order_id = $1 AND m.dept_role = ANY($2)
+      WHERE m.order_id = $1 AND ${visibleIn("$2")}
       GROUP BY m.dept_role`,
     [orderId, lanes, viewer.id]
   );
@@ -167,7 +206,7 @@ export async function unreadByOrder(
              AND r.order_id = m.order_id
              AND r.dept_role = m.dept_role
       WHERE m.order_id = ANY($1)
-        AND m.dept_role = ANY($2)
+        AND ${visibleIn("$2")}
         AND m.author_id <> $3
         AND (r.last_read_at IS NULL OR m.created_at > r.last_read_at)
       GROUP BY m.order_id`,
@@ -186,6 +225,7 @@ export type InboxEntry = {
   so_no: string | null;
   sl_no: number;
   dept_role: string;
+  to_role: string | null;
   author_name: string;
   author_role: string;
   kind: string;
@@ -206,7 +246,7 @@ export async function listDiscussionInbox(
   if (lanes.length === 0) return [];
   const result = await query<InboxEntry>(
     `SELECT m.id, m.order_id, o.so_no, o.sl_no::int AS sl_no, m.dept_role,
-            m.author_name, m.author_role, m.kind, m.body,
+            m.to_role, m.author_name, m.author_role, m.kind, m.body,
             to_char(m.created_at AT TIME ZONE 'UTC', ${ISO}) AS created_at
        FROM order_messages m
        JOIN orders o ON o.id = m.order_id
@@ -214,7 +254,7 @@ export async function listDiscussionInbox(
               ON r.user_id = $1
              AND r.order_id = m.order_id
              AND r.dept_role = m.dept_role
-      WHERE m.dept_role = ANY($2)
+      WHERE ${visibleIn("$2")}
         AND m.author_id <> $1
         AND (r.last_read_at IS NULL OR m.created_at > r.last_read_at)
       ORDER BY m.created_at DESC
@@ -238,7 +278,7 @@ export async function countDiscussionUnread(viewer: {
               ON r.user_id = $1
              AND r.order_id = m.order_id
              AND r.dept_role = m.dept_role
-      WHERE m.dept_role = ANY($2)
+      WHERE ${visibleIn("$2")}
         AND m.author_id <> $1
         AND (r.last_read_at IS NULL OR m.created_at > r.last_read_at)`,
     [viewer.id, lanes]
@@ -303,7 +343,7 @@ export async function listDelayLogs(
             to_char(m.created_at AT TIME ZONE 'UTC', ${ISO}) AS created_at
        FROM order_messages m
       WHERE m.order_id = $1
-        AND m.dept_role = ANY($2)
+        AND ${visibleIn("$2")}
         AND m.kind = 'delay'
       ORDER BY m.created_at ASC`,
     [orderId, lanes]
@@ -326,12 +366,16 @@ export async function insertMessage(input: {
   // 'delay' flags the entry as a delay; the date it happened is its
   // created_at, so nothing else is stored.
   kind?: MessageKind;
+  // The department being asked, or null to keep it inside the lane.
+  toRole?: string | null;
 }): Promise<OrderMessage> {
   const result = await query<OrderMessage>(
     `INSERT INTO order_messages
-        (order_id, dept_role, author_id, author_name, author_role, body, kind)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING id, dept_role, author_id, author_name, author_role, kind, body,
+        (order_id, dept_role, author_id, author_name, author_role, body, kind,
+         to_role)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING id, dept_role, to_role, author_id, author_name, author_role,
+               kind, body,
                to_char(created_at AT TIME ZONE 'UTC', ${ISO}) AS created_at,
                true AS mine`,
     [
@@ -342,21 +386,29 @@ export async function insertMessage(input: {
       input.authorRole,
       input.body,
       input.kind ?? "note",
+      input.toRole ?? null,
     ]
   );
   return result.rows[0];
 }
-/** Mark one lane read up to now for this user. */
-export async function markLaneRead(
+/**
+ * Mark a thread read up to now.
+ *
+ * Read state is per lane, and a thread can span several once other departments
+ * address it — so every lane the viewer just saw is marked, not only their own.
+ */
+export async function markLanesRead(
   userId: string,
   orderId: string,
-  lane: string
+  lanes: string[]
 ): Promise<void> {
+  const unique = [...new Set(lanes.filter(isDepartmentLane))];
+  if (unique.length === 0) return;
   await query(
     `INSERT INTO order_message_reads (user_id, order_id, dept_role, last_read_at)
-     VALUES ($1, $2, $3, now())
+     SELECT $1, $2, lane, now() FROM unnest($3::text[]) AS lane
      ON CONFLICT (user_id, order_id, dept_role)
      DO UPDATE SET last_read_at = now()`,
-    [userId, orderId, lane]
+    [userId, orderId, unique]
   );
 }

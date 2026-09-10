@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   AlertTriangle,
+  ArrowRight,
   ChevronDown,
   ChevronRight,
   Loader2,
   MessageSquare,
   Send,
 } from "lucide-react";
-import { isCentral, roleLabel } from "@/lib/roles";
+import { ALL_ROLES, isCentral, roleLabel } from "@/lib/roles";
 import type { LaneSummary, OrderMessage } from "@/lib/order-messages";
 import {
   listLanesAction,
@@ -19,6 +20,13 @@ import {
 import { DelayLogsModal } from "./delay-logs-modal";
 
 const MAX_MESSAGE_LENGTH = 2000;
+
+// Departments a message can be addressed to: every lane but the one it is
+// posted in. Derived from lib/roles rather than lib/order-messages, which
+// pulls in the database driver and must not reach the browser.
+function recipientsFor(lane: string): string[] {
+  return ALL_ROLES.filter((r) => !isCentral(r) && r !== lane);
+}
 
 function stamp(iso: string): string {
   const d = new Date(iso);
@@ -68,6 +76,9 @@ export function OrderThread({
   const [open, setOpen] = useState(collapsible ? defaultOpen : true);
   const [lanes, setLanes] = useState<LaneSummary[]>([]);
   const [lane, setLane] = useState<string | null>(central ? null : role);
+  // Who the next message goes to. Null keeps it inside the lane, which is how
+  // the thread has always worked; naming a department also puts it in theirs.
+  const [toRole, setToRole] = useState<string | null>(null);
   const [messages, setMessages] = useState<OrderMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -145,7 +156,7 @@ export function OrderThread({
     event.preventDefault();
     if (!lane || body.trim() === "" || sending) return;
     setSending(true);
-    const res = await postMessageAction(orderId, lane, body, mode);
+    const res = await postMessageAction(orderId, lane, body, mode, toRole);
     setSending(false);
     if (!res.ok) {
       setError(res.error);
@@ -154,6 +165,7 @@ export function OrderThread({
     setError(null);
     setBody("");
     setMode("note");
+    setToRole(null);
     setMessages(res.messages);
     refreshLanes();
   }
@@ -316,6 +328,7 @@ export function OrderThread({
                       </p>
                       <div className="mt-1.5 text-[11px] text-amber-800">
                         {m.author_name} · {roleLabel(m.author_role)}
+                        {m.to_role ? ` → ${roleLabel(m.to_role)}` : ""}
                       </div>
                     </div>
                   );
@@ -339,6 +352,22 @@ export function OrderThread({
                           <span className="ml-1 font-normal text-muted-foreground">
                             {roleLabel(m.author_role)}
                           </span>
+                        </div>
+                      )}
+                      {/* An addressed message reads differently depending on
+                          which side you are: sent to them, or asked of you. */}
+                      {m.to_role && (
+                        <div
+                          className={`mb-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                            m.mine
+                              ? "bg-primary-foreground/20 text-primary-foreground"
+                              : "bg-primary/10 text-primary"
+                          }`}
+                        >
+                          <ArrowRight className="h-2.5 w-2.5" />
+                          {m.mine
+                            ? `To ${roleLabel(m.to_role)}`
+                            : `Asked of ${roleLabel(m.to_role)}`}
                         </div>
                       )}
                       <p className="whitespace-pre-wrap break-words text-sm">
@@ -390,6 +419,28 @@ export function OrderThread({
                 </button>
               ))}
             </div>
+
+            {/* Ask another department. Without one the message stays in this
+                lane, so a conversation is private unless it is addressed. */}
+            {lane && (
+              <label className="ml-2 inline-flex items-center gap-1.5 text-xs text-muted">
+                To
+                <select
+                  value={toRole ?? ""}
+                  onChange={(e) => setToRole(e.target.value || null)}
+                  className="h-7 rounded-md border border-input-border bg-surface px-2 text-xs text-foreground focus:border-primary focus:outline-none"
+                >
+                  <option value="">
+                    {central ? `${laneLabel} only` : "My department only"}
+                  </option>
+                  {recipientsFor(lane).map((r) => (
+                    <option key={r} value={r}>
+                      {roleLabel(r)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
 
             <div className="flex items-end gap-2">
               <textarea

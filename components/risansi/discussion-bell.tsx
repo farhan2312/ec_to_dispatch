@@ -145,6 +145,9 @@ export function DiscussionBell({
                   <p className="mt-0.5 text-[11px] text-muted">
                     {e.author_name} · {roleLabel(e.author_role)}
                     {isCentral(role) ? ` · ${roleLabel(e.dept_role)} lane` : ""}
+                    {/* A message addressed to you came from another
+                        department's lane — say which. */}
+                    {e.to_role ? ` · asked of ${roleLabel(e.to_role)}` : ""}
                   </p>
                 </button>
               ))

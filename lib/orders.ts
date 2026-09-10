@@ -1075,6 +1075,7 @@ export type OrderOverviewRow = {
   zone: string | null;
   reps: string | null;
   order_type: string | null;
+  bill_type: string | null;
   so_date: string | null;
   ec_date: string | null;
   order_value: string | null;
@@ -1122,6 +1123,7 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             o.zone,
             o.reps,
             o.order_type,
+            o.bill_type,
             to_char(o.so_date, 'YYYY-MM-DD') AS so_date,
             to_char(it.ec_date, 'YYYY-MM-DD') AS ec_date,
             -- Order value belongs to the SO, so it is printed once: on the
@@ -1151,7 +1153,13 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
              END) AS purchase_done,
             (qc.qc_doc_actual_date IS NOT NULL) AS qc_submitted,
             o.qc_required,
-            pl.planning_status,
+            -- Planning files its status on whichever of the three columns
+            -- applies, so read them in the same order getOrderDeptStatus and
+            -- the order-list filter do. Reading planning_status alone showed
+            -- only the free-text one and missed both selects.
+            COALESCE(NULLIF(pl.actual_pump_status, ''),
+                     NULLIF(pl.actual_spare_status, ''),
+                     NULLIF(pl.planning_status, '')) AS planning_status,
             (ad.actual_packing_date IS NOT NULL) AS assembly_done,
             ${DISPATCH_STATUS} AS dispatch_status,
             o.payment_terms,

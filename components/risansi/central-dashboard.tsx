@@ -2,7 +2,6 @@
 
 import { Fragment, useCallback, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ChevronDown,
@@ -10,11 +9,9 @@ import {
   FileText,
   IndianRupee,
   Check,
-  Loader2,
   PauseCircle,
   Search,
   Plus,
-  RotateCw,
   X,
 } from "lucide-react";
 import type { OrderOverviewRow } from "@/lib/orders";
@@ -29,7 +26,8 @@ import {
   type DeptCompletion,
   type DeptKey,
 } from "@/lib/dept-completion";
-import { DEPT_FILTER_KEYS } from "@/lib/dept-status";
+import { DEPT_FILTER_KEYS, statusesFor } from "@/lib/dept-status";
+import { DEPT_VIEWS } from "@/lib/dept-view";
 import { PAYMENT_STATUS_OPTIONS } from "@/lib/order-schema";
 import { Pagination } from "./table-tools";
 
@@ -383,8 +381,10 @@ const done = {
   // BOI items all received (or the SO doesn't need BOI).
   purchase: (r: OrderOverviewRow) => r.purchase_done,
   qc: (r: OrderOverviewRow) => r.qc_submitted,
-  planning: (r: OrderOverviewRow) =>
-    (r.planning_status ?? "").trim().toLowerCase() === "completed",
+  // Any status Planning has filed counts as done, matching getOrderDeptStatus
+  // and the Departments popup. "Completed" is not one of the values Planning
+  // can record, so the old check here never matched anything.
+  planning: (r: OrderOverviewRow) => DEPT_VIEWS.planning.done(r),
   dispatch: (r: OrderOverviewRow) =>
     (r.dispatch_status ?? "").trim().toLowerCase() === "fully dispatch",
 };
@@ -521,7 +521,6 @@ export function CentralDashboard({
   rows: OrderOverviewRow[];
   completions?: DeptCompletion[];
 }) {
-  const router = useRouter();
   // Date range filter (inclusive) on each item's dispatch_target_date.
   // ISO YYYY-MM-DD compares as strings, matching how the column is serialized
   // in listOrdersOverview — no Date-object timezone drift.
@@ -535,8 +534,8 @@ export function CentralDashboard({
   const [markets, setMarkets] = useState<string[]>([]);
   const [types, setTypes] = useState<string[]>([]);
   const [dept, setDept] = useState<string | null>(null);
+  const [deptStatus, setDeptStatus] = useState<string | null>(null);
   const [signOff, setSignOff] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
 
   const byScope = useMemo(() => indexCompletions(completions), [completions]);
   /** This row's sign-off for a department, at whichever level it lives. */
@@ -576,6 +575,9 @@ export function CentralDashboard({
 
       if (dept) {
         const key = dept as DeptKey;
+        // The department's own word for where this row stands — the same
+        // vocabulary the orders list filters on and the popup shows.
+        if (deptStatus && DEPT_VIEWS[key].status(r) !== deptStatus) return false;
         const done = completionOf(r, key);
         if (signOff === "Completed" && !done) return false;
         if (signOff === "Not completed" && done) return false;
@@ -602,6 +604,7 @@ export function CentralDashboard({
     markets,
     types,
     dept,
+    deptStatus,
     signOff,
     dateField,
     fromDate,
@@ -641,14 +644,8 @@ export function CentralDashboard({
     setMarkets([]);
     setTypes([]);
     setDept(null);
+    setDeptStatus(null);
     setSignOff(null);
-  }
-  function refresh() {
-    setRefreshing(true);
-    router.refresh();
-    // The server-component refetch is quick, but give the spinner a beat so
-    // the click registers visibly.
-    setTimeout(() => setRefreshing(false), 500);
   }
 
   // An order with no ECs contributes a row so the pipeline can list it, but
@@ -832,23 +829,6 @@ export function CentralDashboard({
             orders.
           </p>
         </div>
-
-        <div className="flex flex-wrap items-end gap-2">
-          <button
-            type="button"
-            onClick={refresh}
-            disabled={refreshing}
-            aria-label="Refresh"
-            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-input-border bg-surface px-3 text-sm font-medium text-foreground transition-colors hover:bg-background disabled:opacity-60"
-          >
-            {refreshing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RotateCw className="h-4 w-4" />
-            )}
-            Refresh
-          </button>
-        </div>
       </div>
 
       {/* Filters. Everything here narrows the pipeline and every figure above
@@ -899,8 +879,22 @@ export function CentralDashboard({
             selected={dept}
             onChange={(next) => {
               setDept(next);
+              // A status belongs to one department's vocabulary, so it cannot
+              // survive a change of department.
+              setDeptStatus(null);
               if (!next) setSignOff(null);
             }}
+          />
+          <SingleSelectFilter
+            label="Status"
+            allLabel="Any status"
+            disabled={!dept}
+            options={(dept ? statusesFor(dept as DeptKey) : []).map((v) => ({
+              value: v,
+              label: v,
+            }))}
+            selected={deptStatus}
+            onChange={setDeptStatus}
           />
           <SingleSelectFilter
             label="Sign-off"
@@ -994,7 +988,8 @@ export function CentralDashboard({
           <span className="font-semibold text-foreground">{soTotal}</span> of{" "}
           {new Set(allRows.map((r) => r.order_id)).size} orders
           {dept ? ` · ${DEPT_LABELS[dept as DeptKey]}` : ""}
-          {dept && signOff ? ` ${signOff.toLowerCase()}` : ""}
+          {dept && deptStatus ? ` ${deptStatus.toLowerCase()}` : ""}
+          {dept && signOff ? ` · ${signOff.toLowerCase()}` : ""}
           {fromDate || toDate
             ? ` · ${
                 DATE_FIELDS.find((f) => f.value === dateField)?.label ?? "date"

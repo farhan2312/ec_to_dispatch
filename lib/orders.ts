@@ -322,7 +322,7 @@ export async function listItems(orderId: string): Promise<ItemSummary[]> {
             it.pump_type,
             it.model_no,
             it.quantity::text AS quantity,
-            o.dispatch_status
+            ${DISPATCH_STATUS} AS dispatch_status
        FROM order_items it
        JOIN orders o ON o.id = it.order_id
       WHERE it.order_id = $1
@@ -1044,7 +1044,7 @@ export async function listDispatchRegister(): Promise<DispatchRegisterRow[]> {
             l.lot_no,
             to_char(l.lot_dispatch_date, 'YYYY-MM-DD') AS lot_dispatch_date,
             to_char(l.invoice_date, 'YYYY-MM-DD') AS invoice_date,
-            o.dispatch_status
+            ${DISPATCH_STATUS} AS dispatch_status
        FROM order_lots l
        JOIN order_items it ON it.id = l.item_id
        JOIN orders o ON o.id = it.order_id
@@ -1153,7 +1153,7 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             o.qc_required,
             pl.planning_status,
             (ad.actual_packing_date IS NOT NULL) AS assembly_done,
-            o.dispatch_status,
+            ${DISPATCH_STATUS} AS dispatch_status,
             o.payment_terms,
             to_char(o.drg_target_date, 'YYYY-MM-DD') AS drg_target_date,
             to_char(o.purchase_target_date, 'YYYY-MM-DD') AS purchase_target_date,
@@ -1421,7 +1421,7 @@ export async function listOrdersForBilling(
             to_char(b.challan_date, 'YYYY-MM-DD') AS challan_date,
             b.challan_value::text AS challan_value,
             b.fr_reason,
-            o.dispatch_status,
+            ${DISPATCH_STATUS} AS dispatch_status,
             COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                       FROM order_billing_docs d WHERE d.order_id = o.id),
                      '[]'::jsonb) AS pi_docs,
@@ -1493,6 +1493,17 @@ function detailSelect(alias: string, f: { column: string; type: string }): strin
   }
   return `${alias}.${f.column}`;
 }
+
+/**
+ * Dispatch status, with "nothing dispatched" spelled the same way everywhere.
+ *
+ * The column is derived — recomputeDispatchStatus writes 'Pending' when no
+ * invoice has been filled in — but it is stored, so an order the recompute has
+ * never run for keeps NULL. Both mean the same thing, and an order with no
+ * invoices has no other state it could be in, so a blank reads as Pending
+ * rather than as an unknown.
+ */
+const DISPATCH_STATUS = `COALESCE(NULLIF(o.dispatch_status, ''), 'Pending')`;
 
 /**
  * Whether Billing has actually raised a PI (or filed a challan) on this SO.
@@ -1711,7 +1722,7 @@ export async function listOrdersPage(opts: {
             o.order_type,
             o.order_value::text AS order_value,
             a.payment_status,
-            o.dispatch_status,
+            ${DISPATCH_STATUS} AS dispatch_status,
             COALESCE(ic.cnt, 0)::int AS ec_count,
             COALESCE((
               SELECT jsonb_agg(to_jsonb(x) ORDER BY x.seq)
@@ -1760,7 +1771,7 @@ export async function listOrders(): Promise<OrderListRow[]> {
             o.order_type,
             o.order_value::text AS order_value,
             a.payment_status,
-            o.dispatch_status,
+            ${DISPATCH_STATUS} AS dispatch_status,
             COALESCE(ic.cnt, 0)::int AS ec_count,
             COALESCE((
               SELECT jsonb_agg(to_jsonb(x) ORDER BY x.seq)
@@ -2006,7 +2017,7 @@ export async function getOrderDeptStatus(
     dispatch_target_date: string | null;
     dispatch_target_revised_date: string | null;
   }>(
-    `SELECT o.dispatch_status, o.bill_type,
+    `SELECT ${DISPATCH_STATUS} AS dispatch_status, o.bill_type,
             ${BILLING_RAISED} AS has_pi,
             a.payment_status,
             to_char(o.drg_target_date, 'YYYY-MM-DD') AS drg_target_date,
@@ -2097,7 +2108,10 @@ export async function getOrderDeptStatus(
       : head.payment_status
         ? done(head.payment_status)
         : pending(),
-    dispatch: head.dispatch_status ? done(head.dispatch_status) : pending(),
+    dispatch:
+      head.dispatch_status && head.dispatch_status.toLowerCase() !== "pending"
+        ? done(head.dispatch_status)
+        : pending(),
     targets: {
       drawing: head.drg_target_date,
       purchase: head.purchase_target_date,

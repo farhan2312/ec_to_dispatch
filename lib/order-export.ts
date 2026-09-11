@@ -70,14 +70,20 @@ function fieldsOf(table: OrderTable): OrderField[] {
  * values and the record each field is read from, so every sheet is described
  * the same way regardless of which table it came from.
  */
-type SheetSpec = {
+export type SheetSpec = {
   name: string;
   // What the sheet holds, shown on the Summary's index.
   about: string;
   perEc: boolean;
   // Columns beyond the keys that the source record doesn't carry (e.g. which
-  // set a packing slip belongs to).
-  extra?: { label: string; type: OrderFieldType; value: (row: Row) => Cell }[];
+  // set a packing slip belongs to). `options` is the closed list a value
+  // comes from, for anything that offers a dropdown.
+  extra?: {
+    label: string;
+    type: OrderFieldType;
+    value: (row: Row) => Cell;
+    options?: string[];
+  }[];
   fields: OrderField[];
   rows: Array<{
     slNo: number | null;
@@ -201,6 +207,7 @@ const REVISION_SEQ = {
 const PACKING_SET = {
   label: "Set",
   type: "text" as OrderFieldType,
+  options: [PACKING_SLIP_KINDS.tentative.label, PACKING_SLIP_KINDS.actual.label],
   value: (row: Row) => {
     const kind = String(row.kind ?? "");
     if (kind === PACKING_SLIP_KINDS.actual.value) {
@@ -416,6 +423,16 @@ function buildSummarySheet(
   ws.getColumn(4).width = 68;
   // No frozen pane here: a "frozen" view with nothing actually split writes a
   // <pane> with no xSplit/ySplit, which Excel rejects outright.
+}
+
+/**
+ * Every sheet's shape with no rows in it — names, keys and columns exactly as
+ * the export writes them. The migration template is built from this, so a file
+ * exported from the system and a file filled in for migration have the same
+ * sheets and the same headers.
+ */
+export function exportSheetDefs(): SheetSpec[] {
+  return collect([]);
 }
 
 /** The whole export workbook: a cover sheet plus one sheet per subject. */

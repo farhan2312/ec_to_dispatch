@@ -1134,13 +1134,16 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             -- Billing's progress: a PI with a number on it, or a challan.
             ${BILLING_RAISED} AS has_pi,
             a.payment_status,
-            -- Drawing progress now derives from the EC revision list:
-            -- approved on any revision wins, else issued-to-client, else null.
+            -- Drawing progress derives from the EC revision list: the
+            -- furthest hand-off any revision has reached — approved, then
+            -- issued to client, then issued to operations — else null.
             (SELECT CASE
                       WHEN bool_or(lower(coalesce(rv.approved,'')) = 'yes')
                         THEN 'Drg approved'
                       WHEN bool_or(lower(coalesce(rv.issued_to_client,'')) = 'yes')
                         THEN 'Drg. issued to Client'
+                      WHEN bool_or(lower(coalesce(rv.issued_to_operations,'')) = 'yes')
+                        THEN 'Drg. issued to Operations'
                       ELSE NULL
                     END
                FROM order_drawing_revisions rv WHERE rv.item_id = it.id) AS drg_status,
@@ -1576,6 +1579,9 @@ const DRG_APPROVED = `EXISTS (SELECT 1 FROM order_drawing_revisions rv
 const DRG_ISSUED = `EXISTS (SELECT 1 FROM order_drawing_revisions rv
                             WHERE rv.item_id = it.id
                               AND lower(coalesce(rv.issued_to_client, '')) = 'yes')`;
+const DRG_TO_OPS = `EXISTS (SELECT 1 FROM order_drawing_revisions rv
+                            WHERE rv.item_id = it.id
+                              AND lower(coalesce(rv.issued_to_operations, '')) = 'yes')`;
 const BOI_RECEIVED = `EXISTS (SELECT 1 FROM order_boi_items bi WHERE bi.item_id = it.id)
                       AND NOT EXISTS (SELECT 1 FROM order_boi_items bi
                                        WHERE bi.item_id = it.id
@@ -1614,7 +1620,10 @@ function ecState(dept: DeptFilterKey, status: string): string {
       if (status === "Issued to Client") {
         return `${DRG_ISSUED} AND NOT ${DRG_APPROVED}`;
       }
-      return `NOT ${DRG_APPROVED} AND NOT ${DRG_ISSUED}`;
+      if (status === "Issued to Operations") {
+        return `${DRG_TO_OPS} AND NOT ${DRG_ISSUED} AND NOT ${DRG_APPROVED}`;
+      }
+      return `NOT ${DRG_APPROVED} AND NOT ${DRG_ISSUED} AND NOT ${DRG_TO_OPS}`;
     case "purchase":
       if (status === NOT_APPLICABLE) return NO_BOI;
       if (status === "Received") return `NOT (${NO_BOI}) AND (${BOI_RECEIVED})`;
@@ -2062,6 +2071,8 @@ export async function getOrderDeptStatus(
                         THEN 'Approved'
                       WHEN bool_or(lower(coalesce(rv.issued_to_client,'')) = 'yes')
                         THEN 'Issued to Client'
+                      WHEN bool_or(lower(coalesce(rv.issued_to_operations,'')) = 'yes')
+                        THEN 'Issued to Operations'
                       ELSE NULL END
                FROM order_drawing_revisions rv WHERE rv.item_id = it.id) AS drg,
             (CASE

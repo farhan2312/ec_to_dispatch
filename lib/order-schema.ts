@@ -851,9 +851,15 @@ export const BOI_ITEM_FIELDS: OrderField[] = [
   { column: "remarks", label: "Remarks", type: "text" },
 ];
 
-// One drawing revision for an EC. Each of the three hand-offs is a Yes/No
-// plus its date — "No" reads as "not issued / not approved". Approval is
-// Central Visibility's call, so Drawing sees those two read-only.
+// One drawing revision for an EC, as a chain of hand-offs, each a Yes/No plus
+// its date — "No" reads as "not issued / not approved":
+//
+//   Drawing → Operations → Client → Approved → Production
+//
+// Drawing issues to Operations. Central Visibility takes it from there — the
+// issue to the client and the approval are theirs, so Drawing sees those
+// read-only — and Drawing issues to Production once it is approved. Each step
+// only appears once the one before it is Yes.
 export const DRAWING_REVISION_FIELDS: OrderField[] = [
   // `group` renders each hand-off as its own labelled subsection with a
   // divider between them (same card layout the invoice phases use).
@@ -865,18 +871,44 @@ export const DRAWING_REVISION_FIELDS: OrderField[] = [
     hideOnFirstRow: true,
   },
 
+  // Filled by Drawing.
+  {
+    column: "issued_to_operations",
+    label: "Drg. issued to Operations",
+    type: "select",
+    options: YES_NO,
+    group: "Issued to Operations",
+  },
+  {
+    column: "issued_to_operations_date",
+    label: "Issued to Operations Dt.",
+    type: "date",
+    group: "Issued to Operations",
+  },
+  {
+    column: "issued_to_operations_remarks",
+    label: "Remarks",
+    type: "text",
+    group: "Issued to Operations",
+  },
+
+  // Filled by Central Visibility, once Drawing has issued to Operations.
   {
     column: "issued_to_client",
     label: "Drg. issued to Client",
     type: "select",
     options: YES_NO,
+    centralOnly: true,
     group: "Issued to Client",
+    dependsOn: [{ column: "issued_to_operations", value: "Yes" }],
   },
   {
     column: "issued_to_client_date",
     label: "Issued to Client Dt.",
     type: "date",
+    centralOnly: true,
     group: "Issued to Client",
+    dependsOn: [{ column: "issued_to_operations", value: "Yes" }],
   },
 
   // Approval only matters once the drawing has gone to the client — gate the

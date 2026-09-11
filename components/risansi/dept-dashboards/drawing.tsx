@@ -17,8 +17,9 @@ import {
 
 /**
  * Drawing's board. Work is per EC and its status comes off the revision list —
- * issued to client, then approved — so the drawing that has been issued but
- * not signed back is the thing this page has to make obvious.
+ * issued to Operations, then to the client, then approved — so the drawing
+ * that has gone out but not come back approved is what this page has to make
+ * obvious.
  */
 export function DrawingDashboard(props: DeptDashboardProps) {
   const d = useDeptDashboard("drawing", props);

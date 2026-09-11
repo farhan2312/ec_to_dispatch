@@ -46,9 +46,9 @@ export const NOT_APPLICABLE = "N/A";
 const values = (list: { value: string }[]) => list.map((o) => o.value);
 
 const DEPT_STATUSES: Record<DeptFilterKey, string[]> = {
-  // Approval outranks issue: a drawing that came back approved reads as
-  // Approved even though it was issued first.
-  drawing: ["Approved", "Issued to Client", PENDING],
+  // The furthest hand-off wins: a drawing that came back approved reads as
+  // Approved even though it was issued to Operations and the client first.
+  drawing: ["Approved", "Issued to Client", "Issued to Operations", PENDING],
   // Bought out and every line receipted.
   purchase: ["Received", PENDING, NOT_APPLICABLE],
   quality: ["Submitted", PENDING, NOT_APPLICABLE],

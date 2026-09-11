@@ -64,7 +64,9 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
         ? "Approved"
         : same(r.drg_status, "drg. issued to client")
           ? "Issued to Client"
-          : PENDING,
+          : same(r.drg_status, "drg. issued to operations")
+            ? "Issued to Operations"
+            : PENDING,
     done: (r) => same(r.drg_status, "drg approved"),
     na: never,
     target: (r) => r.drg_target_date,

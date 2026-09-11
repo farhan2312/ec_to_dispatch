@@ -265,10 +265,12 @@ export async function notifySectionSaved(params: {
 // Drawing revisions
 // ---------------------------------------------------------------------------
 
-/** The three hand-offs on one drawing revision, plus what it belongs to. */
+/** The hand-offs on one drawing revision, plus what it belongs to. */
 export type DrawingHandoffs = {
   revision_no: string | null;
   ec_no: string | null;
+  issued_to_operations: string | null;
+  issued_to_operations_remarks: string | null;
   issued_to_client: string | null;
   approved: string | null;
   issued_to_production: string | null;
@@ -285,12 +287,16 @@ function answer(value: string | null | undefined): "Yes" | "No" | "" {
 }
 
 /**
- * Which notifications a drawing-revision save earns.
+ * Which notifications a drawing-revision save earns. Each hand-off tells the
+ * side that acts next:
  *
- * Approval is Central Visibility's call, so Drawing is the side waiting to
- * hear it — that hand-off is what unblocks issuing to production. The two
- * hand-offs Drawing itself makes (to Client, to Production) report up to
- * Mitali, who is muted when she is the one saving.
+ *   - Issued to Operations (Drawing) → Central Visibility, who issue it to the
+ *     client. Drawing's remarks ride along.
+ *   - Issued to Client, Approved (Central Visibility) → Drawing, who are
+ *     waiting on both: approval is what unblocks issuing to production.
+ *   - Issued to Production (Drawing) → Central Visibility.
+ *
+ * Mitali is muted on the hand-offs she makes herself.
  *
  * "No" notifies exactly like "Yes": a drawing that comes back *not* approved is
  * the answer Drawing most needs — it means rework — and a hand-off flipped back
@@ -312,12 +318,18 @@ export function drawingHandoffEvents(
 
   const events: DrawingHandoffEvent[] = [];
 
-  const client = answered("issued_to_client");
-  if (client && !actorIsCentral) {
+  const operations = answered("issued_to_operations");
+  if (operations && !actorIsCentral) {
+    const remarks = (after.issued_to_operations_remarks ?? "").trim();
     events.push({
       roles: ["central_visibility"],
-      what: phrase(client, "issued to Client"),
+      what: `${phrase(operations, "issued to Operations")}${remarks ? ` (remarks: ${remarks})` : ""}`,
     });
+  }
+
+  const client = answered("issued_to_client");
+  if (client) {
+    events.push({ roles: ["drawing"], what: phrase(client, "issued to Client") });
   }
 
   const approved = answered("approved");

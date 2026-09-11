@@ -829,11 +829,10 @@ export async function updateOrderChildAction(
         });
       }
     } else if (tbl === "order_drawing_revisions") {
-      // Approval is Central Visibility's call, so Drawing is the one waiting to
-      // hear it — that's what unblocks issuing to production. The two hand-offs
-      // Drawing itself makes (to Client, to Production) report up to Mitali,
-      // who is muted when she is the one saving. A "No" reports the same way a
-      // "Yes" does — not approved is the answer Drawing most needs to hear.
+      // Each hand-off tells whoever acts next: Drawing's issue to Operations
+      // and to Production go up to Mitali (muted when she saves); her issue to
+      // the client and the approval come back down to Drawing. A "No" reports
+      // the same way a "Yes" does — see drawingHandoffEvents.
       const after = await drawingHandoffs(id);
       if (after && soOrderId) {
         const events = drawingHandoffEvents(drgBefore, after, notifyMuted);
@@ -886,7 +885,8 @@ export async function updateOrderChildAction(
 /** Read one revision's hand-off state, before and after the write. */
 async function drawingHandoffs(id: string): Promise<DrawingHandoffs | null> {
   const result = await query<DrawingHandoffs>(
-    `SELECT rv.revision_no, it.ec_no, rv.issued_to_client, rv.approved,
+    `SELECT rv.revision_no, it.ec_no, rv.issued_to_operations,
+            rv.issued_to_operations_remarks, rv.issued_to_client, rv.approved,
             rv.issued_to_production
        FROM order_drawing_revisions rv
        JOIN order_items it ON it.id = rv.item_id

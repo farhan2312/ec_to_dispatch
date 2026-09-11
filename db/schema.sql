@@ -1876,3 +1876,20 @@ UPDATE audit_log a
    SET order_id = o.id
   FROM orders o
  WHERE a.order_id IS NULL AND a.so_no IS NOT NULL AND o.so_no = a.so_no;
+
+-- Drawing: a hand-off to Operations now comes before the drawing goes to the
+-- client. Drawing fills it; Central Visibility then records the issue to the
+-- client (and the approval), which was Drawing's to fill until now.
+ALTER TABLE order_drawing_revisions ADD COLUMN IF NOT EXISTS issued_to_operations TEXT;          -- Yes / No
+ALTER TABLE order_drawing_revisions ADD COLUMN IF NOT EXISTS issued_to_operations_date DATE;
+ALTER TABLE order_drawing_revisions ADD COLUMN IF NOT EXISTS issued_to_operations_remarks TEXT;
+
+-- The client step is now only shown once Operations = Yes. A revision that
+-- already recorded its client issue went straight there, under the old flow;
+-- mark it as through Operations — saying so — so its client and approval
+-- details stay on screen instead of being hidden behind a step it never had.
+UPDATE order_drawing_revisions
+   SET issued_to_operations = 'Yes',
+       issued_to_operations_remarks = 'Recorded before the Operations step existed'
+ WHERE issued_to_operations IS NULL
+   AND COALESCE(issued_to_client, '') <> '';

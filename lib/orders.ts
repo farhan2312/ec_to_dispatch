@@ -24,6 +24,7 @@ import {
   offsetFor,
   pageResult,
   type PageResult,
+  pageWithTotal,
 } from "@/lib/pagination";
 import {
   CHILD_FIELDS,
@@ -1214,23 +1215,38 @@ export type PaymentHoldRow = {
   order_value: string | null;
 };
 
-/** SOs whose payment is on Hold (escalated to Central Visibility). */
-export async function listPaymentHolds(): Promise<PaymentHoldRow[]> {
-  const result = await query<PaymentHoldRow>(
-    `SELECT o.id,
-            o.sl_no::int AS sl_no,
-            o.so_no,
-            to_char(o.so_date, 'YYYY-MM-DD') AS so_date,
-            o.order_type,
-            o.client_name,
-            o.order_value::text AS order_value,
-            a.hold_reason
-       FROM orders o
-       JOIN order_accounts a ON a.order_id = o.id
-      WHERE lower(a.payment_status) = 'outstanding hold'
-      ORDER BY o.sl_no ASC`
+/** Payment Holds show this many per page. */
+export const HOLDS_PAGE_SIZE = 25;
+
+/** One page of the SOs whose payment is on Hold (escalated to Central Visibility). */
+export async function listPaymentHoldsPage(page: number): Promise<PageResult<PaymentHoldRow>> {
+  const from = `FROM orders o
+                 JOIN order_accounts a ON a.order_id = o.id
+                WHERE lower(a.payment_status) = 'outstanding hold'`;
+  return pageWithTotal(
+    page,
+    (p) =>
+      query<PaymentHoldRow & { total_count: string }>(
+        `SELECT o.id,
+                o.sl_no::int AS sl_no,
+                o.so_no,
+                to_char(o.so_date, 'YYYY-MM-DD') AS so_date,
+                o.order_type,
+                o.client_name,
+                o.order_value::text AS order_value,
+                a.hold_reason,
+                count(*) OVER ()::text AS total_count
+           ${from}
+          ORDER BY o.sl_no ASC, o.id ASC
+          LIMIT $1 OFFSET $2`,
+        [HOLDS_PAGE_SIZE, offsetFor(p, HOLDS_PAGE_SIZE)]
+      ),
+    async () => {
+      const r = await query<{ count: string }>(`SELECT count(*)::text AS count ${from}`);
+      return Number(r.rows[0]?.count ?? 0);
+    },
+    HOLDS_PAGE_SIZE
   );
-  return result.rows;
 }
 
 // ---------------------------------------------------------------------------

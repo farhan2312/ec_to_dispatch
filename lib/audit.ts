@@ -2,10 +2,9 @@ import { query } from "@/lib/db";
 import { ACTIVE_GAP_MINUTES } from "@/lib/audit-labels";
 import {
   PAGE_SIZE,
-  clampPage,
   likePattern,
   offsetFor,
-  pageResult,
+  pageWithTotal,
   type PageResult,
 } from "@/lib/pagination";
 
@@ -154,44 +153,8 @@ async function countOf(sql: string, params: unknown[]): Promise<number> {
   return Number(r.rows[0]?.count ?? 0);
 }
 
-/**
- * Run a page query that carries its own total, and ask for a separate count
- * only when it cannot supply one: an empty page says nothing about how many
- * rows exist, so that case falls back to counting and re-fetching at the
- * clamped page.
- *
- * The audit database is remote — a round trip costs far more than any of these
- * queries do to run — so the common case has to be a single trip. Counting
- * first, as this used to, doubled the wait behind every tab and range click.
- */
-async function paged<T extends Counted>(
-  requested: number,
-  fetchPage: (page: number) => Promise<{ rows: T[] }>,
-  countAll: () => Promise<number>
-): Promise<PageResult<Omit<T, "total_count">>> {
-  const strip = (rows: T[]) =>
-    rows.map((row) => {
-      const rest: Partial<T> = { ...row };
-      delete rest.total_count;
-      return rest as Omit<T, "total_count">;
-    });
-
-  const page = Math.max(1, requested);
-  const first = await fetchPage(page);
-  if (first.rows.length > 0) {
-    return pageResult(strip(first.rows), Number(first.rows[0].total_count ?? 0), page);
-  }
-
-  // Nothing came back. On page 1 the filter simply matches nothing; beyond it
-  // the page may just be past the end.
-  if (page === 1) return pageResult([], 0, 1);
-
-  const total = await countAll();
-  const clamped = clampPage(page, total);
-  if (clamped === page) return pageResult([], total, page);
-  const again = await fetchPage(clamped);
-  return pageResult(strip(again.rows), total, clamped);
-}
+// Pages come from pageWithTotal (lib/pagination.ts): one trip in the common case.
+const paged = pageWithTotal;
 
 // $1 category, $2 since, $3 until, $4 search. Search reaches the SO and EC as
 // well as the free text, so "1455" finds everything done to that order.

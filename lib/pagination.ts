@@ -83,6 +83,42 @@ export function pageResult<T>(
   };
 }
 
+/**
+ * Run a page query whose rows carry the total as `total_count` (from
+ * count(*) OVER ()), asking for a separate count only when it cannot supply
+ * one: an empty page past the end says nothing about how many rows exist, so
+ * that case counts and re-fetches the last real page.
+ *
+ * The database is remote — a round trip costs far more than these queries do
+ * to run — so the common case is a single trip.
+ */
+export async function pageWithTotal<T extends { total_count: string | number }>(
+  requested: number,
+  fetchPage: (page: number) => Promise<{ rows: T[] }>,
+  countAll: () => Promise<number>,
+  pageSize = PAGE_SIZE
+): Promise<PageResult<Omit<T, "total_count">>> {
+  const strip = (rows: T[]) =>
+    rows.map((row) => {
+      const rest: Partial<T> = { ...row };
+      delete rest.total_count;
+      return rest as Omit<T, "total_count">;
+    });
+
+  const page = Math.max(1, requested);
+  const first = await fetchPage(page);
+  if (first.rows.length > 0) {
+    return pageResult(strip(first.rows), Number(first.rows[0].total_count ?? 0), page, pageSize);
+  }
+  if (page === 1) return pageResult([], 0, 1, pageSize);
+
+  const total = await countAll();
+  const clamped = clampPage(page, total, pageSize);
+  if (clamped === page) return pageResult([], total, page, pageSize);
+  const again = await fetchPage(clamped);
+  return pageResult(strip(again.rows), total, clamped, pageSize);
+}
+
 /** OFFSET for a 1-based page number. */
 export function offsetFor(page: number, pageSize = PAGE_SIZE): number {
   return (Math.max(1, page) - 1) * pageSize;

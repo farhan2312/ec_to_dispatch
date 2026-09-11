@@ -80,9 +80,9 @@ export default async function DrawingWorkspacePage({
             Drawing
           </h1>
           <p className="text-sm text-muted">
-            Record a revision per drawing issue. You fill the issued-to-Client
-            and issued-to-Production hand-offs; approval is recorded by Central
-            Visibility and shown here read-only.
+            Record a revision per drawing issue. You fill the hand-offs to
+            Operations and Production; issue to the Client and approval are
+            recorded by Central Visibility and shown here read-only.
           </p>
         </div>
       </div>

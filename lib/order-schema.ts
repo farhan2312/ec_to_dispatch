@@ -50,6 +50,9 @@ export type OrderField = {
   // `orders` (SO-level context); name an item-keyed table to surface another
   // department's field, e.g. Assembly seeing Planning's Assembly Date.
   from?: OrderTable;
+  // Number fields only: the lowest value accepted. Enforced on save
+  // (lib/order-validation.ts) and set on the input so its arrows stop there.
+  min?: number;
 };
 
 /** Turn a list of strings into { value, label } option objects. */
@@ -192,6 +195,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
         column: "order_value",
         label: "Purchase/Sales Order Value (without GST)",
         type: "number",
+        min: 0,
         group: "Purchase Order",
       },
       {
@@ -203,7 +207,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
       },
       { column: "so_no", label: "Sales Order Number", type: "text", group: "Purchase Order" },
       { column: "so_date", label: "Sales Order Date", type: "date", group: "Purchase Order" },
-      { column: "total_quantity", label: "Sales Order Total Quantity", type: "int", group: "Purchase Order" },
+      { column: "total_quantity", label: "Sales Order Total Quantity", type: "int", min: 0, group: "Purchase Order" },
 
       // Terms & Conditions — customer requirements + freight/packing + commercial
       // terms rolled into one section. Visible read-only to Billing.
@@ -395,7 +399,8 @@ export const ORDER_SECTIONS: OrderSection[] = [
         options: PAYMENT_STATUS_OPTIONS,
       },
       { column: "payment_confirmed_date", label: "Payment Confirmed Date", type: "date" },
-      { column: "amount_received", label: "Amount Received (without GST)", type: "number" },
+      // Also capped at the order value — see checkReceivedWithinValue.
+      { column: "amount_received", label: "Amount Received (without GST)", type: "number", min: 0 },
       {
         column: "balance_of_payment",
         label: "Balance of Payment",

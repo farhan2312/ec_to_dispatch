@@ -285,6 +285,7 @@ export function EditableSection({
                                     : "number"
                               }
                               step={field.type === "number" ? "any" : undefined}
+                              min={field.min}
                               value={values[field.column] ?? ""}
                               onChange={(e) =>
                                 setValues((prev) => ({

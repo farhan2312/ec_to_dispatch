@@ -1919,3 +1919,10 @@ CREATE INDEX IF NOT EXISTS order_drawing_documents_revision_idx
     ON order_drawing_documents (revision_id);
 CREATE INDEX IF NOT EXISTS order_drawing_documents_item_idx
     ON order_drawing_documents (item_id);
+
+-- Sessions are signed tokens with no server-side record, so nothing could end
+-- one early. A token issued before this moment is refused: an admin password
+-- reset sets it, which signs the user out everywhere — the point of a reset
+-- when an account may be compromised. A user changing their own password
+-- leaves it alone, so they are not thrown out of the session they are in.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS sessions_valid_after TIMESTAMPTZ;

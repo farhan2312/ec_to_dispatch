@@ -1,5 +1,6 @@
 "use server";
 
+import { randomInt } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/session";
 import {
@@ -7,8 +8,9 @@ import {
   deleteUser,
   EmailInUseError,
   getUserById,
+  resetToTemporaryPassword,
   setUserStatus,
-  updateUserRole,
+  updateUserDetails,
   type UserStatus,
 } from "@/lib/users";
 import { ALL_ROLES, roleLabel, type Role } from "@/lib/roles";
@@ -58,33 +60,6 @@ export async function setStatusAction(
     category: "ownership",
     target: target.email,
     details: `Set ${target.email} to ${status}`,
-  });
-  revalidatePath(PATH);
-  return { ok: true };
-}
-
-export async function updateRoleAction(
-  id: string,
-  role: string
-): Promise<UserActionResult> {
-  const admin = await requireAdmin();
-  if (!admin) return { ok: false, error: "Not authorized." };
-  if (!ALL_ROLES.includes(role as Role)) {
-    return { ok: false, error: "Invalid role." };
-  }
-  const target = await getUserById(id);
-  if (!target) return { ok: false, error: "User not found." };
-  if (isPlatformAdmin(target.email)) {
-    return { ok: false, error: "The platform admin's role cannot be changed." };
-  }
-
-  await updateUserRole(id, role as Role);
-  await logAudit({
-    actor: { id: admin.id, email: admin.email, role: admin.role },
-    action: "user.role_change",
-    category: "ownership",
-    target: target.email,
-    details: `Changed ${target.email} role to ${roleLabel(role)}`,
   });
   revalidatePath(PATH);
   return { ok: true };
@@ -158,4 +133,136 @@ export async function addUserAction(
     console.error("addUser failed:", error);
     return { ok: false, error: "Could not add the user. Please try again." };
   }
+}
+
+export type EditUserInput = {
+  fullName: string;
+  email: string;
+  role: string;
+};
+
+/**
+ * Edit a user's name, email and role in one go. The platform admin keeps its
+ * email and role — the email is how the platform recognises it — and nobody
+ * changes their own role, which is the one edit that can lock an admin out.
+ */
+export async function updateUserDetailsAction(
+  id: string,
+  input: EditUserInput
+): Promise<UserActionResult> {
+  const admin = await requireAdmin();
+  if (!admin) return { ok: false, error: "Not authorized." };
+  const target = await getUserById(id);
+  if (!target) return { ok: false, error: "User not found." };
+
+  const fullName = input.fullName?.trim() ?? "";
+  const email = input.email?.trim() ?? "";
+  const role = input.role as Role;
+  if (!fullName) return { ok: false, error: "Full name is required." };
+  if (fullName.length > 120) return { ok: false, error: "That name is too long." };
+  if (!/^[^s@]+@[^s@]+.[^s@]+$/.test(email) || email.length > 254) {
+    return { ok: false, error: "Enter a valid email address." };
+  }
+  if (!ALL_ROLES.includes(role)) return { ok: false, error: "Select a valid role." };
+
+  const emailChanged = email.toLowerCase() !== target.email.toLowerCase();
+  const roleChanged = role !== target.role;
+  if (isPlatformAdmin(target.email) && (emailChanged || roleChanged)) {
+    return {
+      ok: false,
+      error: "The platform admin's email and role cannot be changed.",
+    };
+  }
+  if (target.id === admin.id && roleChanged) {
+    return { ok: false, error: "You cannot change your own role." };
+  }
+
+  // What changed, for the audit trail — and nothing to write if it's nothing.
+  const changes: string[] = [];
+  if (fullName !== target.full_name) changes.push(`Name: ${target.full_name} → ${fullName}`);
+  if (email !== target.email) changes.push(`Email: ${target.email} → ${email}`);
+  if (roleChanged) changes.push(`Role: ${roleLabel(target.role)} → ${roleLabel(role)}`);
+  if (changes.length === 0) return { ok: true };
+
+  try {
+    await updateUserDetails(id, { fullName, email, role });
+  } catch (error) {
+    if (error instanceof EmailInUseError) {
+      return { ok: false, error: "Another account already uses that email." };
+    }
+    console.error("updateUserDetails failed:", error);
+    return { ok: false, error: "Could not save the changes. Please try again." };
+  }
+
+  await logAudit({
+    actor: { id: admin.id, email: admin.email, role: admin.role },
+    action: "user.update",
+    category: "ownership",
+    target: email,
+    details: `Edited ${target.email} — ${changes.join("; ")}`,
+  });
+  revalidatePath(PATH);
+  return { ok: true };
+}
+
+// No 0/O, 1/l/I: the password is read out or copied by hand.
+const PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+
+/** 12 characters from a CSPRNG, always with a digit and both letter cases. */
+function temporaryPassword(): string {
+  const pick = (from: string) => from[randomInt(from.length)];
+  for (;;) {
+    const candidate = Array.from({ length: 12 }, () => pick(PASSWORD_ALPHABET)).join("");
+    if (/[A-Z]/.test(candidate) && /[a-z]/.test(candidate) && /[0-9]/.test(candidate)) {
+      return candidate;
+    }
+    // A draw missing a class is rare; draw again rather than patch one in,
+    // which would make that position predictable.
+  }
+}
+
+export type ResetPasswordResult =
+  | { ok: true; temporaryPassword: string }
+  | { ok: false; error: string };
+
+/**
+ * Put a user on a fresh temporary password. It is returned once, for the
+ * admin to hand over, and never stored anywhere but as a hash. The user must
+ * set their own at their next sign-in, and every session they already had
+ * ends — so a reset also shuts out anyone holding a stolen session.
+ *
+ * Not for your own account (use Change password), and not for the platform
+ * admin: a reset puts the account in the hands of whoever issued it until the
+ * user signs in, and the platform admin must never be taken over that way.
+ */
+export async function resetPasswordAction(id: string): Promise<ResetPasswordResult> {
+  const admin = await requireAdmin();
+  if (!admin) return { ok: false, error: "Not authorized." };
+  const target = await getUserById(id);
+  if (!target) return { ok: false, error: "User not found." };
+  if (target.id === admin.id) {
+    return { ok: false, error: "Use Change password for your own account." };
+  }
+  if (isPlatformAdmin(target.email)) {
+    return { ok: false, error: "The platform admin's password cannot be reset here." };
+  }
+
+  const password = temporaryPassword();
+  try {
+    await resetToTemporaryPassword(id, password);
+  } catch (error) {
+    console.error("resetPassword failed:", error);
+    return { ok: false, error: "Could not reset the password. Please try again." };
+  }
+
+  // The password itself is never logged.
+  await logAudit({
+    actor: { id: admin.id, email: admin.email, role: admin.role },
+    action: "user.password_reset",
+    category: "ownership",
+    target: target.email,
+    details: `Reset the password for ${target.email} — signed out everywhere; must set a new one at next sign-in`,
+  });
+  revalidatePath(PATH);
+  return { ok: true, temporaryPassword: password };
 }

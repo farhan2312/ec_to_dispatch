@@ -22,6 +22,9 @@ export const ACTION_META: Record<string, { label: string; tone: AuditTone }> = {
   "user.approved": { label: "Approved user", tone: "green" },
   "user.disabled": { label: "Disabled user", tone: "red" },
   "user.delete": { label: "Deleted user", tone: "red" },
+  "user.update": { label: "Edited user", tone: "blue" },
+  "user.role_change": { label: "Changed role", tone: "blue" },
+  "user.password_reset": { label: "Reset password", tone: "amber" },
   "bug.report": { label: "Bug report", tone: "amber" },
 };
 

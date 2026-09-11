@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, X } from "lucide-react";
+import { Check, Copy, KeyRound, Loader2, Plus, X } from "lucide-react";
 import {
   UrlPagination,
   UrlSearchInput,
@@ -14,9 +14,11 @@ import type { User, UserStatus } from "@/lib/users";
 import {
   addUserAction,
   deleteUserAction,
+  resetPasswordAction,
   setStatusAction,
-  updateRoleAction,
+  updateUserDetailsAction,
 } from "@/app/risansi/user-access-control/actions";
+import { ConfirmDialog } from "./confirm-dialog";
 
 const STATUS_STYLES: Record<UserStatus, string> = {
   pending: "bg-amber-50 text-amber-700 ring-amber-200",
@@ -161,6 +163,12 @@ export function UsersAccessView({
                     <td className="px-4 py-3">
                       <div className="font-medium">{u.full_name}</div>
                       <div className="text-xs text-muted">{u.email}</div>
+                      {u.must_change_password && (
+                        <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                          <KeyRound className="h-3 w-3" />
+                          On a temporary password
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
@@ -219,13 +227,11 @@ export function UsersAccessView({
                             }
                           />
                         )}
-                        {!isProtected && (
-                          <ActionButton
-                            label="Edit"
-                            tone="neutral"
-                            onClick={() => setEditUser(u)}
-                          />
-                        )}
+                        <ActionButton
+                          label="Edit"
+                          tone="neutral"
+                          onClick={() => setEditUser(u)}
+                        />
                         {!isProtected && !isSelf && (
                           <ActionButton
                             label="Delete"
@@ -258,7 +264,14 @@ export function UsersAccessView({
 
       {showAdd && <AddUserModal onClose={() => setShowAdd(false)} />}
       {editUser && (
-        <EditRoleModal user={editUser} onClose={() => setEditUser(null)} />
+        <EditUserModal
+          user={editUser}
+          isProtected={
+            editUser.email.toLowerCase() === platformAdminEmail.toLowerCase()
+          }
+          isSelf={editUser.email.toLowerCase() === currentEmail.toLowerCase()}
+          onClose={() => setEditUser(null)}
+        />
       )}
     </div>
   );
@@ -367,17 +380,46 @@ function AddUserModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function EditRoleModal({ user, onClose }: { user: User; onClose: () => void }) {
+/**
+ * Edit a user's name, email and role, and — in its own section — reset their
+ * password. What cannot change for this user is shown locked with the reason,
+ * rather than hidden, so it doesn't look like a missing feature.
+ */
+function EditUserModal({
+  user,
+  isProtected,
+  isSelf,
+  onClose,
+}: {
+  user: User;
+  isProtected: boolean;
+  isSelf: boolean;
+  onClose: () => void;
+}) {
   const router = useRouter();
-  const [role, setRole] = useState(user.role);
+  const [values, setValues] = useState({
+    fullName: user.full_name,
+    email: user.email,
+    role: user.role as string,
+  });
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const emailLocked = isProtected;
+  const roleLocked = isProtected || isSelf;
+  const canReset = !isProtected && !isSelf;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setSaving(true);
-    const res = await updateRoleAction(user.id, role);
+    const res = await updateUserDetailsAction(user.id, values);
     setSaving(false);
     if (!res.ok) {
       setError(res.error);
@@ -387,46 +429,186 @@ function EditRoleModal({ user, onClose }: { user: User; onClose: () => void }) {
     onClose();
   }
 
+  async function reset() {
+    setResetting(true);
+    setResetError(null);
+    const res = await resetPasswordAction(user.id);
+    setResetting(false);
+    setConfirmReset(false);
+    if (!res.ok) {
+      setResetError(res.error);
+      return;
+    }
+    setTempPassword(res.temporaryPassword);
+    router.refresh();
+  }
+
+  async function copy() {
+    if (!tempPassword) return;
+    try {
+      await navigator.clipboard.writeText(tempPassword);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard can be blocked; the password is on screen to copy by hand.
+    }
+  }
+
+  const lockHint = "mt-1 text-[11px] text-muted-foreground";
+
   return (
-    <ModalShell title={`Edit role — ${user.full_name}`} onClose={onClose}>
-      <form onSubmit={submit}>
-        {error && (
-          <div className="mb-4 rounded-[10px] border border-danger-border bg-danger-bg px-4 py-2.5 text-sm text-danger">
-            {error}
+    <ModalShell title={`Edit user — ${user.full_name}`} onClose={onClose}>
+      {tempPassword ? (
+        // Shown once: the password exists nowhere else in plain text.
+        <div>
+          <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-emerald-700">
+            <Check className="h-4 w-4" />
+            Password reset for {user.email}
           </div>
-        )}
-        <label className={labelClass}>Role</label>
-        <div className="mb-6">
-          <select
-            className={`${inputClass} cursor-pointer`}
-            value={role}
-            onChange={(e) => setRole(e.target.value as User["role"])}
-          >
-            {ALL_ROLES.map((r) => (
-              <option key={r} value={r}>
-                {roleLabel(r)}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex gap-3">
+          <label className={labelClass}>Temporary password</label>
+          <div className="mb-3 flex items-center gap-2">
+            <code className="flex h-11 flex-1 select-all items-center rounded-[10px] border border-input-border bg-background px-3 font-mono text-base tracking-wider text-foreground">
+              {tempPassword}
+            </code>
+            <button
+              type="button"
+              onClick={copy}
+              className="inline-flex h-11 items-center gap-1.5 rounded-[10px] border border-input-border bg-surface px-3 text-sm font-medium text-foreground transition-colors hover:bg-background"
+            >
+              {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <ul className="mb-6 space-y-1 text-[13px] text-muted">
+            <li>• Share it with {user.full_name} directly — it will not be shown again.</li>
+            <li>• They have been signed out everywhere.</li>
+            <li>• At their next sign-in they must set a password of their own.</li>
+          </ul>
           <button
             type="button"
             onClick={onClose}
-            className="h-11 flex-1 rounded-[10px] border border-input-border bg-surface text-sm font-medium text-foreground transition-colors hover:bg-background"
+            className="h-11 w-full rounded-[10px] bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
           >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-70"
-          >
-            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-            {saving ? "Saving…" : "Save"}
+            Done
           </button>
         </div>
-      </form>
+      ) : (
+        <>
+          <form onSubmit={submit}>
+            {error && (
+              <div className="mb-4 rounded-[10px] border border-danger-border bg-danger-bg px-4 py-2.5 text-sm text-danger">
+                {error}
+              </div>
+            )}
+            <label className={labelClass}>Full name</label>
+            <div className="mb-4">
+              <input
+                className={inputClass}
+                value={values.fullName}
+                onChange={(e) => setValues((v) => ({ ...v, fullName: e.target.value }))}
+              />
+            </div>
+            <label className={labelClass}>Email</label>
+            <div className="mb-4">
+              <input
+                className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-60`}
+                type="email"
+                value={values.email}
+                disabled={emailLocked}
+                onChange={(e) => setValues((v) => ({ ...v, email: e.target.value }))}
+              />
+              {emailLocked && (
+                <p className={lockHint}>The platform admin&apos;s email is fixed.</p>
+              )}
+            </div>
+            <label className={labelClass}>Role</label>
+            <div className="mb-6">
+              <select
+                className={`${inputClass} cursor-pointer disabled:cursor-not-allowed disabled:opacity-60`}
+                value={values.role}
+                disabled={roleLocked}
+                onChange={(e) => setValues((v) => ({ ...v, role: e.target.value }))}
+              >
+                {ALL_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {roleLabel(r)}
+                  </option>
+                ))}
+              </select>
+              {roleLocked && (
+                <p className={lockHint}>
+                  {isProtected
+                    ? "The platform admin's role is fixed."
+                    : "You cannot change your own role."}
+                </p>
+              )}
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="h-11 flex-1 rounded-[10px] border border-input-border bg-surface text-sm font-medium text-foreground transition-colors hover:bg-background"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-70"
+              >
+                {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+                {saving ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          </form>
+
+          <div className="mt-6 border-t border-card-border pt-5">
+            <h3 className="mb-1 flex items-center gap-1.5 text-sm font-semibold text-foreground">
+              <KeyRound className="h-4 w-4 text-primary" />
+              Password
+            </h3>
+            {canReset ? (
+              <>
+                <p className="mb-3 text-[13px] text-muted">
+                  Issue a temporary password. {user.full_name} is signed out
+                  everywhere and must choose a new password at next sign-in.
+                </p>
+                {resetError && (
+                  <div className="mb-3 rounded-[10px] border border-danger-border bg-danger-bg px-4 py-2.5 text-sm text-danger">
+                    {resetError}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setConfirmReset(true)}
+                  className="inline-flex h-10 items-center gap-2 rounded-[10px] border border-amber-200 px-4 text-sm font-medium text-amber-700 transition-colors hover:bg-amber-50"
+                >
+                  <KeyRound className="h-4 w-4" />
+                  Reset password
+                </button>
+              </>
+            ) : (
+              <p className="text-[13px] text-muted">
+                {isSelf
+                  ? "To change your own password, use Change password in your profile menu."
+                  : "The platform admin's password cannot be reset from here."}
+              </p>
+            )}
+          </div>
+        </>
+      )}
+
+      <ConfirmDialog
+        open={confirmReset}
+        title="Reset this password?"
+        message={`${user.full_name} (${user.email}) will be signed out everywhere and given a temporary password.`}
+        detail="Their current password stops working immediately. You'll see the temporary password once, to share with them."
+        confirmLabel="Reset password"
+        tone="danger"
+        busy={resetting}
+        onConfirm={reset}
+        onCancel={() => setConfirmReset(false)}
+      />
     </ModalShell>
   );
 }

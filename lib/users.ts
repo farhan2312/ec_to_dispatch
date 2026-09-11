@@ -26,6 +26,8 @@ export type User = {
   // True when the user was issued a temporary password and must set their own
   // before using the app (enforced by the /risansi layout guard).
   must_change_password: boolean;
+  // Sessions issued before this are refused — set by an admin password reset.
+  sessions_valid_after: string | null;
 };
 
 export type NewUser = {
@@ -44,7 +46,7 @@ export class EmailInUseError extends Error {
 }
 
 const PUBLIC_COLUMNS =
-  "id, full_name, email, role, status, created_at, updated_at, notifications_seen_at, must_change_password";
+  "id, full_name, email, role, status, created_at, updated_at, notifications_seen_at, must_change_password, sessions_valid_after";
 
 /**
  * Create a user with the given status. Throws EmailInUseError if the email is
@@ -144,9 +146,51 @@ export async function listUsersPage(opts: {
   };
 }
 
-/** Change a user's role. */
-export async function updateUserRole(id: string, role: UserRole): Promise<void> {
-  await query(`UPDATE users SET role = $2 WHERE id = $1`, [id, role]);
+/**
+ * Change a user's name, email and role together. Throws EmailInUseError when
+ * the email already belongs to another account (the unique index is
+ * case-insensitive, so "Jane@x.com" and "jane@x.com" collide).
+ */
+export async function updateUserDetails(
+  id: string,
+  details: { fullName: string; email: string; role: UserRole }
+): Promise<void> {
+  try {
+    await query(
+      `UPDATE users SET full_name = $2, email = $3, role = $4 WHERE id = $1`,
+      [id, details.fullName.trim(), details.email.trim(), details.role]
+    );
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "23505"
+    ) {
+      throw new EmailInUseError();
+    }
+    throw error;
+  }
+}
+
+/**
+ * An admin reset: put the account on a temporary password the user must
+ * replace at their next sign-in, and end every session they already have —
+ * whoever holds one, it was issued before this moment.
+ */
+export async function resetToTemporaryPassword(
+  id: string,
+  temporaryPassword: string
+): Promise<void> {
+  const passwordHash = await bcrypt.hash(temporaryPassword, 12);
+  await query(
+    `UPDATE users
+        SET password_hash = $2,
+            must_change_password = true,
+            sessions_valid_after = now()
+      WHERE id = $1`,
+    [id, passwordHash]
+  );
 }
 
 /** Delete a user. */

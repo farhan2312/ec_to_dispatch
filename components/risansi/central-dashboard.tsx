@@ -28,6 +28,8 @@ import {
 } from "@/lib/dept-completion";
 import { DEPT_FILTER_KEYS, statusesFor } from "@/lib/dept-status";
 import { DEPT_VIEWS } from "@/lib/dept-view";
+// Shared with the orders list, so both screens mean the same span by "Last 7 days".
+import { DATE_PRESETS, presetRange, type DatePreset } from "@/lib/order-list-filter";
 import { PAYMENT_STATUS_OPTIONS } from "@/lib/order-schema";
 import { Pagination } from "./table-tools";
 
@@ -102,40 +104,6 @@ const DATE_FIELDS = [
   { value: "completed_on", label: "Completed on" },
 ] as const;
 type DateField = (typeof DATE_FIELDS)[number]["value"];
-
-const DATE_PRESETS = [
-  "Today",
-  "Yesterday",
-  "Last 7 days",
-  "Last 30 days",
-  "This month",
-  "This year",
-] as const;
-type DatePreset = (typeof DATE_PRESETS)[number];
-
-/** A preset's [from, to] as IST calendar dates, matching how dates serialize. */
-function presetRange(preset: DatePreset): [string, string] {
-  const today = todayIso();
-  const shift = (days: number) => {
-    const d = new Date(`${today}T00:00:00Z`);
-    d.setUTCDate(d.getUTCDate() + days);
-    return d.toISOString().slice(0, 10);
-  };
-  switch (preset) {
-    case "Today":
-      return [today, today];
-    case "Yesterday":
-      return [shift(-1), shift(-1)];
-    case "Last 7 days":
-      return [shift(-6), today];
-    case "Last 30 days":
-      return [shift(-29), today];
-    case "This month":
-      return [`${today.slice(0, 7)}-01`, today];
-    default:
-      return [`${today.slice(0, 4)}-01-01`, today];
-  }
-}
 
 /** "Signed off 10 Sept · 6 days late" under a department's status. */
 function Signed({ completion }: { completion: DeptCompletion | null }) {

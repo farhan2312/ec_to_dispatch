@@ -16,6 +16,7 @@ import {
   PENDING,
   type DeptFilterKey,
 } from "@/lib/dept-status";
+import type { OrderListFilter, SignOff } from "@/lib/order-list-filter";
 import {
   PAGE_SIZE,
   clampPage,
@@ -1548,15 +1549,16 @@ const BILLING_RAISED = `(EXISTS (SELECT 1 FROM order_billing_docs d
 // The orders-list filter, shared by the paged table and the Excel export so
 // "Export N filtered" can never disagree with the rows on screen.
 // $1 = zones (null for all), $2 = search pattern (null for all).
-const ORDER_LIST_WHERE = `WHERE ($1::text[] IS NULL OR TRIM(COALESCE(o.zone, '')) = ANY($1))
-        AND ($2::text IS NULL
-             OR o.so_no ILIKE $2 OR o.client_name ILIKE $2
-             OR o.client_code ILIKE $2 OR o.po_no ILIKE $2
-             OR o.sl_no::text ILIKE $2
-             OR EXISTS (SELECT 1 FROM order_items s
-                         WHERE s.order_id = o.id
-                           AND (s.ec_no ILIKE $2 OR s.item_type ILIKE $2
-                                OR s.model_no ILIKE $2)))`;
+/** The free-text search on the orders list, against placeholder `p`. */
+function orderSearchSql(p: string): string {
+  return `(o.so_no ILIKE ${p} OR o.client_name ILIKE ${p}
+          OR o.client_code ILIKE ${p} OR o.po_no ILIKE ${p}
+          OR o.sl_no::text ILIKE ${p}
+          OR EXISTS (SELECT 1 FROM order_items s
+                      WHERE s.order_id = o.id
+                        AND (s.ec_no ILIKE ${p} OR s.item_type ILIKE ${p}
+                             OR s.model_no ILIKE ${p})))`;
+}
 
 /**
  * SQL for "this SO is <status> in <dept>", where <status> is the department's
@@ -1666,61 +1668,135 @@ function deptStatusPredicate(dept: DeptFilterKey, status: string): string {
                    WHERE it.order_id = o.id AND (${ecState(dept, status)}))`;
 }
 
-/** The extra WHERE clause for the department filter, or "" when it is off. */
-function deptFilterSql(
-  dept: DeptFilterKey | null,
-  status: string | null
-): string {
-  if (!dept || !status) return "";
-  return ` AND ${deptStatusPredicate(dept, status)}`;
+/**
+ * Whether a department has signed this SO off. Per-EC departments sign off
+ * each EC, and an SO qualifies when any of its ECs does — the same "any EC"
+ * reading the status filter uses, so an SO that is part-way through shows up
+ * under both answers.
+ */
+function signOffPredicate(dept: DeptFilterKey, signOff: SignOff): string {
+  const d = lit(dept);
+  if (!isPerEcDept(dept)) {
+    const signed = `EXISTS (SELECT 1 FROM order_dept_completions c
+                             WHERE c.order_id = o.id AND c.item_id IS NULL
+                               AND c.dept = ${d})`;
+    return signOff === "completed" ? signed : `NOT ${signed}`;
+  }
+  return signOff === "completed"
+    ? `EXISTS (SELECT 1 FROM order_items it
+                JOIN order_dept_completions c ON c.item_id = it.id AND c.dept = ${d}
+               WHERE it.order_id = o.id)`
+    : `EXISTS (SELECT 1 FROM order_items it
+               WHERE it.order_id = o.id
+                 AND NOT EXISTS (SELECT 1 FROM order_dept_completions c
+                                  WHERE c.item_id = it.id AND c.dept = ${d}))`;
+}
+
+/**
+ * The WHERE clause for an orders-list filter, with its parameters numbered
+ * from $1. Values go in as parameters; the only inlined text is department
+ * keys and statuses, which come from fixed lists and pass through lit().
+ */
+function orderListWhere(f: OrderListFilter): { where: string; params: unknown[] } {
+  const params: unknown[] = [];
+  const p = (value: unknown) => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+  const clauses: string[] = [];
+  // Facets match the trimmed value, the same way their options are listed.
+  const facet = (column: string, values: string[]) =>
+    `TRIM(COALESCE(${column}, '')) = ANY(${p(values)}::text[])`;
+
+  if (f.search) clauses.push(orderSearchSql(p(likePattern(f.search))));
+  if (f.zones.length) clauses.push(facet("o.zone", f.zones));
+  if (f.reps.length) clauses.push(facet("o.reps", f.reps));
+  if (f.markets.length) clauses.push(facet("o.market_type", f.markets));
+  if (f.types.length) {
+    // The type is the SO's, or any of its ECs' — the pipeline reads each EC
+    // by its own item type, falling back to the order's.
+    const t = p(f.types);
+    clauses.push(`(TRIM(COALESCE(o.order_type, '')) = ANY(${t}::text[])
+                   OR EXISTS (SELECT 1 FROM order_items s
+                               WHERE s.order_id = o.id
+                                 AND TRIM(COALESCE(s.item_type, '')) = ANY(${t}::text[])))`);
+  }
+  if (f.dept && f.deptStatus) clauses.push(deptStatusPredicate(f.dept, f.deptStatus));
+  if (f.dept && f.signOff) clauses.push(signOffPredicate(f.dept, f.signOff));
+
+  if (f.from || f.to) {
+    const range = (column: string) =>
+      [
+        f.from ? `${column} >= ${p(f.from)}::date` : null,
+        f.to ? `${column} <= ${p(f.to)}::date` : null,
+      ]
+        .filter(Boolean)
+        .join(" AND ");
+    if (f.dateField === "so_date") clauses.push(range("o.so_date"));
+    else if (f.dateField === "dispatch_target") clauses.push(range("o.dispatch_target_date"));
+    else if (f.dateField === "ec_date") {
+      clauses.push(`EXISTS (SELECT 1 FROM order_items s
+                             WHERE s.order_id = o.id AND ${range("s.ec_date")})`);
+    } else {
+      // Completed on: the chosen department's sign-off, or — with none chosen
+      // — any department's, which answers "what got finished this week?".
+      const dept = f.dept ? ` AND c.dept = ${lit(f.dept)}` : "";
+      clauses.push(`EXISTS (SELECT 1 FROM order_dept_completions c
+                             WHERE c.order_id = o.id${dept}
+                               AND ${range("c.completed_on")})`);
+    }
+  }
+
+  return {
+    where: clauses.length ? `WHERE ${clauses.join("\n        AND ")}` : "",
+    params,
+  };
 }
 
 /**
  * Every SO id matching the list filter — the whole result set, not one page.
  * The export needs this because the table only holds the current page's rows.
  */
-export async function listOrderIdsMatching(opts: {
-  search: string;
-  zones: string[];
-  dept?: DeptFilterKey | null;
-  deptStatus?: string | null;
-}): Promise<string[]> {
-  const dept = deptFilterSql(opts.dept ?? null, opts.deptStatus ?? null);
+export async function listOrderIdsMatching(filter: OrderListFilter): Promise<string[]> {
+  const { where, params } = orderListWhere(filter);
   const result = await query<{ id: string }>(
-    `SELECT o.id FROM orders o ${ORDER_LIST_WHERE}${dept} ORDER BY o.sl_no ASC`,
-    [
-      opts.zones.length > 0 ? opts.zones : null,
-      opts.search ? likePattern(opts.search) : null,
-    ]
+    `SELECT o.id FROM orders o ${where} ORDER BY o.sl_no ASC`,
+    params
   );
   return result.rows.map((r) => r.id);
 }
 
+/** The values each facet can take, from the whole table rather than a page. */
+export type OrderListOptions = {
+  zones: string[];
+  reps: string[];
+  markets: string[];
+  types: string[];
+};
+
 export async function listOrdersPage(opts: {
   page: number;
-  search: string;
-  zones: string[];
-  dept?: DeptFilterKey | null;
-  deptStatus?: string | null;
-}): Promise<PageResult<OrderListRow> & { zoneOptions: string[] }> {
-  const search = opts.search ? likePattern(opts.search) : null;
-  const zones = opts.zones.length > 0 ? opts.zones : null;
+  filter: OrderListFilter;
+}): Promise<PageResult<OrderListRow> & { options: OrderListOptions }> {
+  const { where, params } = orderListWhere(opts.filter);
+  const limit = `$${params.length + 1}`;
+  const offset = `$${params.length + 2}`;
 
-  const where =
-    ORDER_LIST_WHERE + deptFilterSql(opts.dept ?? null, opts.deptStatus ?? null);
-
-  const [totals, zoneRows] = await Promise.all([
-    query<{ count: string }>(
-      `SELECT count(*) AS count FROM orders o ${where}`,
-      [zones, search]
-    ),
-    // Zone choices come from the whole table, not the current page.
-    query<{ zone: string }>(
-      `SELECT DISTINCT TRIM(zone) AS zone FROM orders
-        WHERE zone IS NOT NULL AND TRIM(zone) <> ''
-        ORDER BY 1`
+  const [totals, optionRows] = await Promise.all([
+    query<{ count: string }>(`SELECT count(*) AS count FROM orders o ${where}`, params),
+    // Facet choices come from the whole table, not the current page, in one
+    // trip: each facet's distinct trimmed values.
+    query<{ facet: string; value: string }>(
+      `SELECT DISTINCT 'zone' AS facet, TRIM(zone) AS value FROM orders WHERE TRIM(COALESCE(zone, '')) <> ''
+       UNION SELECT DISTINCT 'rep', TRIM(reps) FROM orders WHERE TRIM(COALESCE(reps, '')) <> ''
+       UNION SELECT DISTINCT 'market', TRIM(market_type) FROM orders WHERE TRIM(COALESCE(market_type, '')) <> ''
+       UNION SELECT DISTINCT 'type', TRIM(order_type) FROM orders WHERE TRIM(COALESCE(order_type, '')) <> ''
+       UNION SELECT DISTINCT 'type', TRIM(item_type) FROM order_items WHERE TRIM(COALESCE(item_type, '')) <> ''
+       ORDER BY 1, 2`
     ),
   ]);
+  const optionsOf = (facet: string) =>
+    optionRows.rows.filter((r) => r.facet === facet).map((r) => r.value);
 
   const total = Number(totals.rows[0]?.count ?? 0);
   const page = clampPage(opts.page, total);
@@ -1765,13 +1841,18 @@ export async function listOrdersPage(opts: {
        ) ic ON ic.order_id = o.id
       ${where}
       ORDER BY o.sl_no ASC
-      LIMIT $3 OFFSET $4`,
-      [zones, search, PAGE_SIZE, offsetFor(page)]
+      LIMIT ${limit} OFFSET ${offset}`,
+      [...params, PAGE_SIZE, offsetFor(page)]
     ))();
 
   return {
     ...pageResult(rows.rows, total, page),
-    zoneOptions: zoneRows.rows.map((r) => r.zone),
+    options: {
+      zones: optionsOf("zone"),
+      reps: optionsOf("rep"),
+      markets: optionsOf("market"),
+      types: optionsOf("type"),
+    },
   };
 }
 export async function listOrders(): Promise<OrderListRow[]> {

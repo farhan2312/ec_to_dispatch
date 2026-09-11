@@ -1774,7 +1774,7 @@ UPDATE audit_log a
          'Purchase', 'QC', 'Quality', 'Planning', 'Assembly & Dispatch',
          'Assembly & Packing', 'EC / Pump order', 'EC order', 'PI', 'Invoice',
          'Bought-out item', 'Drawing revision', 'Packing slip', 'Lot',
-         'Order Copy', 'Quality Requirement Docs');
+         'Order Copy', 'Quality Requirement Docs', 'Drawing document');
 
 -- 2. Targets that were an id.
 UPDATE audit_log a
@@ -1893,3 +1893,29 @@ UPDATE order_drawing_revisions
        issued_to_operations_remarks = 'Recorded before the Operations step existed'
  WHERE issued_to_operations IS NULL
    AND COALESCE(issued_to_client, '') <> '';
+
+-- ===========================================================================
+-- order_drawing_documents
+-- ===========================================================================
+-- Documents Drawing shares against one drawing revision — a link to a General
+-- Arrangement drawing, a performance curve, a part drawing — and the
+-- departments it is meant for. Assigned departments are notified and see the
+-- document on the EC; Drawing and Central Visibility see all of them.
+-- item_id repeats the revision's EC so the per-EC reads need no join.
+CREATE TABLE IF NOT EXISTS order_drawing_documents (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    revision_id     UUID NOT NULL REFERENCES order_drawing_revisions(id) ON DELETE CASCADE,
+    item_id         UUID NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+    doc_type        TEXT NOT NULL,
+    link            TEXT NOT NULL,
+    -- Roles: planning | purchase | central_visibility (lib/drawing-docs.ts).
+    assigned_roles  TEXT[] NOT NULL DEFAULT '{}',
+    remarks         TEXT,
+    created_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_by_role TEXT,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS order_drawing_documents_revision_idx
+    ON order_drawing_documents (revision_id);
+CREATE INDEX IF NOT EXISTS order_drawing_documents_item_idx
+    ON order_drawing_documents (item_id);

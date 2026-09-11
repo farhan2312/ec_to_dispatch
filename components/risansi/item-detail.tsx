@@ -15,6 +15,7 @@ import {
 import type { ItemDetail as ItemDetailData } from "@/lib/orders";
 import { EditableSection, type DocumentsConfig } from "./editable-section";
 import { OrderChildList } from "./order-children";
+import { RevisionDocsButton } from "./drawing-docs";
 import { OrderCopyCell } from "./order-copy-cell";
 
 type Row = Record<string, unknown>;
@@ -142,6 +143,25 @@ export function ItemDetail({
                     canEditCentral={central}
                     kind={section.childKind}
                     context={childContext}
+                    rowAction={
+                      child === "order_drawing_revisions"
+                        ? (rev) => (
+                            <RevisionDocsButton
+                              revisionId={String(rev.id)}
+                              label={[
+                                order.so_no,
+                                item.ec_no,
+                                String(rev.revision_no ?? "").trim()
+                                  ? `Rev. ${String(rev.revision_no).trim()}`
+                                  : "First issue",
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                              count={Number(rev.doc_count ?? 0)}
+                            />
+                          )
+                        : undefined
+                    }
                   />
                 ) : (
                   <section className="rounded-xl border border-card-border bg-surface p-6 shadow-sm">

@@ -35,6 +35,7 @@ export function OrderChildList({
   context,
   renderExtra,
   rowHeader,
+  rowAction,
   headerAction,
   bulkSave = false,
 }: {
@@ -69,6 +70,9 @@ export function OrderChildList({
   // linked packing slip's EC / Packing Slip No. / Qty at the top of the card
   // (that context isn't part of the invoice form itself).
   rowHeader?: (row: Row) => React.ReactNode;
+  // A control at the top right of each row's card, beside (not inside) the
+  // collapse toggle — e.g. a drawing revision's Documents button.
+  rowAction?: (row: Row) => React.ReactNode;
   // Optional control shown in the card header, left of the Add button (e.g.
   // the PI Excel upload on the Operation card).
   headerAction?: React.ReactNode;
@@ -261,6 +265,7 @@ export function OrderChildList({
               onSave={() => saveRow(row)}
               onDelete={() => deleteRow(row)}
               headerContent={rowHeader?.(row) ?? null}
+              headerAction={rowAction?.(row) ?? null}
             />
           ))}
         </div>
@@ -423,6 +428,7 @@ function RowCard({
   onSave,
   onDelete,
   headerContent,
+  headerAction,
 }: {
   row: Row;
   rowIndex: number;
@@ -441,6 +447,7 @@ function RowCard({
   // Explicit header text/content, e.g. the packing-slip context for an
   // invoice card. When set, it replaces the auto-generated field summary.
   headerContent?: React.ReactNode;
+  headerAction?: React.ReactNode;
 }) {
   const inputClass =
     "h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
@@ -472,11 +479,14 @@ function RowCard({
 
   return (
     <div className="rounded-xl border border-card-border bg-surface shadow-sm">
+      {/* The action sits beside the toggle rather than inside it: a button
+          cannot hold another button, and clicking it must not fold the card. */}
+      <div className="flex items-center rounded-t-xl transition-colors hover:bg-background/60">
       <button
         type="button"
         onClick={() => setCollapsed((c) => !c)}
         aria-expanded={!collapsed}
-        className="flex w-full items-center gap-3 rounded-t-xl px-4 py-3 text-left transition-colors hover:bg-background/60"
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-tl-xl px-4 py-3 text-left"
       >
         <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-input-border text-muted-foreground">
           {collapsed ? (
@@ -494,6 +504,8 @@ function RowCard({
           </span>
         )}
       </button>
+      {headerAction && <div className="shrink-0 pr-3">{headerAction}</div>}
+      </div>
 
       {!collapsed && (
         <>

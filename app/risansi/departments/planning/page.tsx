@@ -12,6 +12,7 @@ import { listRemindersForDepartment } from "@/lib/reminders";
 import { PLANNING_CONTEXT_FIELDS, SECTION_BY_TABLE } from "@/lib/order-schema";
 import { unreadByOrder } from "@/lib/order-messages";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
+import { countEcDocuments } from "@/lib/drawing-docs-db";
 import { RemindersPanel } from "@/components/risansi/reminders-panel";
 
 export const metadata: Metadata = {
@@ -66,6 +67,12 @@ export default async function PlanningWorkspacePage({
     user
   );
 
+  // Drawing documents shared with Planning, per EC, for the button badge.
+  const drawingDocCounts = await countEcDocuments(
+    queue.rows.map((o) => String(o.id)),
+    user.role
+  );
+
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
       <div className="mb-6 flex items-center gap-3">
@@ -97,6 +104,7 @@ export default async function PlanningWorkspacePage({
         readonlyFields={PLANNING_CONTEXT_FIELDS}
         canEditCentral={isCentral(user.role)}
         openOrderId={edit}
+        drawingDocCounts={drawingDocCounts}
       />
     </div>
   );

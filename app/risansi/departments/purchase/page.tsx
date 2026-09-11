@@ -12,6 +12,7 @@ import { parsePage, parseQuery } from "@/lib/pagination";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import { unreadByOrder } from "@/lib/order-messages";
 import { PurchaseWorkspace } from "@/components/risansi/purchase-workspace";
+import { countEcDocuments } from "@/lib/drawing-docs-db";
 import { RemindersPanel } from "@/components/risansi/reminders-panel";
 
 export const metadata: Metadata = {
@@ -54,6 +55,12 @@ export default async function PurchaseWorkspacePage({
     user
   );
 
+  // Drawing documents shared with Purchase, per EC, for the button badge.
+  const drawingDocCounts = await countEcDocuments(
+    queue.rows.map((r) => String(r.id)),
+    user.role
+  );
+
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
       <div className="mb-6 flex items-center gap-3">
@@ -83,6 +90,7 @@ export default async function PurchaseWorkspacePage({
         queue={queue}
         canEdit={canEditChild(user.role, "order_boi_items")}
         openItemId={edit}
+        drawingDocCounts={drawingDocCounts}
       />
     </div>
   );

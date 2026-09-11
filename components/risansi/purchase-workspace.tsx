@@ -6,6 +6,7 @@ import type { PurchaseQueueRow } from "@/lib/orders";
 import { BOI_ITEM_FIELDS } from "@/lib/order-schema";
 import { isCentral } from "@/lib/roles";
 import { OrderChildList } from "./order-children";
+import { EcDrawingDocsButton } from "./drawing-docs";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { useFocusRow } from "./use-focus-row";
 import type { PageResult } from "@/lib/pagination";
@@ -39,6 +40,7 @@ export function PurchaseWorkspace({
   role,
   unreadThreads = {},
   completions = [],
+  drawingDocCounts = {},
 }: {
   // One server-fetched page of SOs, with every EC of those SOs.
   queue: PageResult<PurchaseQueueRow>;
@@ -54,6 +56,8 @@ export function PurchaseWorkspace({
   unreadThreads?: Record<string, number>;
   // Purchase's sign-offs for the SOs on this page.
   completions?: DeptCompletion[];
+  // Drawing documents shared with Purchase, per EC id.
+  drawingDocCounts?: Record<string, number>;
 }) {
   const rows = queue.rows;
   const { get: getParam } = useUrlTable();
@@ -223,6 +227,14 @@ export function PurchaseWorkspace({
                                   <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
                                     EC · {row.ec_no ?? "—"}
                                   </span>
+                                  <span className="ml-auto" />
+                                  {/* Drawing documents shared with Purchase
+                                      against this EC's revisions. */}
+                                  <EcDrawingDocsButton
+                                    itemId={String(row.id)}
+                                    label={[row.so_no, row.ec_no].filter(Boolean).join(" · ")}
+                                    count={drawingDocCounts[String(row.id)] ?? 0}
+                                  />
                                   <DeptCompleteCheck
                                     scopeId={String(row.id)}
                                     dept="purchase"

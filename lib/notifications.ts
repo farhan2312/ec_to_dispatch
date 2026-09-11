@@ -1,4 +1,10 @@
 import { query } from "@/lib/db";
+import {
+  offsetFor,
+  pageResult,
+  pageWithTotal,
+  type PageResult,
+} from "@/lib/pagination";
 import { SECTION_BY_TABLE, type OrderTable } from "@/lib/order-schema";
 
 type Row = Record<string, unknown> | null;
@@ -38,21 +44,40 @@ export function recipientRolesForUser(role: string): string[] {
 // Reads (for the bell)
 // ---------------------------------------------------------------------------
 
-export async function listNotifications(
+/** Notifications and escalations show this many per page. */
+export const FEED_PAGE_SIZE = 25;
+
+/**
+ * One page of a user's notifications, newest first. Replaces a fixed "latest
+ * 30", which left everything older unreachable.
+ */
+export async function listNotificationsPage(
   roles: string[],
-  limit = 30
-): Promise<NotificationRow[]> {
-  if (roles.length === 0) return [];
-  const result = await query<NotificationRow>(
-    `SELECT id, order_id, item_id, type, message,
-            to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
-       FROM notifications
-      WHERE recipient_role = ANY($1)
-      ORDER BY created_at DESC
-      LIMIT $2`,
-    [roles, limit]
+  page: number
+): Promise<PageResult<NotificationRow>> {
+  if (roles.length === 0) return pageResult([], 0, 1, FEED_PAGE_SIZE);
+  return pageWithTotal(
+    page,
+    (p) =>
+      query<NotificationRow & { total_count: string }>(
+        `SELECT id, order_id, item_id, type, message,
+                to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+                count(*) OVER ()::text AS total_count
+           FROM notifications
+          WHERE recipient_role = ANY($1)
+          ORDER BY created_at DESC
+          LIMIT $2 OFFSET $3`,
+        [roles, FEED_PAGE_SIZE, offsetFor(p, FEED_PAGE_SIZE)]
+      ),
+    async () => {
+      const r = await query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM notifications WHERE recipient_role = ANY($1)`,
+        [roles]
+      );
+      return Number(r.rows[0]?.count ?? 0);
+    },
+    FEED_PAGE_SIZE
   );
-  return result.rows;
 }
 
 export async function countUnread(

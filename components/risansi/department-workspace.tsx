@@ -189,16 +189,20 @@ export function DepartmentWorkspace({
 
   const { placeholder: searchPlaceholder } = searchConfigFor(table);
 
+  // A section that is only a child list (Drawing → revisions) has nothing for
+  // the edit modal to show, so a notification lands on the EC itself — its SO
+  // expanded, the EC scrolled to and ringed — where the revisions are.
+  const hasEditForm = fields.length > 0 || documents.length > 0;
+
   useEffect(() => {
-    if (!openOrderId || !canEdit) return;
+    if (!openOrderId) return;
     const row = orders.find((o) => String(o.id) === openOrderId);
-    if (row) {
-      setEditRow(row);
-      // Also expand that row's SO so the queue reveals it when the user closes
-      // the edit modal.
-      const soKey = String(row.so_no ?? row.sl_no ?? "");
-      if (soKey) setExpanded((prev) => new Set(prev).add(soKey));
-    }
+    if (!row) return;
+    // Expand that row's SO so the queue reveals it (and, with an edit form,
+    // shows it once the modal is closed).
+    const soKey = String(row.so_no ?? row.sl_no ?? "");
+    if (soKey) setExpanded((prev) => new Set(prev).add(soKey));
+    if (canEdit && hasEditForm) setEditRow(row);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openOrderId]);
 
@@ -687,7 +691,12 @@ export function DepartmentWorkspace({
                                     g.ecs.map((ec) => (
                                       <div
                                         key={`slips-${String(ec.id)}`}
-                                        className="rounded-lg border border-card-border bg-surface p-3 shadow-sm"
+                                        // Without the flat EC table this card is
+                                        // the EC's only row — the deep-link target.
+                                        data-focus-row={hasFlatColumns ? undefined : String(ec.id)}
+                                        className={`rounded-lg border border-card-border bg-surface p-3 shadow-sm transition-colors ${
+                                          hasFlatColumns ? "" : focusClass(String(ec.id))
+                                        }`}
                                       >
                                         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                                           <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">

@@ -12,13 +12,15 @@ import {
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canSeeEscalations, departmentHrefForRole } from "@/lib/roles";
-import { listAlerts, type AlertRow } from "@/lib/alerts";
+import { ALERTS_PAGE_SIZE, listAlertsPage, type AlertRow } from "@/lib/alerts";
 import {
-  listNotifications,
+  listNotificationsPage,
   recipientRolesForUser,
   type NotificationRow,
 } from "@/lib/notifications";
+import { pageResult, parsePage, type PageResult } from "@/lib/pagination";
 import { MarkNotificationsSeen } from "@/components/risansi/mark-notifications-seen";
+import { UrlPagination } from "@/components/risansi/url-table";
 
 export const metadata: Metadata = {
   title: "Notifications | Risansi",
@@ -56,15 +58,16 @@ function timeAgo(iso: string): string {
 }
 
 function NotificationFeed({
-  items,
+  page,
   hrefFor,
 }: {
-  items: NotificationRow[];
+  page: PageResult<NotificationRow>;
   // Where "Open" should land — a department's own edit form, or the SO / EC
   // detail for central/admin (see the page component below).
   hrefFor: (n: NotificationRow) => string;
 }) {
-  if (items.length === 0) {
+  const items = page.rows;
+  if (page.total === 0) {
     return (
       <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
         <p className="text-sm font-medium text-foreground">No notifications yet</p>
@@ -108,6 +111,14 @@ function NotificationFeed({
           );
         })}
       </ul>
+      <UrlPagination
+        paramKey="npage"
+        page={page.page}
+        totalPages={page.totalPages}
+        from={page.from}
+        to={page.to}
+        total={page.total}
+      />
     </div>
   );
 }
@@ -149,8 +160,17 @@ function formatDate(value: string | null): string {
   });
 }
 
-function Escalations({ alerts }: { alerts: AlertRow[] }) {
-  if (alerts.length === 0) {
+// Per-EC escalations open that EC's summary; SO-level ones (payment holds)
+// open the SO.
+function alertHref(alert: AlertRow): string {
+  return alert.item_id
+    ? `/risansi/orders/${alert.id}/items/${alert.item_id}`
+    : `/risansi/orders/${alert.id}`;
+}
+
+function Escalations({ page }: { page: PageResult<AlertRow> }) {
+  const alerts = page.rows;
+  if (page.total === 0) {
     return (
       <div className="rounded-xl border border-card-border bg-surface px-6 py-12 text-center shadow-sm">
         <p className="text-sm font-medium text-foreground">All clear</p>
@@ -168,7 +188,7 @@ function Escalations({ alerts }: { alerts: AlertRow[] }) {
           const Icon = style.icon;
           return (
             <li
-              key={`${alert.id}-${alert.department}-${i}`}
+              key={`${alert.id}-${alert.item_id ?? ""}-${alert.department}-${i}`}
               className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="flex min-w-0 items-start gap-3">
@@ -191,7 +211,7 @@ function Escalations({ alerts }: { alerts: AlertRow[] }) {
                 </div>
               </div>
               <Link
-                href={`/risansi/orders/${alert.id}`}
+                href={alertHref(alert)}
                 className="shrink-0 text-sm font-medium text-primary hover:text-primary-hover"
               >
                 Open
@@ -200,20 +220,36 @@ function Escalations({ alerts }: { alerts: AlertRow[] }) {
           );
         })}
       </ul>
+      <UrlPagination
+        paramKey="epage"
+        page={page.page}
+        totalPages={page.totalPages}
+        from={page.from}
+        to={page.to}
+        total={page.total}
+      />
     </div>
   );
 }
 
 // ---------- page ----------
 
-export default async function NotificationsPage() {
+export default async function NotificationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
+  // Two lists, each paging on its own param (25 a page).
+  const params = await searchParams;
   const oversight = canSeeEscalations(user.role);
   const [notifications, alerts] = await Promise.all([
-    listNotifications(recipientRolesForUser(user.role)),
-    oversight ? listAlerts() : Promise.resolve<AlertRow[]>([]),
+    listNotificationsPage(recipientRolesForUser(user.role), parsePage(params.npage)),
+    oversight
+      ? listAlertsPage(parsePage(params.epage))
+      : Promise.resolve(pageResult<AlertRow>([], 0, 1, ALERTS_PAGE_SIZE)),
   ]);
 
   // Departments open straight into their own workspace, deep-linked to the EC
@@ -248,14 +284,14 @@ export default async function NotificationsPage() {
         </div>
       </div>
 
-      <NotificationFeed items={notifications} hrefFor={hrefFor} />
+      <NotificationFeed page={notifications} hrefFor={hrefFor} />
 
       {oversight && (
         <>
           <h2 className="mb-3 mt-8 font-display text-base font-semibold text-foreground">
-            Escalations — {alerts.length} active
+            Escalations — {alerts.total} active
           </h2>
-          <Escalations alerts={alerts} />
+          <Escalations page={alerts} />
         </>
       )}
     </div>

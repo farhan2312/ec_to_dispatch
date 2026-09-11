@@ -4,7 +4,9 @@ import { redirect } from "next/navigation";
 import { AlertTriangle } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canSeeEscalations } from "@/lib/roles";
-import { listPaymentHolds } from "@/lib/orders";
+import { listPaymentHoldsPage } from "@/lib/orders";
+import { parsePage } from "@/lib/pagination";
+import { UrlPagination } from "@/components/risansi/url-table";
 
 export const metadata: Metadata = {
   title: "Payment Holds | Risansi",
@@ -20,12 +22,18 @@ function formatValue(value: string | null): string {
   return Number.isFinite(n) ? numberFmt.format(n) : value;
 }
 
-export default async function EscalationsPage() {
+export default async function EscalationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canSeeEscalations(user.role)) redirect("/risansi/dashboard");
 
-  const holds = await listPaymentHolds();
+  const params = await searchParams;
+  const result = await listPaymentHoldsPage(parsePage(params.page));
+  const holds = result.rows;
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
@@ -39,12 +47,12 @@ export default async function EscalationsPage() {
           </h1>
           <p className="text-sm text-muted">
             Orders escalated by Accounts because payment is not confirmed —{" "}
-            {holds.length} {holds.length === 1 ? "order" : "orders"}.
+            {result.total} {result.total === 1 ? "order" : "orders"}.
           </p>
         </div>
       </div>
 
-      {holds.length === 0 ? (
+      {result.total === 0 ? (
         <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
           <p className="text-sm font-medium text-foreground">
             No payment holds
@@ -94,6 +102,13 @@ export default async function EscalationsPage() {
               ))}
             </tbody>
           </table>
+          <UrlPagination
+            page={result.page}
+            totalPages={result.totalPages}
+            from={result.from}
+            to={result.to}
+            total={result.total}
+          />
         </div>
       )}
     </div>

@@ -53,8 +53,8 @@ export function useUrlTable() {
         .map((v) => v.trim())
         .filter(Boolean),
     setParams,
-    setPage: (page: number) =>
-      setParams({ page: page <= 1 ? null : String(page) }, false),
+    setPage: (page: number, key = "page") =>
+      setParams({ [key]: page <= 1 ? null : String(page) }, false),
   };
 }
 
@@ -117,19 +117,24 @@ export function UrlSearchInput({
   );
 }
 
-/** Pager bound to the `page` param. Mirrors the look of the in-memory one. */
+/**
+ * Pager bound to the `page` param — or `paramKey`, when one page carries two
+ * lists that page independently. Mirrors the look of the in-memory one.
+ */
 export function UrlPagination({
   page,
   totalPages,
   from,
   to,
   total,
+  paramKey = "page",
 }: {
   page: number;
   totalPages: number;
   from: number;
   to: number;
   total: number;
+  paramKey?: string;
 }) {
   const { setPage, pending } = useUrlTable();
   // The URL update is a transition, so this component doesn't re-render
@@ -168,7 +173,7 @@ export function UrlPagination({
           type="button"
           onClick={() => {
             setTarget(shown - 1);
-            setPage(shown - 1);
+            setPage(shown - 1, paramKey);
           }}
           disabled={shown <= 1}
           aria-label="Previous page"
@@ -182,7 +187,7 @@ export function UrlPagination({
             type="button"
             onClick={() => {
               setTarget(p);
-              setPage(p);
+              setPage(p, paramKey);
             }}
             aria-current={p === shown ? "page" : undefined}
             className={`inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-sm font-medium transition-colors ${
@@ -202,7 +207,7 @@ export function UrlPagination({
           type="button"
           onClick={() => {
             setTarget(shown + 1);
-            setPage(shown + 1);
+            setPage(shown + 1, paramKey);
           }}
           disabled={shown >= totalPages}
           aria-label="Next page"

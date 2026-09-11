@@ -43,6 +43,43 @@ function todayStartIst(): Date {
   return new Date(`${isoDate}T00:00:00+05:30`);
 }
 
+const ISO_DATE = /^d{4}-d{2}-d{2}$/;
+
+/** A YYYY-MM-DD that is a real calendar date, or null. */
+export function parseAuditDate(value: string | undefined): string | null {
+  if (!value || !ISO_DATE.test(value)) return null;
+  const d = new Date(`${value}T00:00:00Z`);
+  return Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value
+    ? null
+    : value;
+}
+
+/** Midnight IST at the start of a YYYY-MM-DD. */
+function istMidnight(date: string): Date {
+  return new Date(`${date}T00:00:00+05:30`);
+}
+
+/**
+ * The period to read, as a lower and an exclusive upper bound. A custom
+ * From/To wins over the preset; either end may be left open. The To date is
+ * inclusive to the person picking it, so the bound is the midnight after it.
+ */
+export function auditWindow(
+  range: string,
+  from: string | null,
+  to: string | null
+): { since: string | null; until: string | null } {
+  if (from || to) {
+    // Picked backwards, the two dates still mean the span between them.
+    const [lo, hi] = from && to && from > to ? [to, from] : [from, to];
+    return {
+      since: lo ? istMidnight(lo).toISOString() : null,
+      until: hi ? new Date(istMidnight(hi).getTime() + DAY).toISOString() : null,
+    };
+  }
+  return { since: auditSince(range), until: null };
+}
+
 /** The SQL cutoff for a range preset — null means "no lower bound". */
 export function auditSince(range: string): string | null {
   const now = Date.now();

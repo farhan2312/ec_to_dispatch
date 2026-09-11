@@ -640,7 +640,7 @@ async function recomputeAccountsBalance(orderId: string): Promise<void> {
 
 // Which parent column each 1:many child hangs off: per-SO tables key on
 // order_id, per-EC tables on item_id.
-const CHILD_PARENT_COLUMN: Record<ChildTable, "order_id" | "item_id"> = {
+export const CHILD_PARENT_COLUMN: Record<ChildTable, "order_id" | "item_id"> = {
   order_lots: "item_id",
   order_boi_items: "item_id",
   order_packing_slips: "item_id",

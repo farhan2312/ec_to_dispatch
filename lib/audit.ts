@@ -128,8 +128,6 @@ export type AuditUserRow = {
   sessions: number;
   /** See ACTIVE_GAP: the short gaps between this user's actions, added up. */
   activeMinutes: number;
-  /** Runs of actions with no gap longer than ACTIVE_GAP between them. */
-  stretches: number;
   lastActive: string | null;
 };
 
@@ -262,10 +260,7 @@ const USERS_SQL = `
   active AS (
     SELECT key,
            COALESCE(sum(extract(epoch FROM gap))
-             FILTER (WHERE gap <= interval '${ACTIVE_GAP_MINUTES} minutes'), 0) AS seconds,
-           -- The first action opens a stretch, and so does every long gap.
-           count(*) FILTER (WHERE gap IS NULL
-                              OR gap > interval '${ACTIVE_GAP_MINUTES} minutes')::int AS stretches
+             FILTER (WHERE gap <= interval '${ACTIVE_GAP_MINUTES} minutes'), 0) AS seconds
       FROM gaps
      GROUP BY key
   ),
@@ -285,13 +280,11 @@ const USERS_SQL = `
            (SELECT u.full_name FROM users u WHERE lower(u.email) = ev.key LIMIT 1) AS name,
            ev.role, ev.actions, ev.sessions,
            round(COALESCE(active.seconds, 0) / 60.0)::int AS active_minutes,
-           COALESCE(active.stretches, 0) AS stretches,
            ev.last_event
       FROM ev LEFT JOIN active ON active.key = ev.key
   )
   SELECT email, name, role, actions, sessions,
          active_minutes AS "activeMinutes",
-         stretches,
          to_char(last_event AT TIME ZONE 'UTC', ${ISO_FMT}) AS "lastActive"
     FROM merged
    WHERE ($3::text IS NULL OR email ILIKE $3 OR role ILIKE $3 OR name ILIKE $3)`;

@@ -33,10 +33,10 @@ export const ACTION_META: Record<string, { label: string; tone: AuditTone }> = {
  * working. Sign-in to sign-out cannot measure a session — people close the tab
  * rather than sign out — so active time is read off the actions themselves:
  * each user's recorded times in order, the gap to the next one measured, and
- * every gap up to this long added up. A longer gap means they stepped away; it
- * counts for nothing and starts a new stretch.
+ * every gap up to this long added up. A longer gap means they stepped away,
+ * and counts for nothing.
  *
- *   10:00, 10:04, 10:09, 11:30  →  4m + 5m = 9m, in 2 stretches
+ *   10:00, 10:04, 10:09, 11:30  →  4m + 5m = 9m
  */
 export const ACTIVE_GAP_MINUTES = 15;
 

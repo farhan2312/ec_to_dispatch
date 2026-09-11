@@ -1926,3 +1926,8 @@ CREATE INDEX IF NOT EXISTS order_drawing_documents_item_idx
 -- when an account may be compromised. A user changing their own password
 -- leaves it alone, so they are not thrown out of the session they are in.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS sessions_valid_after TIMESTAMPTZ;
+
+-- Bought-out items: when Purchase expects the item, beside when it actually
+-- arrived. receipt_date keeps meaning the arrival — it is what marks an item
+-- received and ends Purchase's alerts — so the expectation needs its own column.
+ALTER TABLE order_boi_items ADD COLUMN IF NOT EXISTS expected_receipt_date DATE;

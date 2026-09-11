@@ -1142,6 +1142,7 @@ export async function boiItemsAction(itemId: string): Promise<BoiItemsResult> {
   try {
     const result = await query<Record<string, unknown>>(
       `SELECT id, boi_item, boi_item_other, boi_make_desc,
+              to_char(expected_receipt_date, 'YYYY-MM-DD') AS expected_receipt_date,
               to_char(receipt_date, 'YYYY-MM-DD') AS receipt_date, remarks
          FROM order_boi_items
         WHERE item_id = $1

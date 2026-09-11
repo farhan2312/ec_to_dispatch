@@ -111,7 +111,10 @@ export function BoiItemsModal({
                     Make &amp; Description
                   </th>
                   <th className="border-b border-card-border px-4 py-3">
-                    Receipt Date
+                    Expected Receipt
+                  </th>
+                  <th className="border-b border-card-border px-4 py-3">
+                    Actual Receipt
                   </th>
                   <th className="border-b border-card-border px-4 py-3">
                     Remarks
@@ -128,6 +131,11 @@ export function BoiItemsModal({
                         : text(r.boi_item)}
                     </td>
                     <td className="px-4 py-3">{text(r.boi_make_desc)}</td>
+                    {/* Planning schedules to the expected date until the
+                        actual one is in. */}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {dayOnly(r.expected_receipt_date)}
+                    </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       {dayOnly(r.receipt_date)}
                     </td>

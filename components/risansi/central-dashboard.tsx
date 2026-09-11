@@ -11,30 +11,24 @@ import {
   Check,
   Circle,
   PauseCircle,
-  Search,
   Plus,
-  X,
 } from "lucide-react";
-import type { OrderOverviewRow } from "@/lib/orders";
+import type { OrderOverviewRow, PipelinePage } from "@/lib/orders";
+import { OrderListFilterBar } from "./order-list-filter-bar";
+import { UrlPagination, useUrlTable } from "./url-table";
 import {
-  MultiSelectFilter,
-  SingleSelectFilter,
-} from "./multi-select-filter";
-import {
-  DEPT_LABELS,
   describeDays,
   isPerEcDept,
   type DeptCompletion,
   type DeptKey,
 } from "@/lib/dept-completion";
-import { DEPT_FILTER_KEYS, statusesFor } from "@/lib/dept-status";
 import { DEPT_VIEWS } from "@/lib/dept-view";
-// Shared with the orders list, so both screens mean the same span by "Last 7 days".
-import { DATE_PRESETS, presetRange, type DatePreset } from "@/lib/order-list-filter";
+import {
+  describeOrderListFilter,
+  isOrderListFiltered,
+  parseOrderListFilter,
+} from "@/lib/order-list-filter";
 import { PAYMENT_STATUS_OPTIONS } from "@/lib/order-schema";
-import { Pagination } from "./table-tools";
-
-const PIPELINE_PAGE_SIZE = 12;
 
 // Distinct color per payment status value (labels always accompany them).
 const PAYMENT_COLORS: Record<string, string> = {
@@ -47,10 +41,6 @@ const PAYMENT_COLORS: Record<string, string> = {
 };
 
 const numberFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
-
-function isHold(value: string | null): boolean {
-  return (value ?? "").trim().toLowerCase() === "outstanding hold";
-}
 
 // Group the six payment-status values into a small, readable set for the chart.
 function paymentGroup(
@@ -94,19 +84,6 @@ function late(date: string | null, isDone: boolean): boolean {
 }
 
 /**
- * Which date the range filter applies to. An order's progress is asked about
- * from several directions — when it was raised, when it is due out, when a
- * department signed it off — so the field is part of the filter, not fixed.
- */
-const DATE_FIELDS = [
-  { value: "dispatch_target_date", label: "Dispatch target" },
-  { value: "so_date", label: "SO date" },
-  { value: "ec_date", label: "EC date" },
-  { value: "completed_on", label: "Completed on" },
-] as const;
-type DateField = (typeof DATE_FIELDS)[number]["value"];
-
-/**
  * Under a department's status, whether it has signed off: "Completed 10 Sept
  * · 6 days late", or "Not completed". Both are spelled out — a blank would read
  * the same as "nothing to show". A department with nothing to do on this
@@ -137,12 +114,6 @@ function Signed({
       Not completed
     </div>
   );
-}
-
-function isOverdue(row: OrderOverviewRow): boolean {
-  if (!row.dispatch_target_date) return false;
-  if ((row.dispatch_status ?? "").trim() !== "") return false;
-  return row.dispatch_target_date < todayIso();
 }
 
 type Tone = "neutral" | "green" | "amber" | "red" | "blue";
@@ -503,28 +474,24 @@ function indexCompletions(completions: DeptCompletion[]) {
   return byScope;
 }
 
+/**
+ * The central dashboard. Filtering, counting and paging happen on the server
+ * (see getPipelinePage): this receives one page of the pipeline, the sign-offs
+ * on it, and the figures over everything the filter matched. The filter bar
+ * writes to the URL — the same one the orders list uses.
+ */
 export function CentralDashboard({
-  rows: allRows,
+  pipeline,
   completions = [],
 }: {
-  rows: OrderOverviewRow[];
+  pipeline: PipelinePage;
   completions?: DeptCompletion[];
 }) {
-  // Date range filter (inclusive) on each item's dispatch_target_date.
-  // ISO YYYY-MM-DD compares as strings, matching how the column is serialized
-  // in listOrdersOverview — no Date-object timezone drift.
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
-  const [dateField, setDateField] = useState<DateField>("dispatch_target_date");
-  const [preset, setPreset] = useState<string | null>(null);
-  const [text, setText] = useState("");
-  const [zones, setZones] = useState<string[]>([]);
-  const [reps, setReps] = useState<string[]>([]);
-  const [markets, setMarkets] = useState<string[]>([]);
-  const [types, setTypes] = useState<string[]>([]);
-  const [dept, setDept] = useState<string | null>(null);
-  const [deptStatus, setDeptStatus] = useState<string | null>(null);
-  const [signOff, setSignOff] = useState<string | null>(null);
+  const rows = pipeline.rows;
+  const stats = pipeline.stats;
+  const { get } = useUrlTable();
+  const filter = parseOrderListFilter((key) => get(key) || undefined);
+  const filterActive = isOrderListFiltered(filter);
 
   const byScope = useMemo(() => indexCompletions(completions), [completions]);
   /** This row's sign-off for a department, at whichever level it lives. */
@@ -535,131 +502,6 @@ export function CentralDashboard({
     },
     [byScope]
   );
-
-  // Facet values come from the data, so a zone nobody uses never appears.
-  const optionsOf = (pick: (r: OrderOverviewRow) => string | null) =>
-    [...new Set(allRows.map(pick).filter((v): v is string => !!v?.trim()))].sort();
-  const zoneOptions = optionsOf((r) => r.zone);
-  const repOptions = optionsOf((r) => r.reps);
-  const marketOptions = optionsOf((r) => r.market_type);
-  const typeOptions = optionsOf((r) => r.item_type ?? r.order_type);
-
-  const rows = useMemo(() => {
-    const needle = text.trim().toLowerCase();
-    const has = (v: string | null, list: string[]) =>
-      list.length === 0 || (v ? list.includes(v.trim()) : false);
-
-    return allRows.filter((r) => {
-      if (needle) {
-        const hay = [r.so_no, r.ec_no, r.client_name, r.client_code]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        if (!hay.includes(needle)) return false;
-      }
-      if (!has(r.zone, zones)) return false;
-      if (!has(r.reps, reps)) return false;
-      if (!has(r.market_type, markets)) return false;
-      if (!has(r.item_type ?? r.order_type, types)) return false;
-
-      if (dept) {
-        const key = dept as DeptKey;
-        // The department's own word for where this row stands — the same
-        // vocabulary the orders list filters on and the popup shows.
-        if (deptStatus && DEPT_VIEWS[key].status(r) !== deptStatus) return false;
-        const done = completionOf(r, key);
-        if (signOff === "Completed" && !done) return false;
-        if (signOff === "Not completed" && done) return false;
-      }
-
-      if (fromDate || toDate) {
-        // "Completed on" reads the sign-off rather than a column, and only
-        // makes sense once a department is chosen.
-        const d =
-          dateField === "completed_on"
-            ? (dept ? (completionOf(r, dept as DeptKey)?.completed_on ?? "") : "")
-            : ((r[dateField] as string | null) ?? "");
-        if (!d) return false;
-        if (fromDate && d < fromDate) return false;
-        if (toDate && d > toDate) return false;
-      }
-      return true;
-    });
-  }, [
-    allRows,
-    text,
-    zones,
-    reps,
-    markets,
-    types,
-    dept,
-    deptStatus,
-    signOff,
-    dateField,
-    fromDate,
-    toDate,
-    completionOf,
-  ]);
-
-  const filterActive =
-    !!fromDate ||
-    !!toDate ||
-    !!text.trim() ||
-    zones.length > 0 ||
-    reps.length > 0 ||
-    markets.length > 0 ||
-    types.length > 0 ||
-    !!dept;
-
-  function applyPreset(next: string | null) {
-    setPreset(next);
-    if (!next) {
-      setFromDate("");
-      setToDate("");
-      return;
-    }
-    const [from, to] = presetRange(next as DatePreset);
-    setFromDate(from);
-    setToDate(to);
-  }
-
-  function clearFilter() {
-    setFromDate("");
-    setToDate("");
-    setPreset(null);
-    setText("");
-    setZones([]);
-    setReps([]);
-    setMarkets([]);
-    setTypes([]);
-    setDept(null);
-    setDeptStatus(null);
-    setSignOff(null);
-  }
-
-  // An order with no ECs contributes a row so the pipeline can list it, but
-  // it is not an EC — every per-EC figure counts only the real ones.
-  const ecRows = rows.filter((r) => r.id !== null);
-  const total = ecRows.length;
-  const overdue = ecRows.filter(isOverdue).length;
-  // order_value is only emitted on the SO's first EC (see listOrdersOverview),
-  // so summing across all rows gives the true book value.
-  const totalValue = ecRows.reduce((sum, r) => sum + (Number(r.order_value) || 0), 0);
-
-  // Share of orders each department has completed. QC's denominator excludes
-  // orders flagged "QC Needed = No", since that department isn't involved.
-  const qcApplicable = ecRows.filter(
-    (r) => (r.qc_required ?? "").trim().toLowerCase() !== "no"
-  ).length;
-  const departmentProgress: { label: string; done: number; of: number }[] = [
-    { label: "Billing & Operations", done: ecRows.filter(done.billing).length, of: total },
-    { label: "Accounts", done: ecRows.filter(done.accounts).length, of: total },
-    { label: "Drawing", done: ecRows.filter(done.drawing).length, of: total },
-    { label: "Purchase", done: ecRows.filter(done.purchase).length, of: total },
-    { label: "Quality", done: ecRows.filter(done.qc).length, of: qcApplicable },
-    { label: "Planning", done: ecRows.filter(done.planning).length, of: total },
-    { label: "Assembly & Packing", done: ecRows.filter(done.dispatch).length, of: total },
-  ];
 
   // Group the per-EC rows into SO cards so each SO is one line with its ECs
   // nested inside. Pagination lives on SO groups so an SO's ECs never
@@ -731,82 +573,30 @@ export function CentralDashboard({
     });
   }
 
-  const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(soCards.length / PIPELINE_PAGE_SIZE));
-  const current = Math.min(page, totalPages);
-  const pipelineCards = soCards.slice(
-    (current - 1) * PIPELINE_PAGE_SIZE,
-    current * PIPELINE_PAGE_SIZE
-  );
-  const from = soCards.length === 0 ? 0 : (current - 1) * PIPELINE_PAGE_SIZE + 1;
-  const to = Math.min(current * PIPELINE_PAGE_SIZE, soCards.length);
+  // The server sent exactly this page's SOs.
+  const pipelineCards = soCards;
 
-  // Payment + dispatch status live on the SO, not the EC — so both charts
-  // count one per SO card (deduped). Otherwise a 5-EC SO would show up
-  // five times in its payment slice and skew the picture.
-  const norm = (s: string | null) => (s ?? "").trim().toLowerCase();
-  const soTotal = soCards.length;
-  const soHolds = soCards.filter((c) => isHold(c.payment_status)).length;
+  // Payment + dispatch status live on the SO, not the EC, so both charts
+  // count SOs — the server groups them one per SO. Keys are lower-cased.
+  const soTotal = stats.soTotal;
+  const payment = (value: string) => stats.payment[value.trim().toLowerCase()] ?? 0;
+  const dispatch = (value: string) => stats.dispatch[value.trim().toLowerCase()] ?? 0;
   const paymentBreakdown: BarItem[] = [
     ...PAYMENT_STATUS_OPTIONS.map((o) => ({
       label: o.label,
       color: PAYMENT_COLORS[o.value] ?? "#94a3b8",
-      count: soCards.filter((c) => norm(c.payment_status) === norm(o.value)).length,
+      count: payment(o.value),
     })),
-    {
-      label: "Not set",
-      color: "#d8dee9",
-      count: soCards.filter((c) => norm(c.payment_status) === "").length,
-    },
+    { label: "Not set", color: "#d8dee9", count: payment("") },
   ];
 
-  // Dispatch status breakdown, per SO. "Pending" is its own bucket
-  // (recomputed status when the SO has no invoices yet); "Not set" catches
-  // any legacy SOs still carrying null before the first recomputation.
+  // Dispatch status breakdown, per SO. "Pending" is how an SO reads before
+  // anything has gone; "Not set" is kept for any row still carrying none.
   const dispatchBreakdown: BarItem[] = [
-    {
-      label: "Fully dispatch",
-      color: "#10b981",
-      count: soCards.filter((c) => norm(c.dispatch_status) === "fully dispatch").length,
-    },
-    {
-      label: "LOT dispatch",
-      color: "#3b82f6",
-      count: soCards.filter((c) => norm(c.dispatch_status) === "lot dispatch").length,
-    },
-    {
-      label: "Pending",
-      color: "#f59e0b",
-      count: soCards.filter((c) => norm(c.dispatch_status) === "pending").length,
-    },
-    {
-      label: "Not set",
-      color: "#d8dee9",
-      count: soCards.filter((c) => norm(c.dispatch_status) === "").length,
-    },
-  ];
-
-  // Orders by industry type.
-  const industryBreakdown: BarItem[] = [
-    {
-      label: "Sugar",
-      color: "#f59e0b",
-      count: rows.filter((r) => norm(r.industry_type) === "sugar").length,
-    },
-    {
-      label: "Non Sugar",
-      color: "#6366f1",
-      count: rows.filter((r) => norm(r.industry_type) === "non sugar").length,
-    },
-    {
-      label: "Not set",
-      color: "#d8dee9",
-      count: rows.filter(
-        (r) =>
-          norm(r.industry_type) !== "sugar" &&
-          norm(r.industry_type) !== "non sugar"
-      ).length,
-    },
+    { label: "Fully dispatch", color: "#10b981", count: dispatch("fully dispatch") },
+    { label: "LOT dispatch", color: "#3b82f6", count: dispatch("lot dispatch") },
+    { label: "Pending", color: "#f59e0b", count: dispatch("pending") },
+    { label: "Not set", color: "#d8dee9", count: dispatch("") },
   ];
 
   return (
@@ -825,171 +615,13 @@ export function CentralDashboard({
 
       {/* Filters. Everything here narrows the pipeline and every figure above
           it, so the stat cards answer the same question the table does. */}
-      <div className="mb-4 space-y-2 rounded-xl border border-card-border bg-surface p-3 shadow-sm">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Search SO, EC, client…"
-              aria-label="Search orders"
-              className="h-9 w-64 rounded-lg border border-input-border bg-surface pl-8 pr-3 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
-            />
-          </div>
-          <MultiSelectFilter
-            label="Zone"
-            options={zoneOptions}
-            selected={zones}
-            onChange={setZones}
-          />
-          <MultiSelectFilter
-            label="Rep"
-            options={repOptions}
-            selected={reps}
-            onChange={setReps}
-          />
-          <MultiSelectFilter
-            label="Market"
-            options={marketOptions}
-            selected={markets}
-            onChange={setMarkets}
-          />
-          <MultiSelectFilter
-            label="Type"
-            options={typeOptions}
-            selected={types}
-            onChange={setTypes}
-          />
-          <SingleSelectFilter
-            label="Department"
-            allLabel="All departments"
-            options={DEPT_FILTER_KEYS.map((k) => ({
-              value: k,
-              label: DEPT_LABELS[k],
-            }))}
-            selected={dept}
-            onChange={(next) => {
-              setDept(next);
-              // A status belongs to one department's vocabulary, so it cannot
-              // survive a change of department.
-              setDeptStatus(null);
-              if (!next) setSignOff(null);
-            }}
-          />
-          <SingleSelectFilter
-            label="Status"
-            allLabel="Any status"
-            disabled={!dept}
-            options={(dept ? statusesFor(dept as DeptKey) : []).map((v) => ({
-              value: v,
-              label: v,
-            }))}
-            selected={deptStatus}
-            onChange={setDeptStatus}
-          />
-          <SingleSelectFilter
-            label="Sign-off"
-            allLabel="Any"
-            disabled={!dept}
-            options={[
-              { value: "Completed", label: "Completed" },
-              { value: "Not completed", label: "Not completed" },
-            ]}
-            selected={signOff}
-            onChange={setSignOff}
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <SingleSelectFilter
-            label="Date"
-            allLabel="Dispatch target"
-            options={DATE_FIELDS.map((f) => ({ value: f.value, label: f.label }))}
-            selected={dateField}
-            onChange={(next) => setDateField((next as DateField) ?? "dispatch_target_date")}
-          />
-          {DATE_PRESETS.map((label) => (
-            <button
-              key={label}
-              type="button"
-              onClick={() => applyPreset(preset === label ? null : label)}
-              className={`inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors ${
-                preset === label
-                  ? "border-primary/40 bg-primary/[0.06] text-foreground"
-                  : "border-input-border bg-surface text-muted hover:bg-background hover:text-foreground"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-          <div className="flex flex-col">
-            <label
-              htmlFor="dash-from"
-              className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
-            >
-              From
-            </label>
-            <input
-              id="dash-from"
-              type="date"
-              value={fromDate}
-              onChange={(e) => {
-                setPreset(null);
-                setFromDate(e.target.value);
-              }}
-              max={toDate || undefined}
-              className="h-9 rounded-lg border border-input-border bg-surface px-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
-            />
-          </div>
-          <div className="flex flex-col">
-            <label
-              htmlFor="dash-to"
-              className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
-            >
-              To
-            </label>
-            <input
-              id="dash-to"
-              type="date"
-              value={toDate}
-              onChange={(e) => {
-                setPreset(null);
-                setToDate(e.target.value);
-              }}
-              min={fromDate || undefined}
-              className="h-9 rounded-lg border border-input-border bg-surface px-2.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20"
-            />
-          </div>
-          {filterActive && (
-            <button
-              type="button"
-              onClick={clearFilter}
-              className="inline-flex h-9 items-center gap-1 rounded-lg border border-input-border bg-surface px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
-            >
-              <X className="h-3.5 w-3.5" />
-              Clear all
-            </button>
-          )}
-        </div>
-      </div>
+      <OrderListFilterBar options={pipeline.options} total={stats.soTotal} />
 
       {filterActive && (
         <div className="mb-4 rounded-lg border border-card-border bg-surface px-3 py-2 text-xs text-muted">
           Showing{" "}
-          <span className="font-semibold text-foreground">{soTotal}</span> of{" "}
-          {new Set(allRows.map((r) => r.order_id)).size} orders
-          {dept ? ` · ${DEPT_LABELS[dept as DeptKey]}` : ""}
-          {dept && deptStatus ? ` ${deptStatus.toLowerCase()}` : ""}
-          {dept && signOff ? ` · ${signOff.toLowerCase()}` : ""}
-          {fromDate || toDate
-            ? ` · ${
-                DATE_FIELDS.find((f) => f.value === dateField)?.label ?? "date"
-              }${fromDate ? ` from ${fromDate}` : ""}${
-                toDate ? ` to ${toDate}` : ""
-              }`
-            : ""}
-          .
+          <span className="font-semibold text-foreground">{stats.soTotal}</span> of{" "}
+          {stats.allSoTotal} orders · {describeOrderListFilter(filter)}
         </div>
       )}
 
@@ -1004,25 +636,25 @@ export function CentralDashboard({
         <StatCard
           icon={ClipboardList}
           label="Total ECs"
-          value={numberFmt.format(total)}
+          value={numberFmt.format(stats.ecTotal)}
           accent="bg-primary/10 text-primary"
         />
         <StatCard
           icon={PauseCircle}
           label="Payment holds"
-          value={numberFmt.format(soHolds)}
+          value={numberFmt.format(stats.holds)}
           accent="bg-amber-100 text-amber-700"
         />
         <StatCard
           icon={AlertTriangle}
           label="Overdue dispatch"
-          value={numberFmt.format(overdue)}
+          value={numberFmt.format(stats.overdue)}
           accent="bg-rose-100 text-rose-700"
         />
         <StatCard
           icon={IndianRupee}
           label="Total order value"
-          value={numberFmt.format(totalValue)}
+          value={numberFmt.format(stats.totalValue)}
           accent="bg-emerald-100 text-emerald-700"
         />
       </div>
@@ -1076,11 +708,15 @@ export function CentralDashboard({
         Order pipeline
       </h2>
 
-      {soCards.length === 0 ? (
+      {soTotal === 0 ? (
         <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
-          <p className="text-sm font-medium text-foreground">No orders yet</p>
+          <p className="text-sm font-medium text-foreground">
+            {filterActive ? "No orders match these filters" : "No orders yet"}
+          </p>
           <p className="mt-1 text-sm text-muted">
-            Department progress will appear here as orders are added.
+            {filterActive
+              ? "Widen or clear the filters above."
+              : "Department progress will appear here as orders are added."}
           </p>
         </div>
       ) : (
@@ -1274,13 +910,13 @@ export function CentralDashboard({
             </tbody>
           </table>
           </div>
-          <Pagination
-            page={current}
-            totalPages={totalPages}
-            setPage={setPage}
-            from={from}
-            to={to}
-            total={soCards.length}
+          {/* The page number is in the URL: the server fetches that page. */}
+          <UrlPagination
+            page={pipeline.page}
+            totalPages={pipeline.totalPages}
+            from={pipeline.from}
+            to={pipeline.to}
+            total={pipeline.total}
           />
         </div>
       )}

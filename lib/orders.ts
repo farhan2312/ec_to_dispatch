@@ -1102,6 +1102,8 @@ export type OrderOverviewRow = {
   dispatch_team_target_date: string | null;
   dispatch_target_date: string | null;
   dispatch_target_revised_date: string | null;
+  /** The EC's position on its SO; null on a bare SO row. */
+  ec_seq?: number | null;
 };
 
 /**
@@ -1109,9 +1111,14 @@ export type OrderOverviewRow = {
  * order_value carries the SO value only on the SO's first EC (null on the
  * rest) so a "total order value" sum isn't inflated by multi-EC orders.
  */
-export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
-  const result = await query<OrderOverviewRow>(
-    `SELECT it.id,
+/**
+ * One pipeline row per EC (or a bare row for an SO with none): the columns
+ * listOrdersOverview returns, as SQL, so the dashboard's pipeline can wrap the
+ * same definition in its filter, its page and its counts.
+ */
+// A function rather than a constant: it quotes SQL fragments declared
+// further down this module.
+const overviewColumns = () => `it.id,
             o.id AS order_id,
             o.sl_no::int AS sl_no,
             o.so_no,
@@ -1173,15 +1180,22 @@ export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
             to_char(o.dispatch_team_target_date, 'YYYY-MM-DD') AS dispatch_team_target_date,
             to_char(o.dispatch_target_date, 'YYYY-MM-DD') AS dispatch_target_date,
             to_char(o.dispatch_target_revised_date, 'YYYY-MM-DD')
-              AS dispatch_target_revised_date
-       FROM orders o
+              AS dispatch_target_revised_date,
+            it.seq::int AS ec_seq`;
+
+const OVERVIEW_FROM = `FROM orders o
        LEFT JOIN order_items it             ON it.order_id = o.id
        LEFT JOIN order_billing b            ON b.order_id = o.id
        LEFT JOIN order_accounts a           ON a.order_id = o.id
        LEFT JOIN order_drawing dr           ON dr.item_id = it.id
        LEFT JOIN order_qc qc                ON qc.item_id = it.id
        LEFT JOIN order_planning pl          ON pl.item_id = it.id
-       LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
+       LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id`;
+
+export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
+  const result = await query<OrderOverviewRow>(
+    `SELECT ${overviewColumns()}
+       ${OVERVIEW_FROM}
       ORDER BY o.sl_no ASC, it.seq ASC NULLS FIRST`
   );
   return result.rows;
@@ -1774,6 +1788,20 @@ export type OrderListOptions = {
   types: string[];
 };
 
+/** Each facet's distinct trimmed values, in one trip. */
+export async function listOrderListOptions(): Promise<OrderListOptions> {
+  const r = await query<{ facet: string; value: string }>(
+    `SELECT DISTINCT 'zone' AS facet, TRIM(zone) AS value FROM orders WHERE TRIM(COALESCE(zone, '')) <> ''
+     UNION SELECT DISTINCT 'rep', TRIM(reps) FROM orders WHERE TRIM(COALESCE(reps, '')) <> ''
+     UNION SELECT DISTINCT 'market', TRIM(market_type) FROM orders WHERE TRIM(COALESCE(market_type, '')) <> ''
+     UNION SELECT DISTINCT 'type', TRIM(order_type) FROM orders WHERE TRIM(COALESCE(order_type, '')) <> ''
+     UNION SELECT DISTINCT 'type', TRIM(item_type) FROM order_items WHERE TRIM(COALESCE(item_type, '')) <> ''
+     ORDER BY 1, 2`
+  );
+  const of = (facet: string) => r.rows.filter((x) => x.facet === facet).map((x) => x.value);
+  return { zones: of("zone"), reps: of("rep"), markets: of("market"), types: of("type") };
+}
+
 export async function listOrdersPage(opts: {
   page: number;
   filter: OrderListFilter;
@@ -1784,19 +1812,8 @@ export async function listOrdersPage(opts: {
 
   const [totals, optionRows] = await Promise.all([
     query<{ count: string }>(`SELECT count(*) AS count FROM orders o ${where}`, params),
-    // Facet choices come from the whole table, not the current page, in one
-    // trip: each facet's distinct trimmed values.
-    query<{ facet: string; value: string }>(
-      `SELECT DISTINCT 'zone' AS facet, TRIM(zone) AS value FROM orders WHERE TRIM(COALESCE(zone, '')) <> ''
-       UNION SELECT DISTINCT 'rep', TRIM(reps) FROM orders WHERE TRIM(COALESCE(reps, '')) <> ''
-       UNION SELECT DISTINCT 'market', TRIM(market_type) FROM orders WHERE TRIM(COALESCE(market_type, '')) <> ''
-       UNION SELECT DISTINCT 'type', TRIM(order_type) FROM orders WHERE TRIM(COALESCE(order_type, '')) <> ''
-       UNION SELECT DISTINCT 'type', TRIM(item_type) FROM order_items WHERE TRIM(COALESCE(item_type, '')) <> ''
-       ORDER BY 1, 2`
-    ),
+    listOrderListOptions(),
   ]);
-  const optionsOf = (facet: string) =>
-    optionRows.rows.filter((r) => r.facet === facet).map((r) => r.value);
 
   const total = Number(totals.rows[0]?.count ?? 0);
   const page = clampPage(opts.page, total);
@@ -1847,12 +1864,7 @@ export async function listOrdersPage(opts: {
 
   return {
     ...pageResult(rows.rows, total, page),
-    options: {
-      zones: optionsOf("zone"),
-      reps: optionsOf("rep"),
-      markets: optionsOf("market"),
-      types: optionsOf("type"),
-    },
+    options: optionRows,
   };
 }
 export async function listOrders(): Promise<OrderListRow[]> {
@@ -2524,4 +2536,192 @@ export async function uncompleteDept(
     [scopeId, dept]
   );
   return result.rows[0]?.order_id ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Central dashboard: the order pipeline, filtered and paged in SQL
+// ---------------------------------------------------------------------------
+
+/** SO cards per pipeline page. */
+export const PIPELINE_PAGE_SIZE = 12;
+
+/**
+ * The pipeline's filter, row by row. Unlike the orders list, which asks
+ * whether an SO has any EC that matches, the pipeline narrows the ECs
+ * themselves: filter Drawing to "Approved" and each SO card lists only its
+ * approved ECs. An SO is on the page while any of its rows survive.
+ */
+function pipelineRowWhere(f: OrderListFilter): { where: string; params: unknown[] } {
+  const params: unknown[] = [];
+  const p = (value: unknown) => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+  const clauses: string[] = [];
+  const facet = (column: string, values: string[]) =>
+    `TRIM(COALESCE(${column}, '')) = ANY(${p(values)}::text[])`;
+
+  if (f.search) {
+    const q = p(likePattern(f.search));
+    clauses.push(`(o.so_no ILIKE ${q} OR it.ec_no ILIKE ${q}
+                   OR o.client_name ILIKE ${q} OR o.client_code ILIKE ${q})`);
+  }
+  if (f.zones.length) clauses.push(facet("o.zone", f.zones));
+  if (f.reps.length) clauses.push(facet("o.reps", f.reps));
+  if (f.markets.length) clauses.push(facet("o.market_type", f.markets));
+  // An EC is read by its own item type, falling back to the order's.
+  if (f.types.length) clauses.push(facet("COALESCE(it.item_type, o.order_type)", f.types));
+
+  if (f.dept && f.deptStatus) {
+    clauses.push(
+      isPerEcDept(f.dept) ? `(${ecState(f.dept, f.deptStatus)})` : `(${soState(f.dept, f.deptStatus)})`
+    );
+  }
+  // This row's own sign-off: its EC's for a per-EC department, its SO's else.
+  const signedHere = (dept: DeptFilterKey) =>
+    isPerEcDept(dept)
+      ? `c.item_id = it.id AND c.dept = ${lit(dept)}`
+      : `c.order_id = o.id AND c.item_id IS NULL AND c.dept = ${lit(dept)}`;
+  if (f.dept && f.signOff) {
+    const signed = `EXISTS (SELECT 1 FROM order_dept_completions c WHERE ${signedHere(f.dept)})`;
+    clauses.push(f.signOff === "completed" ? signed : `NOT ${signed}`);
+  }
+
+  if (f.from || f.to) {
+    const range = (column: string) =>
+      [
+        f.from ? `${column} >= ${p(f.from)}::date` : null,
+        f.to ? `${column} <= ${p(f.to)}::date` : null,
+      ]
+        .filter(Boolean)
+        .join(" AND ");
+    if (f.dateField === "so_date") clauses.push(range("o.so_date"));
+    else if (f.dateField === "dispatch_target") clauses.push(range("o.dispatch_target_date"));
+    else if (f.dateField === "ec_date") clauses.push(range("it.ec_date"));
+    else {
+      // Completed on: the chosen department's sign-off on this row, or with
+      // none chosen, any sign-off on this EC or its SO.
+      const scope = f.dept
+        ? signedHere(f.dept)
+        : `(c.item_id = it.id OR (c.item_id IS NULL AND c.order_id = o.id))`;
+      clauses.push(`EXISTS (SELECT 1 FROM order_dept_completions c
+                             WHERE ${scope} AND ${range("c.completed_on")})`);
+    }
+  }
+
+  return {
+    where: clauses.length ? `WHERE ${clauses.join("\n        AND ")}` : "",
+    params,
+  };
+}
+
+/** The figures above the pipeline, over every row the filter lets through. */
+export type PipelineStats = {
+  /** SOs with at least one matching row. */
+  soTotal: number;
+  /** Every SO, unfiltered — the "of N" in "Showing X of N". */
+  allSoTotal: number;
+  /** Matching ECs (an EC-less SO's bare row is not an EC). */
+  ecTotal: number;
+  /** Matching SOs on payment hold. */
+  holds: number;
+  /** Matching ECs past their dispatch target and still not dispatched. */
+  overdue: number;
+  /** Book value of the matching SOs, each counted once. */
+  totalValue: number;
+  /** Matching SOs by payment status, lower-cased; "" for none set. */
+  payment: Record<string, number>;
+  /** Matching SOs by dispatch status, lower-cased. */
+  dispatch: Record<string, number>;
+};
+
+export type PipelinePage = PageResult<OrderOverviewRow> & {
+  stats: PipelineStats;
+  options: OrderListOptions;
+};
+
+/**
+ * One page of the order pipeline — the SOs on it and all their matching
+ * rows — plus the figures over everything that matched. Filtering, counting
+ * and paging all happen in the database; the browser gets one page.
+ */
+export async function getPipelinePage(opts: {
+  page: number;
+  filter: OrderListFilter;
+}): Promise<PipelinePage> {
+  const { where, params } = pipelineRowWhere(opts.filter);
+  const rowsCte = `WITH r AS (SELECT ${overviewColumns()} ${OVERVIEW_FROM} ${where})`;
+
+  const fetchPage = (page: number) => {
+    const limit = `$${params.length + 1}`;
+    const offset = `$${params.length + 2}`;
+    return query<OrderOverviewRow>(
+      `${rowsCte},
+       sos AS (SELECT order_id, min(sl_no) AS sl_no FROM r GROUP BY order_id),
+       page AS (SELECT order_id FROM sos ORDER BY sl_no LIMIT ${limit} OFFSET ${offset})
+       SELECT r.* FROM r JOIN page USING (order_id)
+        ORDER BY r.sl_no, r.ec_seq NULLS FIRST`,
+      [...params, PIPELINE_PAGE_SIZE, (Math.max(1, page) - 1) * PIPELINE_PAGE_SIZE]
+    );
+  };
+
+  const [stats, first, options] = await Promise.all([
+    query<{
+      so_total: number;
+      all_so_total: number;
+      ec_total: number;
+      holds: number;
+      overdue: number;
+      total_value: string | null;
+      payment: Record<string, number> | null;
+      dispatch: Record<string, number> | null;
+    }>(
+      `${rowsCte},
+       so AS (SELECT DISTINCT ON (order_id) * FROM r ORDER BY order_id)
+       SELECT (SELECT count(*) FROM so)::int AS so_total,
+              (SELECT count(*) FROM orders)::int AS all_so_total,
+              (SELECT count(*) FROM r WHERE id IS NOT NULL)::int AS ec_total,
+              (SELECT count(*) FROM so
+                WHERE lower(TRIM(COALESCE(payment_status, ''))) = 'outstanding hold')::int AS holds,
+              -- A revised dispatch date supersedes the original; "Pending"
+              -- is how the dispatch status reads before anything has gone.
+              (SELECT count(*) FROM r
+                WHERE id IS NOT NULL
+                  AND COALESCE(dispatch_target_revised_date, dispatch_target_date)
+                        < to_char(${TODAY_IST}, 'YYYY-MM-DD')
+                  AND lower(TRIM(COALESCE(dispatch_status, ''))) IN ('', 'pending'))::int AS overdue,
+              (SELECT sum(order_value::numeric) FROM r WHERE id IS NOT NULL)::text AS total_value,
+              (SELECT jsonb_object_agg(k, n) FROM (
+                 SELECT lower(TRIM(COALESCE(payment_status, ''))) AS k, count(*)::int AS n
+                   FROM so GROUP BY 1) x) AS payment,
+              (SELECT jsonb_object_agg(k, n) FROM (
+                 SELECT lower(TRIM(COALESCE(dispatch_status, ''))) AS k, count(*)::int AS n
+                   FROM so GROUP BY 1) x) AS dispatch`,
+      params
+    ),
+    fetchPage(opts.page),
+    listOrderListOptions(),
+  ]);
+
+  const st = stats.rows[0];
+  const soTotal = st?.so_total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(soTotal / PIPELINE_PAGE_SIZE));
+  // A page past the end — a narrower filter, say — falls back to the last.
+  const page = Math.min(Math.max(1, opts.page), totalPages);
+  const rows = page === Math.max(1, opts.page) ? first.rows : (await fetchPage(page)).rows;
+
+  return {
+    ...pageResult(rows, soTotal, page, PIPELINE_PAGE_SIZE),
+    stats: {
+      soTotal,
+      allSoTotal: st?.all_so_total ?? 0,
+      ecTotal: st?.ec_total ?? 0,
+      holds: st?.holds ?? 0,
+      overdue: st?.overdue ?? 0,
+      totalValue: Number(st?.total_value ?? 0),
+      payment: st?.payment ?? {},
+      dispatch: st?.dispatch ?? {},
+    },
+    options,
+  };
 }

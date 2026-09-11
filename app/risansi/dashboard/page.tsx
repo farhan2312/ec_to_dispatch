@@ -6,7 +6,13 @@ import {
   departmentHrefForRole,
   roleLabel,
 } from "@/lib/roles";
-import { listDeptCompletions, listOrdersOverview } from "@/lib/orders";
+import {
+  getPipelinePage,
+  listDeptCompletions,
+  listOrdersOverview,
+} from "@/lib/orders";
+import { parsePage } from "@/lib/pagination";
+import { parseOrderListFilter } from "@/lib/order-list-filter";
 import { deptViewForRole } from "@/lib/dept-view";
 import { listRemindersForRole } from "@/lib/reminders";
 import { CentralDashboard } from "@/components/risansi/central-dashboard";
@@ -19,18 +25,28 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | undefined>>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   if (canSeeCentralDashboard(user.role)) {
-    const rows = await listOrdersOverview();
-    // Every department's sign-offs, so the pipeline can show what is finished
-    // and when, not just what has been recorded.
+    const params = await searchParams;
+    // Filtered, counted and paged in SQL: the browser gets one page of the
+    // pipeline and the figures over everything that matched.
+    const pipeline = await getPipelinePage({
+      page: parsePage(params.page),
+      filter: parseOrderListFilter((key) => params[key]),
+    });
+    // Sign-offs for the SOs on this page, for the Completed / Not completed
+    // lines under each department.
     const completions = await listDeptCompletions([
-      ...new Set(rows.map((r) => r.order_id)),
+      ...new Set(pipeline.rows.map((r) => r.order_id)),
     ]);
-    return <CentralDashboard rows={rows} completions={completions} />;
+    return <CentralDashboard pipeline={pipeline} completions={completions} />;
   }
 
   // A department sees the same pipeline rows through its own dashboard: its

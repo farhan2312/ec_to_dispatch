@@ -3,9 +3,9 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 /**
- * Pager for the one view that still holds its whole row set: the dashboard,
- * whose charts aggregate every row anyway. Every other list pages in SQL —
- * see components/risansi/url-table.tsx.
+ * Pager for the views that still hold their whole row set: the department
+ * dashboards, whose figures aggregate every row. Every other list — the central
+ * dashboard's pipeline included — pages in SQL; see url-table.tsx.
  */
 export function Pagination({
   page,

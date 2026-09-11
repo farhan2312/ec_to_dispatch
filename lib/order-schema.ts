@@ -847,7 +847,10 @@ export const BOI_ITEM_FIELDS: OrderField[] = [
     type: "text",
     centralOnly: true,
   },
-  { column: "receipt_date", label: "Receipt Date", type: "date" },
+  // Filled by Purchase: when the item is expected, then when it actually
+  // arrives. Only the actual date marks the item received.
+  { column: "expected_receipt_date", label: "Expected Receipt Date", type: "date" },
+  { column: "receipt_date", label: "Actual Receipt Date", type: "date" },
   { column: "remarks", label: "Remarks", type: "text" },
 ];
 

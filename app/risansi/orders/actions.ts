@@ -71,6 +71,11 @@ import {
 } from "@/lib/target-dates";
 import { logAudit } from "@/lib/audit";
 import {
+  checkFieldBounds,
+  checkReceivedWithinValue,
+  numericValue,
+} from "@/lib/order-validation";
+import {
   childLabel,
   childValues,
   describeChanges,
@@ -104,6 +109,13 @@ export async function createOrderAction(
   if (!(input.client_code ?? "").trim()) {
     return { ok: false, error: "Client Code is required." };
   }
+  // Order value and quantity cannot be negative — the form says so, but this
+  // is also how the Excel import creates orders.
+  const bounds = checkFieldBounds(
+    SECTION_BY_TABLE.get("orders")!.fields,
+    input as Record<string, unknown>
+  );
+  if (bounds) return { ok: false, error: bounds };
 
   try {
     const { id, sl_no } = await createOrder(input);
@@ -507,9 +519,33 @@ export async function updateOrderSectionAction(
   }
 
   const tbl = table as OrderTable;
+  const bounds = checkFieldBounds(section.fields, allowedValues);
+  if (bounds) return { ok: false, error: bounds };
   try {
     if (section.scope === "so") {
       const before = await getOrderDetail(id);
+      // Amount received never exceeds the order value — checked from whichever
+      // side is being saved, so neither can be moved past the other.
+      if (before && tbl === "order_accounts" && "amount_received" in allowedValues) {
+        const problem = checkReceivedWithinValue(
+          numericValue(allowedValues.amount_received),
+          numericValue(before.order.order_value),
+          "received"
+        );
+        if (problem) return { ok: false, error: problem };
+      }
+      if (before && tbl === "orders" && "order_value" in allowedValues) {
+        const accounts = (before as Record<string, unknown>).order_accounts as
+          | Record<string, unknown>
+          | null
+          | undefined;
+        const problem = checkReceivedWithinValue(
+          numericValue(accounts?.amount_received),
+          numericValue(allowedValues.order_value),
+          "order value"
+        );
+        if (problem) return { ok: false, error: problem };
+      }
       await updateOrderSection(id, tbl, allowedValues);
       const after = before ? await getOrderDetail(id) : null;
       const pick = (d: NonNullable<typeof before>) =>

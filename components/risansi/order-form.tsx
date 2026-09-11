@@ -23,6 +23,9 @@ type Field = {
   options?: { value: string; label: string }[];
   dependsOn?: { name: keyof NewOrderInput; value: string };
   required?: boolean;
+  // Lowest value a number accepts — the browser blocks the submit below it,
+  // and createOrderAction refuses it regardless.
+  min?: number;
 };
 type Section = { title: string; fields: Field[] };
 
@@ -63,6 +66,7 @@ const SECTIONS: Section[] = [
         name: "order_value",
         label: "Purchase/Sales Order Value (without GST)",
         type: "number",
+        min: 0,
       },
       {
         name: "order_currency",
@@ -76,6 +80,7 @@ const SECTIONS: Section[] = [
         name: "total_quantity",
         label: "Sales Order Total Quantity",
         type: "number",
+        min: 0,
       },
     ],
   },
@@ -324,6 +329,7 @@ export function OrderForm() {
                       name={field.name}
                       type={field.type}
                       step={field.type === "number" ? "any" : undefined}
+                      min={field.min}
                       value={values[field.name] ?? ""}
                       onChange={(e) => update(field.name, e.target.value)}
                       disabled={disabled}

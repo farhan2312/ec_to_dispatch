@@ -172,6 +172,8 @@ export async function parseOrderWorkbook(buffer: Buffer): Promise<ParsedImport> 
           const n = Number(text.replace(/,/g, ""));
           if (!Number.isFinite(n)) {
             errors.push(`Order Value "${text}" is not a number`);
+          } else if (n < 0) {
+            errors.push(`Order Value "${text}" cannot be negative`);
           } else {
             values.order_value = String(n);
           }
@@ -181,6 +183,8 @@ export async function parseOrderWorkbook(buffer: Buffer): Promise<ParsedImport> 
           const n = Number(text.replace(/,/g, ""));
           if (!Number.isInteger(n)) {
             errors.push(`Order Quantity "${text}" is not a whole number`);
+          } else if (n < 0) {
+            errors.push(`Order Quantity "${text}" cannot be negative`);
           } else {
             values.total_quantity = String(n);
           }

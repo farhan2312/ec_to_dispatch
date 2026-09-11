@@ -1005,6 +1005,7 @@ function EditSectionModal({
                             : "number"
                       }
                       step={field.type === "number" ? "any" : undefined}
+                      min={field.min}
                       value={values[field.column] ?? ""}
                       onChange={(e) =>
                         setValues((v) => ({ ...v, [field.column]: e.target.value }))

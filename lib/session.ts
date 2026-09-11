@@ -34,17 +34,30 @@ export async function signSession(userId: string): Promise<string> {
     .sign(secretKey());
 }
 
-/** Verify a session token, returning the user id (`sub`) or null if invalid. */
-export async function verifySession(token: string): Promise<string | null> {
+/**
+ * Verify a session token, returning its user id (`sub`) and when it was
+ * issued (`iat`, seconds), or null if invalid.
+ */
+async function verifySessionClaims(
+  token: string
+): Promise<{ userId: string; issuedAt: number } | null> {
   try {
     const { payload } = await jwtVerify(token, secretKey(), {
       issuer: ISSUER,
       audience: AUDIENCE,
     });
-    return typeof payload.sub === "string" ? payload.sub : null;
+    if (typeof payload.sub !== "string" || typeof payload.iat !== "number") {
+      return null;
+    }
+    return { userId: payload.sub, issuedAt: payload.iat };
   } catch {
     return null;
   }
+}
+
+/** Verify a session token, returning the user id (`sub`) or null if invalid. */
+export async function verifySession(token: string): Promise<string | null> {
+  return (await verifySessionClaims(token))?.userId ?? null;
 }
 
 export const SESSION_MAX_AGE = MAX_AGE_SECONDS;
@@ -55,16 +68,24 @@ export const SESSION_MAX_AGE = MAX_AGE_SECONDS;
  *
  * Status is re-checked on every request: a token stays valid for 7 days, so
  * without this an account disabled/suspended by an admin would keep full
- * access until its token expired.
+ * access until its token expired. The same goes for a password reset, which
+ * ends any session issued before it.
  */
 export async function getCurrentUser(): Promise<User | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;
-  const userId = await verifySession(token);
-  if (!userId) return null;
-  const user = await getUserById(userId);
+  const claims = await verifySessionClaims(token);
+  if (!claims) return null;
+  const user = await getUserById(claims.userId);
   if (!user || user.status !== "approved") return null;
+  // An admin password reset ends every session issued before it.
+  if (
+    user.sessions_valid_after &&
+    claims.issuedAt * 1000 < new Date(user.sessions_valid_after).getTime()
+  ) {
+    return null;
+  }
   return user;
 }
 

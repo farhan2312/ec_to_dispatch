@@ -70,6 +70,9 @@ export async function GET(req: NextRequest) {
     scope,
     search: search || null,
     generatedBy: `${user.full_name} (${user.email})`,
+    // Order columns only where orders are the subject: the activity tab, and
+    // the all-events report taken from Usage by User.
+    showSubject: tab === "activity" || tab === "by_user",
   });
 
   const stamp = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });

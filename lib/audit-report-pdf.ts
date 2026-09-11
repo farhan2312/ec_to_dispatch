@@ -9,7 +9,11 @@ import {
 } from "pdf-lib";
 import { roleLabel } from "@/lib/roles";
 import { sanitize, wrap } from "@/lib/pdf-text";
-import { actionLabel, formatActiveMinutes } from "@/lib/audit-labels";
+import {
+  ACTIVE_GAP_MINUTES,
+  actionLabel,
+  formatActiveMinutes,
+} from "@/lib/audit-labels";
 import { REPORT_EVENT_CAP, type AuditReport } from "@/lib/audit";
 
 // The audit log as a printable report: what the period looked like at a
@@ -40,6 +44,8 @@ export type AuditReportMeta = {
   scope: string;
   search: string | null;
   generatedBy: string;
+  /** Sign-ins and ownership changes are about people; they carry no SO/EC. */
+  showSubject: boolean;
 };
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -382,16 +388,17 @@ export async function buildAuditReportPdf(
   const absent = report.users.length - present.length;
   L.section(
     "Usage by user",
-    `Active time = minutes with the app open, in front, and used in the last five minutes.${
+    `Active time = gaps of ${ACTIVE_GAP_MINUTES} min or less between a user's actions, added up; a longer gap starts a new stretch.${
       absent > 0 ? ` ${absent} account${absent === 1 ? "" : "s"} with only failed sign-ins or requests not listed.` : ""
     }`,
     [
-      { label: "User", width: 230 },
-      { label: "Role", width: 130 },
-      { label: "Actions", width: 70, align: "right" },
-      { label: "Sessions", width: 70, align: "right" },
-      { label: "Active time", width: 90, align: "right" },
-      { label: "Last active (IST)", width: 180 },
+      { label: "User", width: 220 },
+      { label: "Role", width: 125 },
+      { label: "Actions", width: 65, align: "right" },
+      { label: "Sessions", width: 65, align: "right" },
+      { label: "Active time", width: 80, align: "right" },
+      { label: "Stretches", width: 70, align: "right" },
+      { label: "Last active (IST)", width: 145 },
     ],
     present.map((u) => [
       u.name ? [u.name, u.email] : u.email,
@@ -399,9 +406,10 @@ export async function buildAuditReportPdf(
       fmtInt(u.actions),
       fmtInt(u.sessions),
       formatActiveMinutes(u.activeMinutes),
+      u.stretches ? fmtInt(u.stretches) : "—",
       istStamp(u.lastActive),
     ]),
-    { empty: "No one was active in this period.", muted: [5] }
+    { empty: "No one was active in this period.", muted: [6] }
   );
 
   // --- what kind of work ---------------------------------------------------
@@ -447,23 +455,36 @@ export async function buildAuditReportPdf(
       ? `Latest ${fmtInt(REPORT_EVENT_CAP)} of ${fmtInt(t.events)} events — narrow the period for the rest`
       : `${fmtInt(report.events.length)} events, newest first`
   );
+  const subject = (e: AuditReport["events"][number]): Cell => {
+    if (e.so_no) return e.ec_no ? [e.so_no, e.ec_no] : e.so_no;
+    // An old order event that never recorded its order — say so rather than
+    // leave a dash that reads like "no order involved".
+    return e.action.startsWith("order.") ? "not recorded" : "—";
+  };
+  const columns: Column[] = meta.showSubject
+    ? [
+        { label: "Time (IST)", width: 92 },
+        { label: "User", width: 150 },
+        { label: "Event", width: 86 },
+        { label: "SO / EC", width: 118 },
+        { label: "Details", width: 324 },
+      ]
+    : [
+        { label: "Time (IST)", width: 92 },
+        { label: "User", width: 170 },
+        { label: "Event", width: 110 },
+        { label: "Details", width: 398 },
+      ];
   L.table(
-    [
-      { label: "Time (IST)", width: 92 },
-      { label: "User", width: 150 },
-      { label: "Event", width: 86 },
-      { label: "SO / EC", width: 118 },
-      { label: "Details", width: 324 },
-    ],
-    report.events.map((e) => [
-      istStamp(e.created_at),
-      e.user_role
+    columns,
+    report.events.map((e) => {
+      const who: Cell = e.user_role
         ? [e.user_email ?? "—", roleLabel(e.user_role)]
-        : (e.user_email ?? "—"),
-      actionLabel(e.action),
-      e.so_no ? (e.ec_no ? [e.so_no, e.ec_no] : e.so_no) : "—",
-      detailLines(e.details),
-    ]),
+        : (e.user_email ?? "—");
+      return meta.showSubject
+        ? [istStamp(e.created_at), who, actionLabel(e.action), subject(e), detailLines(e.details)]
+        : [istStamp(e.created_at), who, actionLabel(e.action), detailLines(e.details)];
+    }),
     { empty: "No events in this period.", muted: [0] }
   );
 

@@ -1755,17 +1755,124 @@ UPDATE audit_log a
    AND a.so_no IS NOT NULL
    AND o.so_no = a.so_no;
 
--- ===========================================================================
--- Presence: minutes a user had the app open and in use
--- ===========================================================================
--- Sessions are stateless JWTs, so nothing server-side knows how long anyone
--- was actually working. The app shell reports once a minute while its tab is
--- visible and the user has touched it recently; one row per user per minute,
--- so two open tabs still count a minute once. Active time is the row count.
-CREATE TABLE IF NOT EXISTS user_activity_minutes (
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    minute  TIMESTAMPTZ NOT NULL,
-    PRIMARY KEY (user_id, minute)
-);
-CREATE INDEX IF NOT EXISTS user_activity_minutes_minute_idx
-    ON user_activity_minutes (minute);
+-- Recover the order on older audit rows, as far as the database still allows.
+-- Most order edits used to log only a section title as their target
+-- ("Order details"), so the row itself never said which order it was.
+--
+-- 1. Targets that were an order's label, even for an order since deleted:
+--    "SO…", "SO… · EC…", "#28", or a test order's bare number. Anything that
+--    is a section or list name is not a label and is left alone.
+UPDATE audit_log a
+   SET so_no = split_part(a.target, ' · ', 1),
+       ec_no = NULLIF(split_part(a.target, ' · ', 2), '')
+ WHERE a.so_no IS NULL
+   AND a.action LIKE 'order.%'
+   AND a.target IS NOT NULL
+   AND a.target !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+   AND a.target NOT IN (
+         'Order details', 'Accounts', 'Billing & Operations', 'Drawing',
+         'Purchase', 'QC', 'Quality', 'Planning', 'Assembly & Dispatch',
+         'Assembly & Packing', 'EC / Pump order', 'EC order', 'PI', 'Invoice',
+         'Bought-out item', 'Drawing revision', 'Packing slip', 'Lot',
+         'Order Copy', 'Quality Requirement Docs');
+
+-- 2. Targets that were an id.
+UPDATE audit_log a
+   SET order_id = o.id, so_no = COALESCE(o.so_no, '#' || o.sl_no)
+  FROM orders o
+ WHERE a.so_no IS NULL AND a.action LIKE 'order.%' AND a.target = o.id::text;
+UPDATE audit_log a
+   SET order_id = it.order_id, item_id = it.id,
+       so_no = COALESCE(o.so_no, '#' || o.sl_no), ec_no = it.ec_no
+  FROM order_items it JOIN orders o ON o.id = it.order_id
+ WHERE a.so_no IS NULL AND a.action LIKE 'order.%' AND a.target = it.id::text;
+
+-- 3. Section saves logged by title: the saved row's updated_at was stamped a
+--    moment before its audit row. Where exactly one row of that section was
+--    touched in that moment, it is the one. Ambiguous rows stay blank —
+--    a wrong order is worse than none.
+DO $$
+DECLARE
+  m record;
+BEGIN
+  FOR m IN
+    SELECT * FROM (VALUES
+      ('Order details',        'orders',                  'id',       'so'),
+      ('Accounts',             'order_accounts',          'order_id', 'so'),
+      ('Billing & Operations', 'order_billing',           'order_id', 'so'),
+      ('Drawing',              'order_drawing',           'item_id',  'ec'),
+      ('Purchase',             'order_purchase',          'item_id',  'ec'),
+      ('QC',                   'order_qc',                'item_id',  'ec'),
+      ('Quality',              'order_qc',                'item_id',  'ec'),
+      ('Planning',             'order_planning',          'item_id',  'ec'),
+      ('Assembly & Dispatch',  'order_assembly_dispatch', 'item_id',  'ec'),
+      ('Assembly & Packing',   'order_assembly_dispatch', 'item_id',  'ec'),
+      ('EC / Pump order',      'order_items',             'id',       'ec'),
+      ('EC order',             'order_items',             'id',       'ec')
+    ) AS v(target, tbl, keycol, scope)
+  LOOP
+    IF m.scope = 'so' THEN
+      EXECUTE format($sql$
+        WITH hits AS (
+          SELECT a.id AS audit_id, min(t.%2$I::text) AS k, count(*) AS n
+            FROM audit_log a
+            JOIN %1$I t
+              ON t.updated_at BETWEEN a.created_at - interval '3 seconds'
+                                  AND a.created_at + interval '1 second'
+           WHERE a.so_no IS NULL AND a.action = 'order.update' AND a.target = %3$L
+           GROUP BY a.id)
+        UPDATE audit_log a
+           SET order_id = o.id, so_no = COALESCE(o.so_no, '#' || o.sl_no)
+          FROM hits h JOIN orders o ON o.id = h.k::uuid
+         WHERE a.id = h.audit_id AND h.n = 1
+      $sql$, m.tbl, m.keycol, m.target);
+    ELSE
+      EXECUTE format($sql$
+        WITH hits AS (
+          SELECT a.id AS audit_id, min(t.%2$I::text) AS k, count(*) AS n
+            FROM audit_log a
+            JOIN %1$I t
+              ON t.updated_at BETWEEN a.created_at - interval '3 seconds'
+                                  AND a.created_at + interval '1 second'
+           WHERE a.so_no IS NULL AND a.action = 'order.update' AND a.target = %3$L
+           GROUP BY a.id)
+        UPDATE audit_log a
+           SET order_id = it.order_id, item_id = it.id,
+               so_no = COALESCE(o.so_no, '#' || o.sl_no), ec_no = it.ec_no
+          FROM hits h
+          JOIN order_items it ON it.id = h.k::uuid
+          JOIN orders o ON o.id = it.order_id
+         WHERE a.id = h.audit_id AND h.n = 1
+      $sql$, m.tbl, m.keycol, m.target);
+    END IF;
+  END LOOP;
+END $$;
+
+-- 4. Saves that raised a notification: it was written in the same request,
+--    straight after the audit row, and it names its order.
+WITH hits AS (
+  SELECT a.id AS audit_id,
+         min(n.order_id::text) AS order_id,
+         min(n.item_id::text) AS item_id,
+         count(DISTINCT n.order_id) AS orders,
+         count(DISTINCT n.item_id) AS items
+    FROM audit_log a
+    JOIN notifications n
+      ON n.created_at BETWEEN a.created_at AND a.created_at + interval '8 seconds'
+   WHERE a.so_no IS NULL AND a.action = 'order.update'
+   GROUP BY a.id)
+UPDATE audit_log a
+   SET order_id = o.id,
+       so_no = COALESCE(o.so_no, '#' || o.sl_no),
+       item_id = CASE WHEN h.items = 1 THEN h.item_id::uuid END,
+       ec_no = CASE WHEN h.items = 1
+                    THEN (SELECT it.ec_no FROM order_items it WHERE it.id = h.item_id::uuid)
+               END
+  FROM hits h JOIN orders o ON o.id = h.order_id::uuid
+ WHERE a.id = h.audit_id AND h.orders = 1;
+
+-- Link any recovered label to its order while that order still exists.
+UPDATE audit_log a
+   SET order_id = o.id
+  FROM orders o
+ WHERE a.order_id IS NULL AND a.so_no IS NOT NULL AND o.so_no = a.so_no;

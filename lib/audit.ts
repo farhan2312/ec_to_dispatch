@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { ACTIVE_GAP_MINUTES } from "@/lib/audit-labels";
 import {
   PAGE_SIZE,
   clampPage,
@@ -65,23 +66,6 @@ export async function logAudit(entry: {
   }
 }
 
-/**
- * Mark the current minute as one this user spent in the app. Idempotent within
- * the minute, so several open tabs count once. Never throws.
- */
-export async function recordPresence(userId: string): Promise<void> {
-  try {
-    await query(
-      `INSERT INTO user_activity_minutes (user_id, minute)
-       VALUES ($1, date_trunc('minute', now()))
-       ON CONFLICT DO NOTHING`,
-      [userId]
-    );
-  } catch (error) {
-    console.error("presence failed:", error);
-  }
-}
-
 export type AuditStats = {
   logins: number;
   failed: number;
@@ -142,9 +126,10 @@ export type AuditUserRow = {
   role: string | null;
   actions: number;
   sessions: number;
-  /** Minutes with the app open and in use — see user_activity_minutes. */
+  /** See ACTIVE_GAP: the short gaps between this user's actions, added up. */
   activeMinutes: number;
-  /** Latest of the last recorded event and the last minute seen active. */
+  /** Runs of actions with no gap longer than ACTIVE_GAP between them. */
+  stretches: number;
   lastActive: string | null;
 };
 
@@ -251,57 +236,63 @@ export async function listAuditEventsPage(opts: {
 }
 
 /**
- * Per-user totals over the window: what the audit log recorded, joined to the
- * minutes each user was seen in the app. A user who only read — opened orders,
- * checked a dashboard — has no events but still has active time, so the two
- * sides are joined in full rather than hung off the events.
+ * Per-user totals over the window, with active time worked out as described
+ * at ACTIVE_GAP_MINUTES.
+ * Every action counts — sign-in and sign-out included — except a failed
+ * sign-in, which names an email without its owner having been in the system.
  *
  * $1 since, $2 until, $3 search.
  */
 const USERS_SQL = `
-  WITH ev AS (
-    SELECT lower(user_email) AS key,
+  WITH base AS (
+    SELECT lower(user_email) AS key, user_email, user_role, action, category,
+           created_at
+      FROM audit_log
+     WHERE user_email IS NOT NULL
+       AND ($1::timestamptz IS NULL OR created_at >= $1)
+       AND ($2::timestamptz IS NULL OR created_at < $2)
+  ),
+  gaps AS (
+    SELECT key,
+           created_at - lag(created_at)
+             OVER (PARTITION BY key ORDER BY created_at) AS gap
+      FROM base
+     WHERE action <> 'login_failed'
+  ),
+  active AS (
+    SELECT key,
+           COALESCE(sum(extract(epoch FROM gap))
+             FILTER (WHERE gap <= interval '${ACTIVE_GAP_MINUTES} minutes'), 0) AS seconds,
+           -- The first action opens a stretch, and so does every long gap.
+           count(*) FILTER (WHERE gap IS NULL
+                              OR gap > interval '${ACTIVE_GAP_MINUTES} minutes')::int AS stretches
+      FROM gaps
+     GROUP BY key
+  ),
+  ev AS (
+    SELECT key,
            max(user_email) AS email,
            (array_agg(user_role ORDER BY created_at DESC)
               FILTER (WHERE user_role IS NOT NULL))[1] AS role,
            count(*) FILTER (WHERE category = 'activity')::int AS actions,
            count(*) FILTER (WHERE action = 'login')::int AS sessions,
            max(created_at) AS last_event
-      FROM audit_log
-     WHERE user_email IS NOT NULL
-       AND ($1::timestamptz IS NULL OR created_at >= $1)
-       AND ($2::timestamptz IS NULL OR created_at < $2)
-     GROUP BY lower(user_email)
-  ),
-  act AS (
-    SELECT m.user_id,
-           count(*)::int AS minutes,
-           max(m.minute) + interval '1 minute' AS last_seen
-      FROM user_activity_minutes m
-     WHERE ($1::timestamptz IS NULL OR m.minute >= $1)
-       AND ($2::timestamptz IS NULL OR m.minute < $2)
-     GROUP BY m.user_id
-  ),
-  seen AS (
-    SELECT lower(u.email) AS key, u.email, u.full_name, u.role,
-           act.minutes, act.last_seen
-      FROM act JOIN users u ON u.id = act.user_id
+      FROM base
+     GROUP BY key
   ),
   merged AS (
-    SELECT COALESCE(ev.email, seen.email) AS email,
-           (SELECT u.full_name FROM users u
-             WHERE lower(u.email) = COALESCE(ev.key, seen.key)
-             LIMIT 1) AS name,
-           COALESCE(ev.role, seen.role) AS role,
-           COALESCE(ev.actions, 0) AS actions,
-           COALESCE(ev.sessions, 0) AS sessions,
-           COALESCE(seen.minutes, 0) AS active_minutes,
-           GREATEST(ev.last_event, seen.last_seen) AS last_active
-      FROM ev FULL OUTER JOIN seen ON seen.key = ev.key
+    SELECT ev.email,
+           (SELECT u.full_name FROM users u WHERE lower(u.email) = ev.key LIMIT 1) AS name,
+           ev.role, ev.actions, ev.sessions,
+           round(COALESCE(active.seconds, 0) / 60.0)::int AS active_minutes,
+           COALESCE(active.stretches, 0) AS stretches,
+           ev.last_event
+      FROM ev LEFT JOIN active ON active.key = ev.key
   )
   SELECT email, name, role, actions, sessions,
          active_minutes AS "activeMinutes",
-         to_char(last_active AT TIME ZONE 'UTC', ${ISO_FMT}) AS "lastActive"
+         stretches,
+         to_char(last_event AT TIME ZONE 'UTC', ${ISO_FMT}) AS "lastActive"
     FROM merged
    WHERE ($3::text IS NULL OR email ILIKE $3 OR role ILIKE $3 OR name ILIKE $3)`;
 

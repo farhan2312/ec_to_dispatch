@@ -11,6 +11,7 @@ import type { PageResult } from "@/lib/pagination";
 import { AUDIT_RANGES, AUDIT_TABS } from "@/lib/audit-range";
 import {
   ACTION_META,
+  ACTIVE_GAP_MINUTES,
   formatActiveMinutes,
   type AuditTone,
 } from "@/lib/audit-labels";
@@ -65,7 +66,20 @@ function StatCard({ label, value }: { label: string; value: number }) {
  * leads anywhere.
  */
 function SubjectCell({ e }: { e: AuditEvent }) {
-  if (!e.so_no) return <span className="text-muted-foreground">—</span>;
+  if (!e.so_no) {
+    // An order event with no SO is an old row: it was logged before the order
+    // was recorded, and nothing left in the database says which one it was.
+    return e.action.startsWith("order.") ? (
+      <span
+        className="text-xs italic text-muted-foreground"
+        title="Logged before SO / EC were recorded with each event"
+      >
+        not recorded
+      </span>
+    ) : (
+      <span className="text-muted-foreground">—</span>
+    );
+  }
   return (
     <div className="flex flex-col leading-tight">
       {e.order_live ? (
@@ -149,6 +163,8 @@ export function AuditLogView({
   const shownRange = pending && wantRange ? wantRange : custom ? null : range;
 
   const isByUser = tab === "by_user";
+  // Sign-ins and ownership changes are about people, not orders.
+  const showSubject = tab === "activity";
   const result = (isByUser ? users : events) ?? {
     rows: [],
     total: 0,
@@ -289,7 +305,11 @@ export function AuditLogView({
             identity + role, so the placeholder shifts to match. */}
         <UrlSearchInput
           placeholder={
-            isByUser ? "Search name, email, role…" : "Search SO, EC, user, details…"
+            isByUser
+              ? "Search name, email, role…"
+              : showSubject
+                ? "Search SO, EC, user, details…"
+                : "Search user, details…"
           }
         />
       </div>
@@ -308,7 +328,7 @@ export function AuditLogView({
                   <th className="px-4 py-3">Sessions</th>
                   <th
                     className="px-4 py-3"
-                    title="Minutes with the app open, in front, and touched in the last five minutes"
+                    title={`Gaps of ${ACTIVE_GAP_MINUTES} minutes or less between a user's consecutive actions, added up. A longer gap means they stepped away and starts a new stretch.`}
                   >
                     Active Time
                   </th>
@@ -334,8 +354,13 @@ export function AuditLogView({
                     </td>
                     <td className="px-4 py-3 tabular-nums">{u.actions}</td>
                     <td className="px-4 py-3 tabular-nums">{u.sessions}</td>
-                    <td className="px-4 py-3 tabular-nums font-medium">
-                      {formatActiveMinutes(u.activeMinutes)}
+                    <td className="px-4 py-3 tabular-nums">
+                      <div className="font-medium">{formatActiveMinutes(u.activeMinutes)}</div>
+                      {u.stretches > 0 && (
+                        <div className="text-xs text-muted">
+                          {u.stretches} stretch{u.stretches === 1 ? "" : "es"}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-muted">
                       {fmt(u.lastActive)}
@@ -351,14 +376,17 @@ export function AuditLogView({
                   <th className="px-4 py-3">Time</th>
                   <th className="px-4 py-3">User</th>
                   <th className="px-4 py-3">Event</th>
-                  <th className="px-4 py-3">SO / EC</th>
+                  {showSubject && <th className="px-4 py-3">SO / EC</th>}
                   <th className="px-4 py-3">Details</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-card-border">
                 {pageRows.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-4 py-10 text-center text-sm text-muted">
+                    <td
+                      colSpan={showSubject ? 5 : 4}
+                      className="px-4 py-10 text-center text-sm text-muted"
+                    >
                       No events in this range.
                     </td>
                   </tr>
@@ -377,9 +405,11 @@ export function AuditLogView({
                     <td className="px-4 py-3">
                       <ActionChip action={e.action} />
                     </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <SubjectCell e={e} />
-                    </td>
+                    {showSubject && (
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <SubjectCell e={e} />
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-muted">
                       <DetailsCell text={e.details} />
                     </td>

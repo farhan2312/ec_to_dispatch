@@ -30,6 +30,7 @@ import type { PageResult } from "@/lib/pagination";
 import { QcDocumentsModal } from "./qc-documents-modal";
 import { OrderDetailsModal } from "./order-details-modal";
 import { BoiItemsModal } from "./boi-items-modal";
+import { EcDrawingDocsButton, RevisionDocsButton } from "./drawing-docs";
 import { ViewPisModal } from "./view-pis-modal";
 import { OrderThreadModal } from "./order-thread-modal";
 import {
@@ -104,6 +105,14 @@ function searchConfigFor(table: OrderTable): {
   };
 }
 
+/** "SO26/1/1455 · EC-1 · Rev. 2" — the heading of a revision's documents. */
+function revisionDocsLabel(ec: Row, rev: Row): string {
+  const no = toInput(rev.revision_no).trim();
+  return [toInput(ec.so_no), toInput(ec.ec_no), no ? `Rev. ${no}` : "First issue"]
+    .filter(Boolean)
+    .join(" · ");
+}
+
 // A dependsOn'd field (e.g. a billing document field gated on the order's
 // bill_type) only applies to a row whose data satisfies the condition.
 function fieldApplies(field: OrderField, row: Row): boolean {
@@ -124,6 +133,7 @@ export function DepartmentWorkspace({
   role,
   unreadThreads = {},
   completions = [],
+  drawingDocCounts,
 }: {
   table: OrderTable;
   fields: OrderField[];
@@ -149,6 +159,9 @@ export function DepartmentWorkspace({
   unreadThreads?: Record<string, number>;
   // This department's sign-offs across the SOs on this page.
   completions?: DeptCompletion[];
+  // Drawing documents shared with this department, per EC id. Set only for
+  // the departments documents can be assigned to (Planning).
+  drawingDocCounts?: Record<string, number>;
 }) {
   const [editRow, setEditRow] = useState<Row | null>(null);
   const [docsPanel, setDocsPanel] = useState<{ row: Row; config: DocumentsConfig } | null>(
@@ -704,6 +717,17 @@ export function DepartmentWorkspace({
                                             packing_details_required:
                                               ec.packing_details_required,
                                           }}
+                                          rowAction={
+                                            childTable === "order_drawing_revisions"
+                                              ? (rev) => (
+                                                  <RevisionDocsButton
+                                                    revisionId={String(rev.id)}
+                                                    label={revisionDocsLabel(ec, rev)}
+                                                    count={Number(rev.doc_count ?? 0)}
+                                                  />
+                                                )
+                                              : undefined
+                                          }
                                         />
                                       </div>
                                     ))
@@ -738,6 +762,9 @@ export function DepartmentWorkspace({
           readonlyFields={readonlyFields}
           canEditCentral={canEditCentral}
           data={editRow}
+          drawingDocCount={
+            drawingDocCounts ? (drawingDocCounts[String(editRow.id)] ?? 0) : undefined
+          }
           onClose={() => setEditRow(null)}
         />
       )}
@@ -780,6 +807,7 @@ function EditSectionModal({
   readonlyFields,
   canEditCentral,
   data,
+  drawingDocCount,
   onClose,
 }: {
   orderId: string;
@@ -789,6 +817,9 @@ function EditSectionModal({
   readonlyFields: OrderField[];
   canEditCentral: boolean;
   data: Row;
+  // Set when this department can be sent drawing documents; the button shows
+  // whenever it is, so a department can check even when the count is zero.
+  drawingDocCount?: number;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -842,6 +873,13 @@ function EditSectionModal({
           {/* Planning schedules around bought-out receipts, so they can read
               this EC's BOI rows — filled by Central and Purchase, never here.
               Only worth offering when the SO is actually flagged BOI = Yes. */}
+          {drawingDocCount !== undefined && (
+            <EcDrawingDocsButton
+              itemId={orderId}
+              label={identity || "This EC"}
+              count={drawingDocCount}
+            />
+          )}
           {table === "order_planning" && String(data.boi ?? "") === "Yes" && (
             <button
               type="button"

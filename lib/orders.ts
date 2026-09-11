@@ -416,7 +416,7 @@ const ITEM_DETAIL_SELECT = `
               FROM order_billing_docs bd WHERE bd.order_id = o.id), '[]'::jsonb) AS order_billing_docs,
     COALESCE((SELECT jsonb_agg(to_jsonb(ps) ORDER BY ps.seq)
               FROM order_packing_slips ps WHERE ps.item_id = it.id), '[]'::jsonb) AS order_packing_slips,
-    COALESCE((SELECT jsonb_agg(to_jsonb(rv) ORDER BY rv.seq)
+    COALESCE((SELECT jsonb_agg(to_jsonb(rv) || jsonb_build_object('doc_count', (SELECT count(*) FROM order_drawing_documents dd WHERE dd.revision_id = rv.id)) ORDER BY rv.seq)
               FROM order_drawing_revisions rv WHERE rv.item_id = it.id), '[]'::jsonb) AS order_drawing_revisions
    FROM order_items it
    JOIN orders o                        ON o.id  = it.order_id
@@ -534,7 +534,7 @@ export async function listOrderExports(
                          SELECT jsonb_agg(to_jsonb(ps) ORDER BY ps.seq)
                            FROM order_packing_slips ps WHERE ps.item_id = it.id), '[]'::jsonb),
                        'order_drawing_revisions', COALESCE((
-                         SELECT jsonb_agg(to_jsonb(rv) ORDER BY rv.seq)
+                         SELECT jsonb_agg(to_jsonb(rv) || jsonb_build_object('doc_count', (SELECT count(*) FROM order_drawing_documents dd WHERE dd.revision_id = rv.id)) ORDER BY rv.seq)
                            FROM order_drawing_revisions rv WHERE rv.item_id = it.id), '[]'::jsonb)
                      ) ORDER BY it.seq)
                 FROM order_items it
@@ -1358,7 +1358,7 @@ export async function listItemsForSection(
                       AND ps.kind = '${slipKind}'),
                   '[]'::jsonb) AS child_rows`
       : section.childTable === "order_drawing_revisions"
-        ? `, COALESCE((SELECT jsonb_agg(to_jsonb(rv) ORDER BY rv.seq)
+        ? `, COALESCE((SELECT jsonb_agg(to_jsonb(rv) || jsonb_build_object('doc_count', (SELECT count(*) FROM order_drawing_documents dd WHERE dd.revision_id = rv.id)) ORDER BY rv.seq)
                          FROM order_drawing_revisions rv
                         WHERE rv.item_id = it.id),
                       '[]'::jsonb) AS child_rows`

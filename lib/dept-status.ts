@@ -71,22 +71,3 @@ export function statusesFor(dept: DeptFilterKey): string[] {
 export function isPerEcDept(dept: DeptFilterKey): boolean {
   return dept !== "billing" && dept !== "accounts" && dept !== "dispatch";
 }
-
-/**
- * Read the department filter out of URL params. A status without a department
- * (or one that department never has) filters nothing, so both come back null
- * together — the SQL is only appended when the pair is valid.
- */
-export function parseDeptFilter(
-  dept: string | undefined,
-  status: string | undefined
-): { dept: DeptFilterKey | null; deptStatus: string | null } {
-  const key = (DEPT_FILTER_KEYS as readonly string[]).includes(dept ?? "")
-    ? (dept as DeptFilterKey)
-    : null;
-  if (!key) return { dept: null, deptStatus: null };
-  const value = statusesFor(key).find((s) => s === status) ?? null;
-  return value
-    ? { dept: key, deptStatus: value }
-    : { dept: null, deptStatus: null };
-}

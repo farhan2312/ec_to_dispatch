@@ -3,8 +3,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ClipboardList, Download, Plus, Upload } from "lucide-react";
 import { listOrdersPage } from "@/lib/orders";
-import { parseList, parsePage, parseQuery } from "@/lib/pagination";
-import { parseDeptFilter } from "@/lib/dept-status";
+import { parsePage } from "@/lib/pagination";
+import {
+  isOrderListFiltered,
+  orderListFilterParams,
+  parseOrderListFilter,
+} from "@/lib/order-list-filter";
 import { getCurrentUser } from "@/lib/session";
 import { canCreateOrders, isCentral } from "@/lib/roles";
 import { OrdersTable } from "@/components/risansi/orders-table";
@@ -18,13 +22,7 @@ export const dynamic = "force-dynamic";
 export default async function OrdersPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    page?: string;
-    q?: string;
-    zone?: string;
-    dept?: string;
-    dstatus?: string;
-  }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
@@ -32,30 +30,18 @@ export default async function OrdersPage({
   // department roles use their own workspace instead.
   if (!isCentral(user.role)) redirect("/risansi/dashboard");
 
-  const { page, q, zone, dept, dstatus } = await searchParams;
-  const search = parseQuery(q);
-  const zones = parseList(zone);
-  const deptFilter = parseDeptFilter(dept, dstatus);
-  const result = await listOrdersPage({
-    page: parsePage(page),
-    search,
-    zones,
-    ...deptFilter,
-  });
+  const params = await searchParams;
+  // The central dashboard's filter set, read from the URL so it narrows the
+  // whole table in SQL — see lib/order-list-filter.ts.
+  const filter = parseOrderListFilter((key) => params[key]);
+  const result = await listOrdersPage({ page: parsePage(params.page), filter });
   const canCreate = canCreateOrders(user.role);
 
   // The export mirrors whatever the list is showing: with any filter on it
   // downloads just those SOs, otherwise the whole tracker.
-  const exportParams = new URLSearchParams();
-  if (search) exportParams.set("q", search);
-  if (zones.length > 0) exportParams.set("zone", zones.join(","));
-  if (deptFilter.dept && deptFilter.deptStatus) {
-    exportParams.set("dept", deptFilter.dept);
-    exportParams.set("dstatus", deptFilter.deptStatus);
-  }
-  const isFiltered = exportParams.size > 0;
+  const isFiltered = isOrderListFiltered(filter);
   const exportHref = isFiltered
-    ? `/api/orders/export?${exportParams}`
+    ? `/api/orders/export?${orderListFilterParams(filter)}`
     : "/api/orders/export";
 
   return (

@@ -9,6 +9,7 @@ import {
   FileText,
   IndianRupee,
   Check,
+  Circle,
   PauseCircle,
   Search,
   Plus,
@@ -105,15 +106,35 @@ const DATE_FIELDS = [
 ] as const;
 type DateField = (typeof DATE_FIELDS)[number]["value"];
 
-/** "Signed off 10 Sept · 6 days late" under a department's status. */
-function Signed({ completion }: { completion: DeptCompletion | null }) {
-  if (!completion) return null;
-  const took = describeDays(completion.days_taken);
+/**
+ * Under a department's status, whether it has signed off: "Completed 10 Sept
+ * · 6 days late", or "Not completed". Both are spelled out — a blank would read
+ * the same as "nothing to show". A department with nothing to do on this
+ * order (`applicable` false) shows neither, rather than a "not completed" it
+ * never could be.
+ */
+function Signed({
+  completion,
+  applicable = true,
+}: {
+  completion: DeptCompletion | null;
+  applicable?: boolean;
+}) {
+  if (completion) {
+    const took = describeDays(completion.days_taken);
+    return (
+      <div className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[10px] font-medium text-emerald-700">
+        <Check className="h-3 w-3 shrink-0" />
+        Completed {formatDate(completion.completed_on)}
+        {took ? ` · ${took}` : ""}
+      </div>
+    );
+  }
+  if (!applicable) return null;
   return (
-    <div className="mt-0.5 flex items-center gap-1 text-[10px] font-medium text-emerald-700">
-      <Check className="h-3 w-3" />
-      {formatDate(completion.completed_on)}
-      {took ? ` · ${took}` : ""}
+    <div className="mt-0.5 flex items-center gap-1 whitespace-nowrap text-[10px] font-medium text-muted-foreground">
+      <Circle className="h-3 w-3 shrink-0" />
+      Not completed
     </div>
   );
 }
@@ -659,6 +680,8 @@ export function CentralDashboard({
     dispatch_done: boolean;
     // Sign-offs for the three SO-scope departments, shown on the SO line.
     signed: Record<"billing" | "accounts" | "dispatch", DeptCompletion | null>;
+    // A Challan order carries no receivable: Accounts is not involved.
+    accounts_na: boolean;
     order_value: string | null;
     ecs: OrderOverviewRow[];
   };
@@ -688,6 +711,7 @@ export function CentralDashboard({
             accounts: completionOf(r, "accounts"),
             dispatch: completionOf(r, "dispatch"),
           },
+          accounts_na: DEPT_VIEWS.accounts.na(r),
           order_value: r.order_value,
           ecs: r.id !== null ? [r] : [],
         });
@@ -1130,7 +1154,10 @@ export function CentralDashboard({
                             and Accounts; printed once, under the department
                             that chases it. */}
                         <DeptDeadline value={card.payment_terms} isDate={false} />
-                        <Signed completion={card.signed.accounts} />
+                        <Signed
+                          completion={card.signed.accounts}
+                          applicable={!card.accounts_na}
+                        />
                       </td>
                       <td className="px-3 py-3 align-top">
                         <Chip
@@ -1226,6 +1253,7 @@ export function CentralDashboard({
                                             {d.chip(row)}
                                             <Signed
                                               completion={completionOf(row, d.key)}
+                                              applicable={!DEPT_VIEWS[d.key].na(row)}
                                             />
                                           </td>
                                         ))}

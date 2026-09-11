@@ -328,7 +328,7 @@ export function AuditLogView({
                   <th className="px-4 py-3">Sessions</th>
                   <th
                     className="px-4 py-3"
-                    title={`Gaps of ${ACTIVE_GAP_MINUTES} minutes or less between a user's consecutive actions, added up. A longer gap means they stepped away and starts a new stretch.`}
+                    title={`Gaps of ${ACTIVE_GAP_MINUTES} minutes or less between a user's consecutive actions, added up. A longer gap means they stepped away and does not count.`}
                   >
                     Active Time
                   </th>
@@ -354,13 +354,8 @@ export function AuditLogView({
                     </td>
                     <td className="px-4 py-3 tabular-nums">{u.actions}</td>
                     <td className="px-4 py-3 tabular-nums">{u.sessions}</td>
-                    <td className="px-4 py-3 tabular-nums">
-                      <div className="font-medium">{formatActiveMinutes(u.activeMinutes)}</div>
-                      {u.stretches > 0 && (
-                        <div className="text-xs text-muted">
-                          {u.stretches} stretch{u.stretches === 1 ? "" : "es"}
-                        </div>
-                      )}
+                    <td className="px-4 py-3 tabular-nums font-medium">
+                      {formatActiveMinutes(u.activeMinutes)}
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap text-muted">
                       {fmt(u.lastActive)}

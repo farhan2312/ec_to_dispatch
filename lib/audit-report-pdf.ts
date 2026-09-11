@@ -388,17 +388,16 @@ export async function buildAuditReportPdf(
   const absent = report.users.length - present.length;
   L.section(
     "Usage by user",
-    `Active time = gaps of ${ACTIVE_GAP_MINUTES} min or less between a user's actions, added up; a longer gap starts a new stretch.${
+    `Active time = gaps of ${ACTIVE_GAP_MINUTES} min or less between a user's actions, added up; a longer gap does not count.${
       absent > 0 ? ` ${absent} account${absent === 1 ? "" : "s"} with only failed sign-ins or requests not listed.` : ""
     }`,
     [
-      { label: "User", width: 220 },
-      { label: "Role", width: 125 },
-      { label: "Actions", width: 65, align: "right" },
-      { label: "Sessions", width: 65, align: "right" },
-      { label: "Active time", width: 80, align: "right" },
-      { label: "Stretches", width: 70, align: "right" },
-      { label: "Last active (IST)", width: 145 },
+      { label: "User", width: 230 },
+      { label: "Role", width: 130 },
+      { label: "Actions", width: 70, align: "right" },
+      { label: "Sessions", width: 70, align: "right" },
+      { label: "Active time", width: 90, align: "right" },
+      { label: "Last active (IST)", width: 180 },
     ],
     present.map((u) => [
       u.name ? [u.name, u.email] : u.email,
@@ -406,10 +405,9 @@ export async function buildAuditReportPdf(
       fmtInt(u.actions),
       fmtInt(u.sessions),
       formatActiveMinutes(u.activeMinutes),
-      u.stretches ? fmtInt(u.stretches) : "—",
       istStamp(u.lastActive),
     ]),
-    { empty: "No one was active in this period.", muted: [6] }
+    { empty: "No one was active in this period.", muted: [5] }
   );
 
   // --- what kind of work ---------------------------------------------------

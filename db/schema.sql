@@ -1719,3 +1719,53 @@ CREATE INDEX IF NOT EXISTS order_dept_completions_order_idx
 ALTER TABLE order_messages ADD COLUMN IF NOT EXISTS to_role TEXT;
 CREATE INDEX IF NOT EXISTS order_messages_to_role_idx
     ON order_messages (order_id, to_role) WHERE to_role IS NOT NULL;
+
+-- ===========================================================================
+-- Audit log: which SO / EC an event touched
+-- ===========================================================================
+-- `target` is free text — a section title for most order edits — so an event
+-- could not be traced back to the order it changed. These say it outright.
+-- so_no / ec_no are snapshots, not joins: an audit trail has to keep naming a
+-- deleted order, and it has to name it as it was called at the time.
+-- order_id / item_id carry no foreign key for the same reason.
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS order_id UUID;
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS item_id  UUID;
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS so_no    TEXT;
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS ec_no    TEXT;
+CREATE INDEX IF NOT EXISTS audit_log_order_idx ON audit_log (order_id)
+    WHERE order_id IS NOT NULL;
+
+-- Backfill what earlier rows let us recover: where the target was the SO's
+-- label ("SO…" or "SO… · EC…"). Rows whose target was only a section title
+-- ("Order details") never recorded the order and stay blank.
+UPDATE audit_log a
+   SET so_no = split_part(a.target, ' · ', 1),
+       ec_no = NULLIF(split_part(a.target, ' · ', 2), '')
+ WHERE a.so_no IS NULL
+   AND a.action LIKE 'order.%'
+   AND a.target IS NOT NULL
+   AND (EXISTS (SELECT 1 FROM orders o
+                 WHERE o.so_no = split_part(a.target, ' · ', 1))
+        OR (a.action IN ('order.create', 'order.delete')
+            AND a.target LIKE 'SO%'));
+UPDATE audit_log a
+   SET order_id = o.id
+  FROM orders o
+ WHERE a.order_id IS NULL
+   AND a.so_no IS NOT NULL
+   AND o.so_no = a.so_no;
+
+-- ===========================================================================
+-- Presence: minutes a user had the app open and in use
+-- ===========================================================================
+-- Sessions are stateless JWTs, so nothing server-side knows how long anyone
+-- was actually working. The app shell reports once a minute while its tab is
+-- visible and the user has touched it recently; one row per user per minute,
+-- so two open tabs still count a minute once. Active time is the row count.
+CREATE TABLE IF NOT EXISTS user_activity_minutes (
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    minute  TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (user_id, minute)
+);
+CREATE INDEX IF NOT EXISTS user_activity_minutes_minute_idx
+    ON user_activity_minutes (minute);

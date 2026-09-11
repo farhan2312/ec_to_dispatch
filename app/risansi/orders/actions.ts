@@ -71,6 +71,15 @@ import {
 } from "@/lib/target-dates";
 import { logAudit } from "@/lib/audit";
 import {
+  childLabel,
+  childValues,
+  describeChanges,
+  qcDocumentSubject,
+  subjectForChild,
+  subjectForItem,
+  subjectForOrder,
+} from "@/lib/audit-subject";
+import {
   drawingHandoffDetail,
   drawingHandoffEvents,
   emitNotification,
@@ -104,7 +113,8 @@ export async function createOrderAction(
       action: "order.create",
       category: "activity",
       target: label,
-      details: `Created order #${sl_no}`,
+      details: `Created order ${label} (Sl. No. ${sl_no})`,
+      subject: { orderId: id, soNo: label },
     });
 
     // Creating an order doesn't notify anyone by itself, but the trigger
@@ -265,7 +275,8 @@ export async function createItemAction(
       action: "order.update",
       category: "activity",
       target: label,
-      details: `Added EC item to ${soLabel}`,
+      details: ecLabel ? `Added EC ${ecLabel} to ${soLabel}` : `Added an EC to ${soLabel}`,
+      subject: { orderId, itemId, soNo: soLabel, ecNo: ecLabel || null },
     });
 
     // No target-date notifications here: target dates are SO-level and fire
@@ -365,6 +376,14 @@ export async function uploadItemOrderCopyAction(
       size: file.size,
       data,
     });
+    await logAudit({
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: "order.update",
+      category: "activity",
+      target: "Order Copy",
+      details: `Attached Order Copy "${file.name}"`,
+      subject: await subjectForItem(itemId),
+    });
     revalidatePath(`/risansi/orders/${orderId}/items/${itemId}`);
     revalidatePath(`/risansi/orders/${orderId}`);
     return { ok: true };
@@ -392,7 +411,17 @@ export async function deleteItemAction(itemId: string): Promise<DeleteItemResult
       action: "order.update",
       category: "activity",
       target: detail ? String(detail.item.ec_no ?? "EC item") : "EC item",
-      details: "Deleted EC item",
+      details: detail
+        ? `Deleted ${detail.item.ec_no ? `EC ${String(detail.item.ec_no)}` : "an EC"} from ${String(detail.order.so_no ?? `#${detail.order.sl_no}`)}`
+        : "Deleted an EC",
+      subject: detail
+        ? {
+            orderId: String(detail.order.id),
+            itemId,
+            soNo: String(detail.order.so_no ?? `#${detail.order.sl_no}`),
+            ecNo: (detail.item.ec_no as string | null) ?? null,
+          }
+        : { itemId },
     });
     revalidatePath("/risansi/orders");
     if (orderId) revalidatePath(`/risansi/orders/${orderId}`);
@@ -427,6 +456,7 @@ export async function deleteOrderAction(
       category: "activity",
       target: label,
       details: `Deleted order ${label}`,
+      subject: { orderId, soNo: detail ? label : null },
     });
     revalidatePath("/risansi/orders");
     return { ok: true };
@@ -481,64 +511,77 @@ export async function updateOrderSectionAction(
     if (section.scope === "so") {
       const before = await getOrderDetail(id);
       await updateOrderSection(id, tbl, allowedValues);
+      const after = before ? await getOrderDetail(id) : null;
+      const pick = (d: NonNullable<typeof before>) =>
+        tbl === "orders"
+          ? d.order
+          : ((d as Record<string, unknown>)[tbl] as Record<string, unknown> | null);
+      // Named as it reads after the save, so renaming the SO logs under the
+      // new number with the old one in the change list.
+      const current = (after ?? before)?.order;
+      const label = current ? String(current.so_no ?? `#${current.sl_no}`) : null;
+      const changes =
+        before && after ? describeChanges(section.fields, pick(before), pick(after)) : null;
       await logAudit({
         actor: { id: user.id, email: user.email, role: user.role },
         action: "order.update",
         category: "activity",
         target: section.title,
-        details: `Updated ${section.title}`,
+        details: changes
+          ? `Updated ${section.title} — ${changes}`
+          : `Saved ${section.title} (no changes)`,
+        subject: { orderId: id, soNo: label },
       });
-      if (before) {
-        const after = await getOrderDetail(id);
-        if (after) {
-          const o = before.order;
-          const label = String(o.so_no ?? `#${o.sl_no}`);
-          const pick = (d: NonNullable<typeof before>) =>
-            tbl === "orders"
-              ? d.order
-              : ((d as Record<string, unknown>)[tbl] as Record<string, unknown> | null);
-          await notifySectionSaved({
-            orderId: id,
-            orderLabel: label,
-            table: tbl,
-            actorRole: user.role,
-            before: pick(before),
-            after: pick(after),
-          });
-        }
+      if (before && after && label) {
+        await notifySectionSaved({
+          orderId: id,
+          orderLabel: label,
+          table: tbl,
+          actorRole: user.role,
+          before: pick(before),
+          after: pick(after),
+        });
       }
       revalidatePath(`/risansi/orders/${id}`);
     } else {
       // Item-scope: id is the item_id.
       const before = await getItemDetail(id);
       await updateOrderSection(id, tbl, allowedValues);
+      const after = before ? await getItemDetail(id) : null;
+      const pick = (d: NonNullable<typeof before>) =>
+        tbl === "order_items"
+          ? d.item
+          : ((d as Record<string, unknown>)[tbl] as Record<string, unknown> | null);
+      const current = after ?? before;
+      const soNo = current ? String(current.order.so_no ?? `#${current.order.sl_no}`) : null;
+      const ecNo = current ? ((current.item.ec_no as string | null) ?? null) : null;
+      const changes =
+        before && after ? describeChanges(section.fields, pick(before), pick(after)) : null;
       await logAudit({
         actor: { id: user.id, email: user.email, role: user.role },
         action: "order.update",
         category: "activity",
         target: section.title,
-        details: `Updated ${section.title}`,
+        details: changes
+          ? `Updated ${section.title} — ${changes}`
+          : `Saved ${section.title} (no changes)`,
+        subject: {
+          orderId: current ? String(current.order.id) : null,
+          itemId: id,
+          soNo,
+          ecNo,
+        },
       });
-      if (before) {
-        const after = await getItemDetail(id);
-        if (after) {
-          const o = before.order;
-          const ec = before.item.ec_no;
-          const label = `${String(o.so_no ?? `#${o.sl_no}`)}${ec ? ` · ${ec}` : ""}`;
-          const pick = (d: NonNullable<typeof before>) =>
-            tbl === "order_items"
-              ? d.item
-              : ((d as Record<string, unknown>)[tbl] as Record<string, unknown> | null);
-          await notifySectionSaved({
-            orderId: String(o.id),
-            itemId: id,
-            orderLabel: label,
-            table: tbl,
-            actorRole: user.role,
-            before: pick(before),
-            after: pick(after),
-          });
-        }
+      if (before && after && soNo) {
+        await notifySectionSaved({
+          orderId: String(before.order.id),
+          itemId: id,
+          orderLabel: `${soNo}${ecNo ? ` · ${ecNo}` : ""}`,
+          table: tbl,
+          actorRole: user.role,
+          before: pick(before),
+          after: pick(after),
+        });
       }
       revalidatePath(`/risansi/orders/${String(before?.order.id ?? "")}/items/${id}`);
     }
@@ -572,7 +615,11 @@ function isChildTable(table: string): table is ChildTable {
   return (CHILD_TABLES as readonly string[]).includes(table);
 }
 
-async function guardChild(table: string): Promise<ChildActionResult> {
+type CurrentUser = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>;
+
+async function guardChild(
+  table: string
+): Promise<{ ok: true; user: CurrentUser } | { ok: false; error: string }> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
   if (!isChildTable(table)) {
@@ -581,7 +628,24 @@ async function guardChild(table: string): Promise<ChildActionResult> {
   if (!canEditChild(user.role, table)) {
     return { ok: false, error: "You don't have permission to edit this list." };
   }
-  return { ok: true };
+  return { ok: true, user };
+}
+
+/** One audit line for a list row, on the SO / EC it belongs to. */
+async function auditChild(
+  user: CurrentUser,
+  table: ChildTable,
+  subject: Awaited<ReturnType<typeof subjectForChild>>,
+  details: string
+) {
+  await logAudit({
+    actor: { id: user.id, email: user.email, role: user.role },
+    action: "order.update",
+    category: "activity",
+    target: childLabel(table, null),
+    details,
+    subject,
+  });
 }
 
 export async function addOrderChildAction(
@@ -594,6 +658,14 @@ export async function addOrderChildAction(
   if (!guard.ok) return guard;
   try {
     const created = await addChildRow(table as ChildTable, orderId, kind);
+    if (created) {
+      await auditChild(
+        guard.user,
+        table as ChildTable,
+        await subjectForChild(table as ChildTable, created.id),
+        `Added a ${childLabel(table as ChildTable, null)} row`
+      );
+    }
     // Actual packing slips need an invoice add-on to appear in Billing &
     // Dispatch the moment Packing clicks Add — don't wait for the first
     // Save. The invoice's read-only header stays blank until Packing fills
@@ -622,8 +694,7 @@ export async function updateOrderChildAction(
 ): Promise<ChildActionResult> {
   const guard = await guardChild(table);
   if (!guard.ok) return guard;
-  const user = await getCurrentUser();
-  if (!user) return { ok: false, error: "You are not signed in." };
+  const user = guard.user;
   const tbl = table as ChildTable;
   // Ignore any keys not in the child schema, and drop `centralOnly` fields
   // when the caller isn't Central Visibility — the UI renders those read-only,
@@ -670,7 +741,25 @@ export async function updateOrderChildAction(
       drgBefore = await drawingHandoffs(id);
     }
 
+    // What the row said before, and whose it is — read ahead of the write so
+    // the audit line can say what changed.
+    const [rowBefore, subject] = await Promise.all([
+      childValues(tbl, id),
+      subjectForChild(tbl, id),
+    ]);
+
     await updateChildRow(tbl, id, clean);
+
+    const rowAfter = await childValues(tbl, id);
+    const changes = describeChanges(CHILD_FIELDS[tbl], rowBefore, rowAfter);
+    await auditChild(
+      user,
+      tbl,
+      subject,
+      changes
+        ? `Updated ${childLabel(tbl, rowAfter)} — ${changes}`
+        : `Saved ${childLabel(tbl, rowAfter)} (no changes)`
+    );
 
     // For per-EC child tables (BOI items, packing slips) the `orderId` arg is
     // actually the item_id. The notification's order_id is a FK to orders(id),
@@ -860,6 +949,16 @@ export async function uploadInvoiceLrAction(
       size: file.size,
       data,
     });
+    const [subject, row] = await Promise.all([
+      subjectForChild("order_invoices", invoiceId),
+      childValues("order_invoices", invoiceId),
+    ]);
+    await auditChild(
+      guard.user,
+      "order_invoices",
+      subject,
+      `Attached LR copy "${file.name}" to ${childLabel("order_invoices", row)}`
+    );
     revalidatePath(`/risansi/orders/${orderId}`);
     return { ok: true };
   } catch (error) {
@@ -876,7 +975,14 @@ export async function deleteOrderChildAction(
   const guard = await guardChild(table);
   if (!guard.ok) return guard;
   try {
-    await deleteChildRow(table as ChildTable, id);
+    const tbl = table as ChildTable;
+    // Once it is gone there is nothing left to name it by.
+    const [subject, row] = await Promise.all([
+      subjectForChild(tbl, id),
+      childValues(tbl, id),
+    ]);
+    await deleteChildRow(tbl, id);
+    await auditChild(guard.user, tbl, subject, `Deleted ${childLabel(tbl, row)}`);
     revalidatePath(`/risansi/orders/${orderId}`);
     return { ok: true };
   } catch (error) {
@@ -959,12 +1065,15 @@ export async function uploadQcDocumentsAction(
       });
     }
     const label = QC_DOC_TABLE_LABEL[table];
+    const names = files.map((f) => `"${f.name}"`).join(", ");
     await logAudit({
       actor: { id: user.id, email: user.email, role: user.role },
       action: "order.update",
       category: "activity",
       target: label,
-      details: `Attached ${files.length} document${files.length === 1 ? "" : "s"} to ${label}`,
+      details: `Attached ${files.length} document${files.length === 1 ? "" : "s"} to ${label}: ${names}`,
+      // The documents hang off the EC — this argument is its item id.
+      subject: await subjectForItem(orderId),
     });
     revalidatePath("/risansi/departments/qc");
     return { ok: true };
@@ -987,7 +1096,16 @@ export async function deleteQcDocumentAction(
     return { ok: false, error: "You don't have permission to delete documents here." };
   }
   try {
+    const { subject, fileName } = await qcDocumentSubject(table, id);
     await deleteQcDocument(table, id);
+    await logAudit({
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: "order.update",
+      category: "activity",
+      target: QC_DOC_TABLE_LABEL[table],
+      details: `Deleted ${fileName ? `"${fileName}"` : "a document"} from ${QC_DOC_TABLE_LABEL[table]}`,
+      subject,
+    });
     revalidatePath("/risansi/departments/qc");
     return { ok: true };
   } catch (error) {
@@ -1112,6 +1230,18 @@ export async function importPiExcelAction(
       orderId,
       good.map((r) => ({ pi_no: r.pi_no, pi_date: r.pi_date, pi_value: r.pi_value }))
     );
+    await logAudit({
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: "order.update",
+      category: "activity",
+      target: "PI",
+      details: `Imported ${inserted} PI${inserted === 1 ? "" : "s"} from "${file.name}": ${good
+        .map((r) => r.pi_no)
+        .filter(Boolean)
+        .slice(0, 10)
+        .join(", ")}`,
+      subject: await subjectForOrder(orderId),
+    });
     revalidatePath(`/risansi/orders/${orderId}`);
     revalidatePath("/risansi/departments/billing");
     return { ok: true, inserted, skipped: parsed.rows.length - good.length };
@@ -1185,9 +1315,11 @@ export async function addTargetRevisionAction(
       category: "activity",
       target: label,
       details:
-        seq === 1
-          ? `Set ${target.label} to ${date}`
-          : `Revised ${target.label} to ${date} (revision ${seq - 1})`,
+        (seq === 1
+          ? `Set ${target.label} to ${formatTargetDate(date)}`
+          : `Revised ${target.label} to ${formatTargetDate(date)} (revision ${seq - 1})`) +
+        (trimmedReason ? ` — reason: ${trimmedReason}` : ""),
+      subject: { orderId, soNo: label },
     });
 
     // The department working to this date has to hear it — both when it is
@@ -1252,6 +1384,7 @@ export async function deleteTargetRevisionAction(
       details: now
         ? `Removed ${target.label} ${removed}, back to ${now}`
         : `Cleared ${target.label} (was ${removed})`,
+      subject: { orderId, soNo: label },
     });
 
     // Same reasoning as setting one: the department is working to this date,
@@ -1344,12 +1477,15 @@ export async function setDeptCompleteAction(
     if (!complete) {
       const orderId = await uncompleteDept(scopeId, key);
       if (!orderId) return { ok: false, error: "Nothing to undo." };
+      const subject =
+        scopeId === orderId ? await subjectForOrder(orderId) : await subjectForItem(scopeId);
       await logAudit({
         actor: { id: user.id, email: user.email, role: user.role },
         action: "order.dept_complete",
         category: "activity",
-        target: (await getOrderLabel(orderId)) ?? orderId,
+        target: subject.soNo ?? orderId,
         details: `Reopened ${DEPT_LABELS[key]}`,
+        subject,
       });
       revalidatePath(`/risansi/orders/${orderId}`);
       return { ok: true, completion: null };
@@ -1371,6 +1507,9 @@ export async function setDeptCompleteAction(
       category: "activity",
       target: label,
       details: `Completed ${DEPT_LABELS[key]}${took ? ` — ${took}` : ""}`,
+      subject: completion.item_id
+        ? await subjectForItem(completion.item_id)
+        : { orderId: completion.order_id, soNo: label },
     });
 
     // Central Visibility tracks the pipeline, so a department finishing is

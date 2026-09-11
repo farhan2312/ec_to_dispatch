@@ -8,6 +8,7 @@ import { ReportBugTrigger } from "./report-bug";
 import { DiscussionBell } from "./discussion-bell";
 import { Sidebar } from "./sidebar";
 import { BottomNav } from "./bottom-nav";
+import { PresenceBeacon } from "./presence-beacon";
 import { isCentral } from "@/lib/roles";
 
 // SharePoint-hosted demo walkthrough. Opens in a new tab; noopener/noreferrer
@@ -87,6 +88,9 @@ export function AppShell({
 
   return (
     <div className="flex min-h-screen bg-background">
+      {/* Counts the minutes this user is actually in the app, for the audit
+          log's Active Time. */}
+      <PresenceBeacon />
       <Sidebar
         user={user}
         alertCount={alertCount}

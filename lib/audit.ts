@@ -17,6 +17,17 @@ export type AuditActor = {
 };
 
 /**
+ * The order an event touched. SO No. and EC No. are recorded as they read at
+ * the time, so the trail keeps naming an order after it is renamed or deleted.
+ */
+export type AuditSubject = {
+  orderId?: string | null;
+  itemId?: string | null;
+  soNo?: string | null;
+  ecNo?: string | null;
+};
+
+/**
  * Record an audit event. Never throws — a logging failure must not break the
  * action being logged.
  */
@@ -26,12 +37,15 @@ export async function logAudit(entry: {
   category: AuditCategory;
   target?: string | null;
   details?: string | null;
+  subject?: AuditSubject | null;
 }): Promise<void> {
+  const s = entry.subject ?? {};
   try {
     await query(
       `INSERT INTO audit_log
-         (user_id, user_email, user_role, action, category, target, details)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+         (user_id, user_email, user_role, action, category, target, details,
+          order_id, item_id, so_no, ec_no)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         entry.actor?.id ?? null,
         entry.actor?.email ?? null,
@@ -40,10 +54,31 @@ export async function logAudit(entry: {
         entry.category,
         entry.target ?? null,
         entry.details ?? null,
+        s.orderId ?? null,
+        s.itemId ?? null,
+        s.soNo ?? null,
+        s.ecNo ?? null,
       ]
     );
   } catch (error) {
     console.error("audit log failed:", error);
+  }
+}
+
+/**
+ * Mark the current minute as one this user spent in the app. Idempotent within
+ * the minute, so several open tabs count once. Never throws.
+ */
+export async function recordPresence(userId: string): Promise<void> {
+  try {
+    await query(
+      `INSERT INTO user_activity_minutes (user_id, minute)
+       VALUES ($1, date_trunc('minute', now()))
+       ON CONFLICT DO NOTHING`,
+      [userId]
+    );
+  } catch (error) {
+    console.error("presence failed:", error);
   }
 }
 
@@ -91,34 +126,42 @@ export type AuditEvent = {
   category: string;
   target: string | null;
   details: string | null;
+  order_id: string | null;
+  item_id: string | null;
+  so_no: string | null;
+  ec_no: string | null;
+  /** Whether the order / EC still exists — a link to a deleted one leads nowhere. */
+  order_live: boolean;
+  item_live: boolean;
 };
-
-/** Most recent events (capped) for the audit log view. */
-export async function listRecentAuditEvents(
-  limit = 1000
-): Promise<AuditEvent[]> {
-  const result = await query<AuditEvent>(
-    `SELECT id,
-            to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
-            user_email, user_role, action, category, target, details
-       FROM audit_log
-      ORDER BY created_at DESC
-      LIMIT $1`,
-    [limit]
-  );
-  return result.rows;
-}
 
 /** A row of the "Usage by User" tab: per-user totals over the range. */
 export type AuditUserRow = {
   email: string;
+  name: string | null;
   role: string | null;
   actions: number;
   sessions: number;
-  lastActive: string;
+  /** Minutes with the app open and in use — see user_activity_minutes. */
+  activeMinutes: number;
+  /** Latest of the last recorded event and the last minute seen active. */
+  lastActive: string | null;
 };
 
+/**
+ * The period being looked at, as timestamps. `until` is exclusive, so a range
+ * ending on a date covers the whole of that day.
+ */
+export type AuditWindow = { since: string | null; until: string | null };
+
 const ISO_FMT = `'YYYY-MM-DD"T"HH24:MI:SS"Z"'`;
+
+const EVENT_COLUMNS = `id,
+              to_char(created_at AT TIME ZONE 'UTC', ${ISO_FMT}) AS created_at,
+              user_email, user_role, action, category, target, details,
+              order_id, item_id, so_no, ec_no,
+              EXISTS (SELECT 1 FROM orders o WHERE o.id = audit_log.order_id) AS order_live,
+              EXISTS (SELECT 1 FROM order_items i WHERE i.id = audit_log.item_id) AS item_live`;
 
 /** A row carrying the total alongside it, courtesy of count(*) OVER (). */
 type Counted = { total_count: string };
@@ -167,6 +210,15 @@ async function paged<T extends Counted>(
   return pageResult(strip(again.rows), total, clamped);
 }
 
+// $1 category, $2 since, $3 until, $4 search. Search reaches the SO and EC as
+// well as the free text, so "1455" finds everything done to that order.
+const EVENT_WHERE = `WHERE ($1::text IS NULL OR category = $1)
+        AND ($2::timestamptz IS NULL OR created_at >= $2)
+        AND ($3::timestamptz IS NULL OR created_at < $3)
+        AND ($4::text IS NULL OR user_email ILIKE $4 OR details ILIKE $4
+                              OR target ILIKE $4 OR action ILIKE $4
+                              OR so_no ILIKE $4 OR ec_no ILIKE $4)`;
+
 /**
  * One page of audit events, filtered in SQL.
  *
@@ -176,35 +228,82 @@ async function paged<T extends Counted>(
 export async function listAuditEventsPage(opts: {
   page: number;
   category: string | null;
-  since: string | null;
+  window: AuditWindow;
   search: string;
 }): Promise<PageResult<AuditEvent>> {
   const search = opts.search ? likePattern(opts.search) : null;
-  const where = `WHERE ($1::text IS NULL OR category = $1)
-        AND ($2::timestamptz IS NULL OR created_at >= $2)
-        AND ($3::text IS NULL OR user_email ILIKE $3 OR details ILIKE $3
-                              OR target ILIKE $3 OR action ILIKE $3)`;
+  const params = [opts.category, opts.window.since, opts.window.until, search];
 
   const fetchPage = (page: number) =>
-    query<AuditEvent & { total_count: string }>(
-      `SELECT id,
-              to_char(created_at AT TIME ZONE 'UTC', ${ISO_FMT}) AS created_at,
-              user_email, user_role, action, category, target, details,
+    query<AuditEvent & Counted>(
+      `SELECT ${EVENT_COLUMNS},
               count(*) OVER ()::text AS total_count
          FROM audit_log
-         ${where}
+         ${EVENT_WHERE}
         ORDER BY created_at DESC
-        LIMIT $4 OFFSET $5`,
-      [opts.category, opts.since, search, PAGE_SIZE, offsetFor(page)]
+        LIMIT $5 OFFSET $6`,
+      [...params, PAGE_SIZE, offsetFor(page)]
     );
 
   return paged(opts.page, fetchPage, () =>
-    countOf(`SELECT count(*) AS count FROM audit_log ${where}`, [
-      opts.category,
-      opts.since,
-      search,
-    ]));
+    countOf(`SELECT count(*) AS count FROM audit_log ${EVENT_WHERE}`, params)
+  );
 }
+
+/**
+ * Per-user totals over the window: what the audit log recorded, joined to the
+ * minutes each user was seen in the app. A user who only read — opened orders,
+ * checked a dashboard — has no events but still has active time, so the two
+ * sides are joined in full rather than hung off the events.
+ *
+ * $1 since, $2 until, $3 search.
+ */
+const USERS_SQL = `
+  WITH ev AS (
+    SELECT lower(user_email) AS key,
+           max(user_email) AS email,
+           (array_agg(user_role ORDER BY created_at DESC)
+              FILTER (WHERE user_role IS NOT NULL))[1] AS role,
+           count(*) FILTER (WHERE category = 'activity')::int AS actions,
+           count(*) FILTER (WHERE action = 'login')::int AS sessions,
+           max(created_at) AS last_event
+      FROM audit_log
+     WHERE user_email IS NOT NULL
+       AND ($1::timestamptz IS NULL OR created_at >= $1)
+       AND ($2::timestamptz IS NULL OR created_at < $2)
+     GROUP BY lower(user_email)
+  ),
+  act AS (
+    SELECT m.user_id,
+           count(*)::int AS minutes,
+           max(m.minute) + interval '1 minute' AS last_seen
+      FROM user_activity_minutes m
+     WHERE ($1::timestamptz IS NULL OR m.minute >= $1)
+       AND ($2::timestamptz IS NULL OR m.minute < $2)
+     GROUP BY m.user_id
+  ),
+  seen AS (
+    SELECT lower(u.email) AS key, u.email, u.full_name, u.role,
+           act.minutes, act.last_seen
+      FROM act JOIN users u ON u.id = act.user_id
+  ),
+  merged AS (
+    SELECT COALESCE(ev.email, seen.email) AS email,
+           (SELECT u.full_name FROM users u
+             WHERE lower(u.email) = COALESCE(ev.key, seen.key)
+             LIMIT 1) AS name,
+           COALESCE(ev.role, seen.role) AS role,
+           COALESCE(ev.actions, 0) AS actions,
+           COALESCE(ev.sessions, 0) AS sessions,
+           COALESCE(seen.minutes, 0) AS active_minutes,
+           GREATEST(ev.last_event, seen.last_seen) AS last_active
+      FROM ev FULL OUTER JOIN seen ON seen.key = ev.key
+  )
+  SELECT email, name, role, actions, sessions,
+         active_minutes AS "activeMinutes",
+         to_char(last_active AT TIME ZONE 'UTC', ${ISO_FMT}) AS "lastActive"
+    FROM merged
+   WHERE ($3::text IS NULL OR email ILIKE $3 OR role ILIKE $3 OR name ILIKE $3)`;
 
 /**
  * One page of the per-user aggregate. Grouping happens in SQL so the totals
@@ -212,36 +311,128 @@ export async function listAuditEventsPage(opts: {
  */
 export async function listAuditUsersPage(opts: {
   page: number;
-  since: string | null;
+  window: AuditWindow;
   search: string;
 }): Promise<PageResult<AuditUserRow>> {
   const search = opts.search ? likePattern(opts.search) : null;
-  const where = `WHERE user_email IS NOT NULL
-        AND ($1::timestamptz IS NULL OR created_at >= $1)
-        AND ($2::text IS NULL OR user_email ILIKE $2 OR user_role ILIKE $2)`;
+  const params = [opts.window.since, opts.window.until, search];
 
   const fetchPage = (page: number) =>
-    query<AuditUserRow & { total_count: string }>(
-      `SELECT user_email AS email,
-              (ARRAY_AGG(user_role ORDER BY created_at DESC)
-                 FILTER (WHERE user_role IS NOT NULL))[1] AS role,
-              COUNT(*) FILTER (WHERE category = 'activity')::int AS actions,
-              COUNT(*) FILTER (WHERE action = 'login')::int   AS sessions,
-              to_char(MAX(created_at) AT TIME ZONE 'UTC', ${ISO_FMT}) AS "lastActive",
-              -- A window function runs after GROUP BY, so this counts groups.
-              count(*) OVER ()::text AS total_count
-         FROM audit_log
-         ${where}
-        GROUP BY user_email
-        ORDER BY MAX(created_at) DESC
-        LIMIT $3 OFFSET $4`,
-      [opts.since, search, PAGE_SIZE, offsetFor(page)]
+    query<AuditUserRow & Counted>(
+      `SELECT *, count(*) OVER ()::text AS total_count
+         FROM (${USERS_SQL}) u
+        ORDER BY "lastActive" DESC NULLS LAST
+        LIMIT $4 OFFSET $5`,
+      [...params, PAGE_SIZE, offsetFor(page)]
     );
 
   return paged(opts.page, fetchPage, () =>
-    countOf(
-      `SELECT count(*) AS count
-         FROM (SELECT 1 FROM audit_log ${where} GROUP BY user_email) g`,
-      [opts.since, search]
-    ));
+    countOf(`SELECT count(*) AS count FROM (${USERS_SQL}) u`, params)
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Report
+// ---------------------------------------------------------------------------
+
+/** The event list in a report stops here; the summaries still cover it all. */
+export const REPORT_EVENT_CAP = 5000;
+
+export type AuditReport = {
+  totals: {
+    events: number;
+    logins: number;
+    failed: number;
+    actions: number;
+    activeUsers: number;
+    activeMinutes: number;
+    ordersTouched: number;
+  };
+  byAction: { action: string; count: number }[];
+  topOrders: { so_no: string; count: number; users: number; last: string }[];
+  users: AuditUserRow[];
+  events: AuditEvent[];
+  /** More events matched than the list carries. */
+  truncated: boolean;
+};
+
+/**
+ * Everything the PDF report prints, for one window and filter. Five queries in
+ * parallel rather than one: each is a different shape, and the database is
+ * remote, so the wait is the slowest of them, not the sum.
+ */
+export async function getAuditReport(opts: {
+  category: string | null;
+  window: AuditWindow;
+  search: string;
+}): Promise<AuditReport> {
+  const search = opts.search ? likePattern(opts.search) : null;
+  const params = [opts.category, opts.window.since, opts.window.until, search];
+
+  const [totals, byAction, topOrders, users, events] = await Promise.all([
+    query<{
+      events: number;
+      logins: number;
+      failed: number;
+      actions: number;
+      orders_touched: number;
+    }>(
+      `SELECT count(*)::int AS events,
+              count(*) FILTER (WHERE action = 'login')::int AS logins,
+              count(*) FILTER (WHERE action = 'login_failed')::int AS failed,
+              count(*) FILTER (WHERE category = 'activity')::int AS actions,
+              count(DISTINCT so_no)::int AS orders_touched
+         FROM audit_log ${EVENT_WHERE}`,
+      params
+    ),
+    query<{ action: string; count: number }>(
+      `SELECT action, count(*)::int AS count
+         FROM audit_log ${EVENT_WHERE}
+        GROUP BY action ORDER BY count DESC, action`,
+      params
+    ),
+    query<{ so_no: string; count: number; users: number; last: string }>(
+      `SELECT so_no, count(*)::int AS count,
+              count(DISTINCT user_email)::int AS users,
+              to_char(max(created_at) AT TIME ZONE 'UTC', ${ISO_FMT}) AS last
+         FROM audit_log ${EVENT_WHERE} AND so_no IS NOT NULL
+        GROUP BY so_no ORDER BY count DESC, max(created_at) DESC
+        LIMIT 15`,
+      params
+    ),
+    query<AuditUserRow>(
+      `SELECT * FROM (${USERS_SQL}) u ORDER BY "activeMinutes" DESC, actions DESC`,
+      [opts.window.since, opts.window.until, search]
+    ),
+    query<AuditEvent>(
+      `SELECT ${EVENT_COLUMNS}
+         FROM audit_log ${EVENT_WHERE}
+        ORDER BY created_at DESC
+        LIMIT ${REPORT_EVENT_CAP + 1}`,
+      params
+    ),
+  ]);
+
+  const t = totals.rows[0];
+  const userRows = users.rows;
+  return {
+    totals: {
+      events: t?.events ?? 0,
+      logins: t?.logins ?? 0,
+      failed: t?.failed ?? 0,
+      actions: t?.actions ?? 0,
+      // A failed sign-in names an email too; someone who never got in was not
+      // an active user.
+      activeUsers: userRows.filter(
+        (u) => u.activeMinutes > 0 || u.actions > 0 || u.sessions > 0
+      ).length,
+      activeMinutes: userRows.reduce((sum, u) => sum + u.activeMinutes, 0),
+      ordersTouched: t?.orders_touched ?? 0,
+    },
+    byAction: byAction.rows,
+    topOrders: topOrders.rows,
+    users: userRows,
+    events: events.rows.slice(0, REPORT_EVENT_CAP),
+    truncated: events.rows.length > REPORT_EVENT_CAP,
+  };
 }

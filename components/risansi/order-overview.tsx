@@ -28,8 +28,8 @@ import { canAccessDepartment, isCentral } from "@/lib/roles";
 import { DEPT_LABELS, type DeptCompletion } from "@/lib/dept-completion";
 import type { ItemDetail, OrderDetail, SoDeptStatus } from "@/lib/orders";
 import {
+  AllDoneChip,
   Badge,
-  CompleteChip,
   DeptStatusBoard,
   EC_DEPTS,
   ecComplete,
@@ -311,7 +311,9 @@ export function OrderOverview({
                 {soLabel}
               </h1>
               {/* Nothing outstanding anywhere on the order — see orderComplete. */}
-              {status && orderComplete(status) && <CompleteChip label="Order complete" />}
+              {status && orderComplete(status) && (
+                <AllDoneChip label="All departments done" />
+              )}
             </div>
             <p className="mt-0.5 text-sm text-muted">
               {str(order.client_name) || "—"}
@@ -385,7 +387,7 @@ export function OrderOverview({
 
       {/* ---------- where everyone stands ---------- */}
       <div className="mt-6">
-        <Panel title="Department status & sign-off">
+        <Panel title="Department status & completion">
           {status ? (
             <DeptStatusBoard status={status} completions={completions} />
           ) : (
@@ -455,7 +457,7 @@ export function OrderOverview({
                   <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-2 truncate text-sm font-semibold text-foreground">
                       {str(item.ec_no) || "EC"}
-                      {ecDone && <CompleteChip />}
+                      {ecDone && <AllDoneChip />}
                       <span className="ml-2 font-normal text-muted">
                         {[
                           str(item.item_type),

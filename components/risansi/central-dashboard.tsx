@@ -17,7 +17,7 @@ import {
 import type { OrderOverviewRow, PipelinePage } from "@/lib/orders";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import { UrlPagination, useUrlTable } from "./url-table";
-import { CompleteChip } from "./dept-status-board";
+import { AllDoneChip } from "./dept-status-board";
 import {
   describeDays,
   isPerEcDept,
@@ -87,8 +87,8 @@ function late(date: string | null, isDone: boolean): boolean {
 }
 
 /**
- * Under a department's status, whether it has signed off: "Completed 10 Sept
- * · 6 days late", or "Not completed". Both are spelled out — a blank would read
+ * Under a department's status, whether it has ticked its own Complete box:
+ * "Completed 10 Sept · 6 days late", or "Not completed". Both are spelled out — a blank would read
  * the same as "nothing to show". A department with nothing to do on this
  * order (`applicable` false) shows neither, rather than a "not completed" it
  * never could be.
@@ -809,7 +809,7 @@ export function CentralDashboard({
                         </Link>
                         {card.complete && (
                           <span className="mt-1 block">
-                            <CompleteChip />
+                            <AllDoneChip />
                           </span>
                         )}
                       </td>
@@ -939,7 +939,7 @@ export function CentralDashboard({
                                           )}
                                           {ecDone && (
                                             <div className="mt-1">
-                                              <CompleteChip />
+                                              <AllDoneChip />
                                             </div>
                                           )}
                                         </td>

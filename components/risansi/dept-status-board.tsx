@@ -38,7 +38,12 @@ export function orderComplete(status: SoDeptStatus): boolean {
   );
 }
 
-export function CompleteChip({ label = "Complete" }: { label?: string }) {
+/**
+ * The derived verdict on a row: nothing outstanding anywhere on it. Says "all
+ * done" rather than "complete" so it cannot be read as the departments'
+ * Complete ticks, which are a separate record.
+ */
+export function AllDoneChip({ label = "All done" }: { label?: string }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
       <Check className="h-3 w-3" />
@@ -159,25 +164,27 @@ function completionFor(
 }
 
 /**
- * A department's own sign-off, which is a different claim from the derived
- * status above it: the status says what has been recorded, this says the
- * department called it finished — and how that landed against its target.
+ * A department ticking its own Complete box, which is a different claim from
+ * the derived status above it: the status says what has been recorded, this
+ * says the department called its part finished — and how that landed against
+ * its target. Worded exactly as the pipeline and the workspace checkbox word
+ * it, so all three read as the same act.
  */
-export function SignOff({
+export function Completion({
   completion,
 }: {
   completion: DeptCompletion | null;
 }) {
   if (!completion) {
     return (
-      <span className="mt-1 block text-[10px] text-muted-foreground">Not signed off</span>
+      <span className="mt-1 block text-[10px] text-muted-foreground">Not completed</span>
     );
   }
   const days = describeDays(completion.days_taken);
   const late = (completion.days_taken ?? 0) > 0;
   return (
     <span className="mt-1 block text-[10px] text-muted-foreground">
-      Signed {formatDate(completion.completed_on)}
+      Completed {formatDate(completion.completed_on)}
       {days ? " · " : ""}
       {days && <span className={late ? "text-danger" : "text-emerald-600"}>{days}</span>}
     </span>
@@ -232,7 +239,7 @@ export function DeptStatusBoard({
                   </span>
                   <Badge cell={d.cell} />
                 </div>
-                <SignOff completion={completionFor(completions, d.dept, null)} />
+                <Completion completion={completionFor(completions, d.dept, null)} />
               </div>
             );
           })}
@@ -299,14 +306,14 @@ export function DeptStatusBoard({
                       )}
                       {complete && (
                         <span className="mt-1 block">
-                          <CompleteChip />
+                          <AllDoneChip />
                         </span>
                       )}
                     </td>
                     {EC_DEPTS.map((d) => (
                       <td key={d.key} className="px-3 py-2.5">
                         <Badge cell={ec[d.key] as DeptCell} />
-                        <SignOff completion={completionFor(completions, d.key, ec.id)} />
+                        <Completion completion={completionFor(completions, d.key, ec.id)} />
                       </td>
                     ))}
                   </tr>

@@ -107,8 +107,9 @@ export function BoiItemsModal({
               <thead className="sticky top-0 z-10 bg-background">
                 <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   <th className="border-b border-card-border px-4 py-3">Item</th>
+                  <th className="border-b border-card-border px-4 py-3">Make</th>
                   <th className="border-b border-card-border px-4 py-3">
-                    Make &amp; Description
+                    Description
                   </th>
                   <th className="border-b border-card-border px-4 py-3">
                     Expected Receipt
@@ -130,7 +131,8 @@ export function BoiItemsModal({
                         ? text(r.boi_item_other)
                         : text(r.boi_item)}
                     </td>
-                    <td className="px-4 py-3">{text(r.boi_make_desc)}</td>
+                    <td className="px-4 py-3">{text(r.boi_make)}</td>
+                    <td className="px-4 py-3">{text(r.boi_description)}</td>
                     {/* Planning schedules to the expected date until the
                         actual one is in. */}
                     <td className="px-4 py-3 whitespace-nowrap">

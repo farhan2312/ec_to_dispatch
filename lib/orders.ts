@@ -268,12 +268,64 @@ export async function createOrder(
 // EC items (order_items) — one row per pump/spare under an SO
 // ---------------------------------------------------------------------------
 
+// Either the pool or one transaction's client: both run a parameterized query
+// the same way, so a write can be reused inside a transaction.
+type Exec = <T extends Record<string, unknown>>(
+  text: string,
+  params?: unknown[]
+) => Promise<{ rows: T[] }>;
+
+/** What Central Visibility fills in per bought-out item on the EC form. */
+export type NewBoiItem = {
+  boi_item: string;
+  boi_item_other?: string;
+  boi_make?: string;
+  boi_description?: string;
+};
+
+/**
+ * Add an EC and, in the same transaction, the bought-out items it was filed
+ * with — Central Visibility lists them on the EC form, Purchase then records
+ * what happened to each. Listing any also sets the SO's BOI flag to Yes,
+ * which is what puts the list in front of Purchase at all.
+ */
+export async function createItemWithBoiItems(
+  orderId: string,
+  input: NewItemInput,
+  boi: NewBoiItem[]
+): Promise<{ id: string; seq: number }> {
+  if (boi.length === 0) return createItem(orderId, input);
+  return withTransaction(async (client) => {
+    const exec: Exec = (text, params) => client.query(text, params);
+    const item = await createItem(orderId, input, exec);
+    for (const row of boi) {
+      await exec(
+        `INSERT INTO order_boi_items (item_id, boi_item, boi_item_other, boi_make, boi_description)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          item.id,
+          nullify(row.boi_item),
+          nullify(row.boi_item_other),
+          nullify(row.boi_make),
+          nullify(row.boi_description),
+        ]
+      );
+    }
+    await exec(`UPDATE orders SET boi = 'Yes' WHERE id = $1 AND coalesce(boi, '') <> 'Yes'`, [
+      orderId,
+    ]);
+    return item;
+  });
+}
+
 /** Add an EC/pump item to an SO (the Add-On form). */
 export async function createItem(
   orderId: string,
-  input: NewItemInput
+  input: NewItemInput,
+  // Pass a transaction's client to insert the EC alongside other writes.
+  exec: Exec = query
 ): Promise<{ id: string; seq: number }> {
-  const result = await query<{ id: string; seq: number }>(
+  const result = await exec<{ id: string; seq: number }>(
     `INSERT INTO order_items (
         order_id, ec_no, ec_date, item_type, pump_type, model_no, internal_model,
         quantity, orientation, suction, delivery, pump_sno, application, version

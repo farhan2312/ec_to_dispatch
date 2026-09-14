@@ -846,12 +846,8 @@ export const BOI_ITEM_FIELDS: OrderField[] = [
     dependsOn: [{ column: "boi_item", value: "Others" }],
     centralOnly: true,
   },
-  {
-    column: "boi_make_desc",
-    label: "BOI Make & Description",
-    type: "text",
-    centralOnly: true,
-  },
+  { column: "boi_make", label: "BOI Make", type: "text", centralOnly: true },
+  { column: "boi_description", label: "Description", type: "text", centralOnly: true },
   // Filled by Purchase: when the item is expected, then when it actually
   // arrives. Only the actual date marks the item received.
   { column: "expected_receipt_date", label: "Expected Receipt Date", type: "date" },

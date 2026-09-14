@@ -27,7 +27,15 @@ import {
 import { canAccessDepartment, isCentral } from "@/lib/roles";
 import { DEPT_LABELS, type DeptCompletion } from "@/lib/dept-completion";
 import type { ItemDetail, OrderDetail, SoDeptStatus } from "@/lib/orders";
-import { Badge, DeptStatusBoard, EC_DEPTS, formatDate } from "./dept-status-board";
+import {
+  Badge,
+  CompleteChip,
+  DeptStatusBoard,
+  EC_DEPTS,
+  ecComplete,
+  formatDate,
+  orderComplete,
+} from "./dept-status-board";
 
 type Row = Record<string, unknown>;
 
@@ -298,9 +306,13 @@ export function OrderOverview({
             <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">
               Sl. No. {str(order.sl_no) || "—"}
             </p>
-            <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-              {soLabel}
-            </h1>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
+                {soLabel}
+              </h1>
+              {/* Nothing outstanding anywhere on the order — see orderComplete. */}
+              {status && orderComplete(status) && <CompleteChip label="Order complete" />}
+            </div>
             <p className="mt-0.5 text-sm text-muted">
               {str(order.client_name) || "—"}
               {str(order.client_code) ? ` · ${str(order.client_code)}` : ""}
@@ -414,12 +426,19 @@ export function OrderOverview({
             const id = str(item.id);
             const isOpen = open.has(id);
             const ecStatus = status?.ecs.find((e) => e.id === id) ?? null;
+            const ecDone = ecStatus ? ecComplete(ecStatus) : false;
             return (
               <div
                 key={id}
-                className="overflow-hidden rounded-xl border border-card-border bg-surface shadow-sm"
+                className={`overflow-hidden rounded-xl border bg-surface shadow-sm ${
+                  ecDone ? "border-emerald-500/40" : "border-card-border"
+                }`}
               >
-                <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+                <div
+                  className={`flex flex-wrap items-center gap-3 px-4 py-3 ${
+                    ecDone ? "bg-emerald-500/10" : ""
+                  }`}
+                >
                   <button
                     type="button"
                     onClick={() => toggle(id)}
@@ -434,8 +453,9 @@ export function OrderOverview({
                     )}
                   </button>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-foreground">
+                    <p className="flex flex-wrap items-center gap-2 truncate text-sm font-semibold text-foreground">
                       {str(item.ec_no) || "EC"}
+                      {ecDone && <CompleteChip />}
                       <span className="ml-2 font-normal text-muted">
                         {[
                           str(item.item_type),

@@ -4,6 +4,7 @@
 // cards, then a per-EC matrix. Shared by the "Departments" popup on the order
 // list and the order overview page, so the two can never drift apart.
 
+import { Check } from "lucide-react";
 import {
   DEPT_LABELS,
   describeDays,
@@ -11,7 +12,40 @@ import {
   type DeptCompletion,
   type DeptKey,
 } from "@/lib/dept-completion";
-import type { DeptCell, DeptTargets, SoDeptStatus } from "@/lib/orders";
+import { allDeptsSettled } from "@/lib/dept-status";
+import type { DeptCell, DeptTargets, EcDeptStatus, SoDeptStatus } from "@/lib/orders";
+
+const settled = (cell: DeptCell) => ({
+  done: cell.state === "done",
+  na: cell.state === "na",
+});
+
+/** Every department on this EC is done or not involved. */
+export function ecComplete(ec: EcDeptStatus): boolean {
+  return allDeptsSettled(EC_DEPTS.map((d) => settled(ec[d.key])));
+}
+
+/**
+ * The whole order is finished: every EC is, and so are the three departments
+ * that work at SO level. An order with no ECs is not complete — there is
+ * nothing to have finished.
+ */
+export function orderComplete(status: SoDeptStatus): boolean {
+  if (status.ecs.length === 0) return false;
+  return (
+    status.ecs.every(ecComplete) &&
+    allDeptsSettled([status.billing, status.accounts, status.dispatch].map(settled))
+  );
+}
+
+export function CompleteChip({ label = "Complete" }: { label?: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
+      <Check className="h-3 w-3" />
+      {label}
+    </span>
+  );
+}
 
 export function Badge({ cell }: { cell: DeptCell }) {
   const tone =
@@ -245,13 +279,27 @@ export function DeptStatusBoard({
                 </tr>
               </thead>
               <tbody className="divide-y divide-card-border">
-                {status.ecs.map((ec) => (
-                  <tr key={ec.id} className="align-top text-foreground">
+                {status.ecs.map((ec) => {
+                  // An EC nobody owes anything on reads as one finished line,
+                  // rather than five chips the reader has to add up.
+                  const complete = ecComplete(ec);
+                  return (
+                  <tr
+                    key={ec.id}
+                    className={`align-top text-foreground ${
+                      complete ? "bg-emerald-500/10" : ""
+                    }`}
+                  >
                     <td className="px-3 py-2.5 whitespace-nowrap font-medium">
                       {ec.ec_no || "—"}
                       {ec.item_type && (
                         <span className="ml-1.5 text-[11px] font-normal text-muted-foreground">
                           {ec.item_type}
+                        </span>
+                      )}
+                      {complete && (
+                        <span className="mt-1 block">
+                          <CompleteChip />
                         </span>
                       )}
                     </td>
@@ -262,7 +310,8 @@ export function DeptStatusBoard({
                       </td>
                     ))}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

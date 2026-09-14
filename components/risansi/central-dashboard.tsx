@@ -17,6 +17,7 @@ import {
 import type { OrderOverviewRow, PipelinePage } from "@/lib/orders";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import { UrlPagination, useUrlTable } from "./url-table";
+import { CompleteChip } from "./dept-status-board";
 import {
   describeDays,
   isPerEcDept,
@@ -24,6 +25,7 @@ import {
   type DeptKey,
 } from "@/lib/dept-completion";
 import { DEPT_VIEWS } from "@/lib/dept-view";
+import { allDeptsSettled } from "@/lib/dept-status";
 import {
   describeOrderListFilter,
   isOrderListFiltered,
@@ -465,6 +467,13 @@ const EC_DEPTS: {
   },
 ];
 
+/** Nothing outstanding on this EC: each of the five is done or not involved. */
+function ecSettled(row: OrderOverviewRow): boolean {
+  return allDeptsSettled(
+    EC_DEPTS.map((d) => ({ done: d.done(row), na: DEPT_VIEWS[d.key].na(row) }))
+  );
+}
+
 /** Sign-offs indexed for lookup by EC (per-EC departments) or by SO. */
 function indexCompletions(completions: DeptCompletion[]) {
   const byScope = new Map<string, DeptCompletion>();
@@ -524,6 +533,9 @@ export function CentralDashboard({
     dispatch_done: boolean;
     // Sign-offs for the three SO-scope departments, shown on the SO line.
     signed: Record<"billing" | "accounts" | "dispatch", DeptCompletion | null>;
+    // Every EC finished and the three SO-level departments too — the green
+    // line. Filled once the card's ECs are all in (see below).
+    complete?: boolean;
     // A Challan order carries no receivable: Accounts is not involved.
     accounts_na: boolean;
     order_value: string | null;
@@ -560,6 +572,18 @@ export function CentralDashboard({
           ecs: r.id !== null ? [r] : [],
         });
       }
+    }
+    // Now that each card has all of its ECs, settle the whole order: an order
+    // with no ECs has nothing to have finished.
+    for (const card of map.values()) {
+      card.complete =
+        card.ecs.length > 0 &&
+        card.ecs.every(ecSettled) &&
+        allDeptsSettled([
+          { done: card.has_pi, na: false },
+          { done: done.accounts(card.ecs[0]), na: card.accounts_na },
+          { done: card.dispatch_done, na: false },
+        ]);
     }
     return [...map.values()].sort((a, b) => a.sl_no - b.sl_no);
   }, [rows, completionOf]);
@@ -746,7 +770,9 @@ export function CentralDashboard({
                   <Fragment key={card.order_id}>
                     <tr
                       onClick={() => router.push(overview)}
-                      className="cursor-pointer text-foreground transition-colors hover:bg-background/60"
+                      className={`cursor-pointer text-foreground transition-colors hover:bg-background/60 ${
+                        card.complete ? "bg-emerald-500/10" : ""
+                      }`}
                     >
                       <td
                         className="px-2 py-3 text-center"
@@ -781,6 +807,11 @@ export function CentralDashboard({
                         >
                           {card.so_no ?? "—"}
                         </Link>
+                        {card.complete && (
+                          <span className="mt-1 block">
+                            <CompleteChip />
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3">{card.client_name ?? "—"}</td>
                       <td className="px-3 py-3 align-top">
@@ -885,8 +916,15 @@ export function CentralDashboard({
                                     </tr>
                                   </thead>
                                   <tbody className="divide-y divide-card-border">
-                                    {card.ecs.map((row) => (
-                                      <tr key={String(row.id)} className="text-foreground">
+                                    {card.ecs.map((row) => {
+                                      const ecDone = ecSettled(row);
+                                      return (
+                                      <tr
+                                        key={String(row.id)}
+                                        className={`text-foreground ${
+                                          ecDone ? "bg-emerald-500/10" : ""
+                                        }`}
+                                      >
                                         <td className="px-3 py-2 whitespace-nowrap">
                                           <Link
                                             href={`/risansi/orders/${row.order_id}/items/${row.id}`}
@@ -897,6 +935,11 @@ export function CentralDashboard({
                                           {row.item_type && (
                                             <div className="text-[11px] text-muted">
                                               {row.item_type}
+                                            </div>
+                                          )}
+                                          {ecDone && (
+                                            <div className="mt-1">
+                                              <CompleteChip />
                                             </div>
                                           )}
                                         </td>
@@ -913,7 +956,8 @@ export function CentralDashboard({
                                           </td>
                                         ))}
                                       </tr>
-                                    ))}
+                                      );
+                                    })}
                                   </tbody>
                                 </table>
                               </div>

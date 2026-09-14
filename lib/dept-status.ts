@@ -71,3 +71,16 @@ export function statusesFor(dept: DeptFilterKey): string[] {
 export function isPerEcDept(dept: DeptFilterKey): boolean {
   return dept !== "billing" && dept !== "accounts" && dept !== "dispatch";
 }
+
+/**
+ * Nothing is outstanding on a row: every department is either done or not
+ * involved. One rule, so the green "Complete" row on the pipeline and the one
+ * on the order overview mean the same thing — and so a department that has
+ * nothing to do (Purchase on a no-BOI order) never holds a row back.
+ *
+ * Callers pass what each department says about the row: the pipeline reads it
+ * from DEPT_VIEWS, the overview from the status cells.
+ */
+export function allDeptsSettled(depts: { done: boolean; na: boolean }[]): boolean {
+  return depts.length > 0 && depts.every((d) => d.done || d.na);
+}

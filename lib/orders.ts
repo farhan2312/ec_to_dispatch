@@ -172,61 +172,96 @@ function toNumeric(value?: string): number | null {
   return Number.isNaN(n) ? null : n;
 }
 
+// Sl. No. is a display serial: the list reads 1, 2, 3… with no holes, so it
+// is handed out on create and closed up again on delete. Both take this lock
+// first, so two people adding orders at the same moment cannot pick the same
+// number.
+const SL_NO_LOCK = "SELECT pg_advisory_xact_lock(hashtext('orders.sl_no'))";
+
+/**
+ * Renumber the orders 1..N in the order they already had, and leave the
+ * identity sequence past the end so a default-valued insert still lands clear
+ * of every row.
+ */
+async function resequenceSerialNumbers(client: PoolClient): Promise<void> {
+  await client.query(
+    `WITH ranked AS (
+        SELECT id, row_number() OVER (ORDER BY sl_no, created_at, id) AS n
+          FROM orders
+     )
+     UPDATE orders o SET sl_no = ranked.n
+       FROM ranked
+      WHERE o.id = ranked.id AND o.sl_no <> ranked.n`
+  );
+  await client.query(
+    `SELECT setval(
+        pg_get_serial_sequence('orders', 'sl_no'),
+        GREATEST((SELECT COALESCE(max(sl_no), 0) FROM orders), 1)
+     )`
+  );
+}
+
 /** Insert a new SO. Its EC items and department detail are added afterwards. */
 export async function createOrder(
   input: NewOrderInput
 ): Promise<{ id: string; sl_no: number }> {
-  const result = await query<{ id: string; sl_no: number }>(
-    `INSERT INTO orders (
-        so_no, so_date, client_code, client_type, client_name, reps,
-        market_type, zone, industry_type, quotation_no, po_no, customer_po_date,
-        order_value, order_currency, qc_required, payment_terms, ld, ld_date,
-        freight_terms, packing_requirement, delivery_date_as_per_so,
-        order_type, bill_type, boi,
-        total_quantity, drg_target_date, dispatch_target_date,
-        dispatch_target_revised_date, qc_doc_target_date, purchase_target_date,
-        packing_details_required, dispatch_team_target_date
-     ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
-        $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
-     )
-     RETURNING id, sl_no::int AS sl_no`,
-    [
-      nullify(input.so_no),
-      nullify(input.so_date),
-      nullify(input.client_code),
-      nullify(input.client_type),
-      nullify(input.client_name),
-      nullify(input.reps),
-      nullify(input.market_type),
-      nullify(input.zone),
-      nullify(input.industry_type),
-      nullify(input.quotation_no),
-      nullify(input.po_no),
-      nullify(input.customer_po_date),
-      toNumeric(input.order_value),
-      nullify(input.order_currency),
-      nullify(input.qc_required),
-      nullify(input.payment_terms),
-      nullify(input.ld),
-      nullify(input.ld_date),
-      nullify(input.freight_terms),
-      nullify(input.packing_requirement),
-      nullify(input.delivery_date_as_per_so),
-      nullify(input.order_type),
-      nullify(input.bill_type),
-      nullify(input.boi),
-      toInt(input.total_quantity),
-      nullify(input.drg_target_date),
-      nullify(input.dispatch_target_date),
-      nullify(input.dispatch_target_revised_date),
-      nullify(input.qc_doc_target_date),
-      nullify(input.purchase_target_date),
-      nullify(input.packing_details_required),
-      nullify(input.dispatch_team_target_date),
-    ]
-  );
-  return result.rows[0];
+  return withTransaction(async (client) => {
+    await client.query(SL_NO_LOCK);
+    const result = await client.query<{ id: string; sl_no: number }>(
+      `INSERT INTO orders (
+          sl_no,
+          so_no, so_date, client_code, client_type, client_name, reps,
+          market_type, zone, industry_type, quotation_no, po_no, customer_po_date,
+          order_value, order_currency, qc_required, payment_terms, ld, ld_date,
+          freight_terms, packing_requirement, delivery_date_as_per_so,
+          order_type, bill_type, boi,
+          total_quantity, drg_target_date, dispatch_target_date,
+          dispatch_target_revised_date, qc_doc_target_date, purchase_target_date,
+          packing_details_required, dispatch_team_target_date
+       ) VALUES (
+          -- The next free number, under the lock above.
+          (SELECT COALESCE(max(sl_no), 0) + 1 FROM orders),
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
+          $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
+       )
+       RETURNING id, sl_no::int AS sl_no`,
+      [
+        nullify(input.so_no),
+        nullify(input.so_date),
+        nullify(input.client_code),
+        nullify(input.client_type),
+        nullify(input.client_name),
+        nullify(input.reps),
+        nullify(input.market_type),
+        nullify(input.zone),
+        nullify(input.industry_type),
+        nullify(input.quotation_no),
+        nullify(input.po_no),
+        nullify(input.customer_po_date),
+        toNumeric(input.order_value),
+        nullify(input.order_currency),
+        nullify(input.qc_required),
+        nullify(input.payment_terms),
+        nullify(input.ld),
+        nullify(input.ld_date),
+        nullify(input.freight_terms),
+        nullify(input.packing_requirement),
+        nullify(input.delivery_date_as_per_so),
+        nullify(input.order_type),
+        nullify(input.bill_type),
+        nullify(input.boi),
+        toInt(input.total_quantity),
+        nullify(input.drg_target_date),
+        nullify(input.dispatch_target_date),
+        nullify(input.dispatch_target_revised_date),
+        nullify(input.qc_doc_target_date),
+        nullify(input.purchase_target_date),
+        nullify(input.packing_details_required),
+        nullify(input.dispatch_team_target_date),
+      ]
+    );
+    return result.rows[0];
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -916,10 +951,17 @@ export async function deleteChildRow(
   await query(`DELETE FROM ${table} WHERE id = $1`, [id]);
 }
 
-/** Delete an SO (cascades to its items, detail and lot rows). */
+/**
+ * Delete an SO (cascades to its items, detail and lot rows), then close the
+ * hole it leaves in the Sl. No. column — every order after it moves up one.
+ */
 export async function deleteOrder(id: string): Promise<void> {
   if (!UUID_RE.test(id)) return;
-  await query(`DELETE FROM orders WHERE id = $1`, [id]);
+  await withTransaction(async (client) => {
+    await client.query(SL_NO_LOCK);
+    await client.query(`DELETE FROM orders WHERE id = $1`, [id]);
+    await resequenceSerialNumbers(client);
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -1931,3 +1931,25 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS sessions_valid_after TIMESTAMPTZ;
 -- arrived. receipt_date keeps meaning the arrival — it is what marks an item
 -- received and ends Purchase's alerts — so the expectation needs its own column.
 ALTER TABLE order_boi_items ADD COLUMN IF NOT EXISTS expected_receipt_date DATE;
+
+-- ===========================================================================
+-- Gapless Sl. No.
+-- ===========================================================================
+-- sl_no is a display serial, not an identity: the list reads 1, 2, 3… with no
+-- holes. It was an identity column, so a deleted order left its number behind
+-- for good (the first order read #31). Renumber what is there, in the order
+-- the orders already had, and leave the sequence past the end so an insert
+-- that falls back on the default still lands clear of every row — creation
+-- takes the number itself (createOrder in lib/orders.ts).
+WITH ranked AS (
+    SELECT id, row_number() OVER (ORDER BY sl_no, created_at, id) AS n
+      FROM orders
+)
+UPDATE orders o SET sl_no = ranked.n
+  FROM ranked
+ WHERE o.id = ranked.id AND o.sl_no <> ranked.n;
+
+SELECT setval(
+    pg_get_serial_sequence('orders', 'sl_no'),
+    GREATEST((SELECT COALESCE(max(sl_no), 0) FROM orders), 1)
+);

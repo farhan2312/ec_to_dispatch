@@ -40,6 +40,7 @@ export function AddOnForm({
   orderId,
   soLabel,
   orderType,
+  boiFlag,
   onClose,
 }: {
   orderId: string;
@@ -47,6 +48,9 @@ export function AddOnForm({
   // The SO's Order Type (Pump/Spare) drives which form is rendered. Falls back
   // to Pump when the SO hasn't set an Order Type yet.
   orderType?: string | null;
+  // The SO's BOI field. The bought-out list is offered only when it is Yes —
+  // on any other SO there is nothing bought out to list.
+  boiFlag?: string | null;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -54,6 +58,7 @@ export function AddOnForm({
   const fields = addOnFieldsFor(orderType);
   const [values, setValues] = useState<Record<string, string>>({});
   const [boi, setBoi] = useState<BoiRow[]>([]);
+  const listsBoi = (boiFlag ?? "") === "Yes";
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +78,7 @@ export function AddOnForm({
 
     // The same check the action runs, so a bad row is caught before the EC
     // is created rather than after.
-    const rows = cleanBoiRows(boi);
+    const rows = cleanBoiRows(listsBoi ? boi : []);
     if (!rows.ok) {
       setError(rows.error);
       return;
@@ -190,9 +195,11 @@ export function AddOnForm({
             ))}
           </div>
 
-          {/* Bought-out items: optional, and the only part of this form
-              that is a list rather than one value per EC. Listing any sets
-              the SO BOI flag to Yes, which is what shows them to Purchase. */}
+          {/* Bought-out items: optional, and the only part of this form that
+              is a list rather than one value per EC. Offered only on an SO
+              whose BOI is Yes — the flag is what puts them in front of
+              Purchase, so without it there is nothing to list. */}
+          {listsBoi && (
           <div className="mt-6 rounded-[10px] border border-card-border bg-surface/60 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -314,6 +321,7 @@ export function AddOnForm({
               </div>
             )}
           </div>
+          )}
 
           {isSpare && (
             // Spare form's Order Copy file upload — the one field on either

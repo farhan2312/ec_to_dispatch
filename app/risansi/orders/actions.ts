@@ -287,6 +287,14 @@ export async function createItemAction(
   // that names nothing, or an item outside the list, is not.
   const boiRows = cleanBoiRows(boi);
   if (!boiRows.ok) return { ok: false, error: boiRows.error };
+  // The list belongs to an SO that says it has bought-out items. The form
+  // offers it only then; this is the same rule on the endpoint.
+  if (boiRows.rows.length > 0 && String(order.order.boi ?? "") !== "Yes") {
+    return {
+      ok: false,
+      error: "This order's BOI is not set to Yes, so it cannot list bought-out items.",
+    };
+  }
 
   try {
     const { id: itemId } = await createItemWithBoiItems(

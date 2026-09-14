@@ -93,6 +93,9 @@ export type OrderListRow = {
   po_no: string | null;
   order_type: string | null;
   order_value: string | null;
+  // Whether this SO has bought-out items at all: the EC form only offers the
+  // BOI list when it is Yes.
+  boi: string | null;
   payment_status: string | null;
   // SO-level, derived from this SO's invoices (see recomputeDispatchStatus).
   dispatch_status: string | null;
@@ -285,9 +288,8 @@ export type NewBoiItem = {
 
 /**
  * Add an EC and, in the same transaction, the bought-out items it was filed
- * with — Central Visibility lists them on the EC form, Purchase then records
- * what happened to each. Listing any also sets the SO's BOI flag to Yes,
- * which is what puts the list in front of Purchase at all.
+ * with — Central Visibility lists them on the EC form (which offers the list
+ * only on an SO whose BOI is Yes), Purchase then records what happened to each.
  */
 export async function createItemWithBoiItems(
   orderId: string,
@@ -311,9 +313,6 @@ export async function createItemWithBoiItems(
         ]
       );
     }
-    await exec(`UPDATE orders SET boi = 'Yes' WHERE id = $1 AND coalesce(boi, '') <> 'Yes'`, [
-      orderId,
-    ]);
     return item;
   });
 }
@@ -1941,6 +1940,7 @@ export async function listOrdersPage(opts: {
             o.po_no,
             o.order_type,
             o.order_value::text AS order_value,
+            o.boi,
             a.payment_status,
             ${DISPATCH_STATUS} AS dispatch_status,
             COALESCE(ic.cnt, 0)::int AS ec_count,
@@ -1990,6 +1990,7 @@ export async function listOrders(): Promise<OrderListRow[]> {
             o.po_no,
             o.order_type,
             o.order_value::text AS order_value,
+            o.boi,
             a.payment_status,
             ${DISPATCH_STATUS} AS dispatch_status,
             COALESCE(ic.cnt, 0)::int AS ec_count,

@@ -16,7 +16,6 @@ import {
   getChildOrderId,
   getItemDetail,
   getOrderDetail,
-  getOrderDeptStatus,
   insertBillingDocs,
   getOrderLabel,
   insertQcDocument,
@@ -33,7 +32,6 @@ import {
   type NewOrderInput,
   type QcDocTable,
   type QcDocumentMeta,
-  type SoDeptStatus,
 } from "@/lib/orders";
 import {
   CHILD_FIELDS,
@@ -1253,32 +1251,6 @@ export async function boiItemsAction(itemId: string): Promise<BoiItemsResult> {
   }
 }
 
-export type DeptStatusResult =
-  | { ok: true; status: SoDeptStatus }
-  | { ok: false; error: string };
-
-/**
- * Every department's status for one SO — the "Departments" popup on the order
- * list. Read-only, cross-department, so it's gated to the roles that see the
- * whole-order list (Central Visibility / Admin).
- */
-export async function orderDeptStatusAction(
-  orderId: string
-): Promise<DeptStatusResult> {
-  const user = await getCurrentUser();
-  if (!user) return { ok: false, error: "You are not signed in." };
-  if (!isCentral(user.role)) {
-    return { ok: false, error: "You don't have access to department status." };
-  }
-  try {
-    const status = await getOrderDeptStatus(orderId);
-    if (!status) return { ok: false, error: "Order not found." };
-    return { ok: true, status };
-  } catch (error) {
-    console.error("orderDeptStatusAction failed:", error);
-    return { ok: false, error: "Could not load department status." };
-  }
-}
 
 const MAX_PI_XLSX_BYTES = 5 * 1024 * 1024;
 

@@ -3,14 +3,7 @@
 import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  ChevronDown,
-  ChevronRight,
-  LayoutGrid,
-  Loader2,
-  Plus,
-  Trash2,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
 import type { ItemSummary, OrderListOptions, OrderListRow } from "@/lib/orders";
 import { deleteOrderAction } from "@/app/risansi/orders/actions";
 import { UrlPagination, useUrlTable } from "./url-table";
@@ -19,7 +12,6 @@ import { AddOnForm } from "./add-on-form";
 import { ClientLookup } from "./client-lookup";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import { isOrderListFiltered, parseOrderListFilter } from "@/lib/order-list-filter";
-import { DeptStatusModal } from "./dept-status-modal";
 
 const numberFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 
@@ -133,7 +125,6 @@ export function OrdersTable({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [addFor, setAddFor] = useState<OrderListRow | null>(null);
-  const [statusFor, setStatusFor] = useState<OrderListRow | null>(null);
   // The filter lives in the URL, so it narrows the whole table rather than
   // only the page already loaded.
   const { get: getParam } = useUrlTable();
@@ -261,14 +252,6 @@ export function OrdersTable({
                           >
                             Open
                           </Link>
-                          <button
-                            type="button"
-                            onClick={() => setStatusFor(order)}
-                            className="inline-flex h-8 items-center gap-1 rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
-                          >
-                            <LayoutGrid className="h-3.5 w-3.5" />
-                            Departments
-                          </button>
                           {canDelete && (
                             <button
                               type="button"
@@ -327,14 +310,6 @@ export function OrdersTable({
           total={result.total}
         />
       </div>
-
-      {statusFor && (
-        <DeptStatusModal
-          orderId={statusFor.id}
-          soLabel={statusFor.so_no ?? `#${statusFor.sl_no}`}
-          onClose={() => setStatusFor(null)}
-        />
-      )}
 
       {addFor && (
         <AddOnForm

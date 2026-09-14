@@ -207,10 +207,18 @@ export function OrdersTable({
               {pageRows.map((order) => {
                 const isOpen = expanded.has(order.id);
                 const items = order.items ?? [];
+                const overview = `/risansi/orders/${order.id}/overview`;
                 return (
                   <Fragment key={order.id}>
-                    <tr className="text-foreground transition-colors hover:bg-background/60">
-                      <td className="px-2 py-3 text-center">
+                    {/* The whole row opens the SO's overview — the one page
+                        that carries its ECs, every department's state and
+                        everything recorded. The chevron and the buttons stop
+                        the click so they still do their own job. */}
+                    <tr
+                      onClick={() => router.push(overview)}
+                      className="cursor-pointer text-foreground transition-colors hover:bg-background/60"
+                    >
+                      <td className="px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
                           onClick={() => toggle(order.id)}
@@ -242,10 +250,13 @@ export function OrdersTable({
                         <StatusChip value={order.dispatch_status} />
                       </td>
                       <td className="px-4 py-3 text-center tabular-nums">{order.ec_count}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td
+                        className="px-4 py-3 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <div className="flex items-center gap-2">
                           <Link
-                            href={`/risansi/orders/${order.id}`}
+                            href={overview}
                             className="inline-flex h-8 items-center rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
                           >
                             Open
@@ -271,7 +282,10 @@ export function OrdersTable({
                         </div>
                       </td>
                       {canDelete && (
-                        <td className="px-4 py-3 text-right">
+                        <td
+                          className="px-4 py-3 text-right"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <button
                             type="button"
                             onClick={() => handleDelete(order)}

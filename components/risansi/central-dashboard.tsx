@@ -759,7 +759,7 @@ export function CentralDashboard({
                       </td>
                       <td className="px-4 py-3 font-medium tabular-nums">
                         <Link
-                          href={`/risansi/orders/${card.order_id}`}
+                          href={`/risansi/orders/${card.order_id}/overview`}
                           className="text-primary hover:text-primary-hover"
                         >
                           {card.sl_no}
@@ -767,7 +767,7 @@ export function CentralDashboard({
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap font-medium">
                         <Link
-                          href={`/risansi/orders/${card.order_id}`}
+                          href={`/risansi/orders/${card.order_id}/overview`}
                           className="text-primary hover:text-primary-hover"
                         >
                           {card.so_no ?? "—"}

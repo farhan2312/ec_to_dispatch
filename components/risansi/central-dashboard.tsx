@@ -2,6 +2,7 @@
 
 import { Fragment, useCallback, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ChevronDown,
@@ -489,6 +490,7 @@ export function CentralDashboard({
 }) {
   const rows = pipeline.rows;
   const stats = pipeline.stats;
+  const router = useRouter();
   const { get } = useUrlTable();
   const filter = parseOrderListFilter((key) => get(key) || undefined);
   const filterActive = isOrderListFiltered(filter);
@@ -739,10 +741,17 @@ export function CentralDashboard({
             <tbody className="divide-y divide-card-border">
               {pipelineCards.map((card) => {
                 const isOpen = expandedSo.has(card.order_id);
+                const overview = `/risansi/orders/${card.order_id}/overview`;
                 return (
                   <Fragment key={card.order_id}>
-                    <tr className="text-foreground transition-colors hover:bg-background/60">
-                      <td className="px-2 py-3 text-center">
+                    <tr
+                      onClick={() => router.push(overview)}
+                      className="cursor-pointer text-foreground transition-colors hover:bg-background/60"
+                    >
+                      <td
+                        className="px-2 py-3 text-center"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <button
                           type="button"
                           onClick={() => toggleSo(card.order_id)}
@@ -759,7 +768,7 @@ export function CentralDashboard({
                       </td>
                       <td className="px-4 py-3 font-medium tabular-nums">
                         <Link
-                          href={`/risansi/orders/${card.order_id}`}
+                          href={`/risansi/orders/${card.order_id}/overview`}
                           className="text-primary hover:text-primary-hover"
                         >
                           {card.sl_no}
@@ -767,7 +776,7 @@ export function CentralDashboard({
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap font-medium">
                         <Link
-                          href={`/risansi/orders/${card.order_id}`}
+                          href={`/risansi/orders/${card.order_id}/overview`}
                           className="text-primary hover:text-primary-hover"
                         >
                           {card.so_no ?? "—"}
@@ -809,7 +818,17 @@ export function CentralDashboard({
                       <td className="px-3 py-3 text-center tabular-nums">
                         {card.ecs.length}
                       </td>
-                      <td className="px-3 py-3" />
+                      <td
+                        className="px-3 py-3 whitespace-nowrap text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Link
+                          href={overview}
+                          className="inline-flex h-8 items-center rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                        >
+                          Open
+                        </Link>
+                      </td>
                     </tr>
 
                     {isOpen && (

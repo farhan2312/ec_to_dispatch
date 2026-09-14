@@ -3,7 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronRight,
+  LayoutGrid,
+  Loader2,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { deleteItemAction } from "@/app/risansi/orders/actions";
 import { BILLING_DOC_FIELDS, INVOICE_FIELDS, SO_SECTIONS } from "@/lib/order-schema";
 import {
@@ -120,6 +127,15 @@ export function OrderDetail({
             {str(order.client_name) || "Order"}
           </h1>
         </div>
+        {/* This page is the forms; the overview is the whole order on one
+            page, its ECs and every department's state included. */}
+        <Link
+          href={`/risansi/orders/${orderId}/overview`}
+          className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-input-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-background"
+        >
+          <LayoutGrid className="h-3.5 w-3.5" />
+          Full overview
+        </Link>
       </div>
 
       <div className="space-y-6">

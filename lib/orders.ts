@@ -446,14 +446,14 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
         COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                   FROM order_billing_docs d WHERE d.order_id = o.id),
                  '[]'::jsonb) AS order_billing_docs,
-        COALESCE((SELECT jsonb_agg(to_jsonb(inv) ORDER BY inv.seq)
+        COALESCE((SELECT jsonb_agg((to_jsonb(inv) - 'lr_file_data') ORDER BY inv.seq)
                   FROM order_invoices inv WHERE inv.order_id = o.id),
                  '[]'::jsonb) AS order_invoices,
         -- EC items only. Dispatch status is NOT aliased in here: it's an
         -- SO-level value (o.dispatch_status above), and copying it onto every
         -- EC made identical values look per-EC.
         COALESCE((
-          SELECT jsonb_agg(to_jsonb(it) ORDER BY it.seq)
+          SELECT jsonb_agg((to_jsonb(it) - 'order_copy_file_data') ORDER BY it.seq)
             FROM order_items it
            WHERE it.order_id = o.id
         ), '[]'::jsonb) AS items
@@ -487,7 +487,7 @@ export type ItemDetail = {
 };
 
 const ITEM_DETAIL_SELECT = `
-    to_jsonb(it) AS item,
+    to_jsonb(it) - 'order_copy_file_data' AS item,
     to_jsonb(o)  AS order,
     to_jsonb(b)  AS order_billing,
     to_jsonb(ac) AS order_accounts,
@@ -1560,7 +1560,7 @@ export async function listOrdersForBilling(
             COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                       FROM order_billing_docs d WHERE d.order_id = o.id),
                      '[]'::jsonb) AS pi_docs,
-            COALESCE((SELECT jsonb_agg(to_jsonb(inv) ORDER BY inv.seq)
+            COALESCE((SELECT jsonb_agg((to_jsonb(inv) - 'lr_file_data') ORDER BY inv.seq)
                       FROM order_invoices inv WHERE inv.order_id = o.id),
                      '[]'::jsonb) AS invoices
        FROM orders o

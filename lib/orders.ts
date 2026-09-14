@@ -93,6 +93,9 @@ export type OrderListRow = {
   po_no: string | null;
   order_type: string | null;
   order_value: string | null;
+  // Whether this SO has bought-out items at all: the EC form only offers the
+  // BOI list when it is Yes.
+  boi: string | null;
   payment_status: string | null;
   // SO-level, derived from this SO's invoices (see recomputeDispatchStatus).
   dispatch_status: string | null;
@@ -268,12 +271,60 @@ export async function createOrder(
 // EC items (order_items) — one row per pump/spare under an SO
 // ---------------------------------------------------------------------------
 
+// Either the pool or one transaction's client: both run a parameterized query
+// the same way, so a write can be reused inside a transaction.
+type Exec = <T extends Record<string, unknown>>(
+  text: string,
+  params?: unknown[]
+) => Promise<{ rows: T[] }>;
+
+/** What Central Visibility fills in per bought-out item on the EC form. */
+export type NewBoiItem = {
+  boi_item: string;
+  boi_item_other?: string;
+  boi_make?: string;
+  boi_description?: string;
+};
+
+/**
+ * Add an EC and, in the same transaction, the bought-out items it was filed
+ * with — Central Visibility lists them on the EC form (which offers the list
+ * only on an SO whose BOI is Yes), Purchase then records what happened to each.
+ */
+export async function createItemWithBoiItems(
+  orderId: string,
+  input: NewItemInput,
+  boi: NewBoiItem[]
+): Promise<{ id: string; seq: number }> {
+  if (boi.length === 0) return createItem(orderId, input);
+  return withTransaction(async (client) => {
+    const exec: Exec = (text, params) => client.query(text, params);
+    const item = await createItem(orderId, input, exec);
+    for (const row of boi) {
+      await exec(
+        `INSERT INTO order_boi_items (item_id, boi_item, boi_item_other, boi_make, boi_description)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [
+          item.id,
+          nullify(row.boi_item),
+          nullify(row.boi_item_other),
+          nullify(row.boi_make),
+          nullify(row.boi_description),
+        ]
+      );
+    }
+    return item;
+  });
+}
+
 /** Add an EC/pump item to an SO (the Add-On form). */
 export async function createItem(
   orderId: string,
-  input: NewItemInput
+  input: NewItemInput,
+  // Pass a transaction's client to insert the EC alongside other writes.
+  exec: Exec = query
 ): Promise<{ id: string; seq: number }> {
-  const result = await query<{ id: string; seq: number }>(
+  const result = await exec<{ id: string; seq: number }>(
     `INSERT INTO order_items (
         order_id, ec_no, ec_date, item_type, pump_type, model_no, internal_model,
         quantity, orientation, suction, delivery, pump_sno, application, version
@@ -1889,6 +1940,7 @@ export async function listOrdersPage(opts: {
             o.po_no,
             o.order_type,
             o.order_value::text AS order_value,
+            o.boi,
             a.payment_status,
             ${DISPATCH_STATUS} AS dispatch_status,
             COALESCE(ic.cnt, 0)::int AS ec_count,
@@ -1938,6 +1990,7 @@ export async function listOrders(): Promise<OrderListRow[]> {
             o.po_no,
             o.order_type,
             o.order_value::text AS order_value,
+            o.boi,
             a.payment_status,
             ${DISPATCH_STATUS} AS dispatch_status,
             COALESCE(ic.cnt, 0)::int AS ec_count,

@@ -345,6 +345,7 @@ export function OrderDetail({
           orderId={orderId}
           soLabel={soLabel}
           orderType={str(order.order_type) || null}
+          boiFlag={str(order.boi) || null}
           onClose={() => setAddOpen(false)}
         />
       )}

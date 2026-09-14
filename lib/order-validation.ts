@@ -2,7 +2,8 @@
 // and the server actions (which enforce them — a form is only a convenience,
 // the action is a public endpoint). Plain module: safe to import anywhere.
 
-import type { OrderField } from "@/lib/order-schema";
+import { BOI_ITEM_OPTIONS, type OrderField } from "@/lib/order-schema";
+import type { NewBoiItem } from "@/lib/orders";
 
 const amountFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 
@@ -34,6 +35,42 @@ export function checkFieldBounds(
     }
   }
   return null;
+}
+
+/**
+ * The bought-out items filed on an EC form, trimmed and checked: a row is only
+ * a row once an item is picked, "Others" has to say what it is, and the item
+ * must be one the schema offers. Blank rows are dropped, so leaving a spare
+ * row empty is not an error.
+ */
+export function cleanBoiRows(
+  raw: unknown
+): { ok: true; rows: NewBoiItem[] } | { ok: false; error: string } {
+  if (raw == null) return { ok: true, rows: [] };
+  if (!Array.isArray(raw)) return { ok: false, error: "Bought-out items are malformed." };
+  const known = new Set(BOI_ITEM_OPTIONS.map((o) => o.value));
+  const rows: NewBoiItem[] = [];
+  for (const entry of raw) {
+    if (entry == null || typeof entry !== "object") continue;
+    const get = (k: string) => String((entry as Record<string, unknown>)[k] ?? "").trim();
+    const item = get("boi_item");
+    const other = get("boi_item_other");
+    const make = get("boi_make");
+    const description = get("boi_description");
+    if (!item && !other && !make && !description) continue;
+    if (!item) return { ok: false, error: "Pick an item for each bought-out row." };
+    if (!known.has(item)) return { ok: false, error: `"${item}" is not a bought-out item.` };
+    if (item === "Others" && !other) {
+      return { ok: false, error: "Name the item for a bought-out row set to Others." };
+    }
+    rows.push({
+      boi_item: item,
+      boi_item_other: item === "Others" ? other : "",
+      boi_make: make,
+      boi_description: description,
+    });
+  }
+  return { ok: true, rows };
 }
 
 /**

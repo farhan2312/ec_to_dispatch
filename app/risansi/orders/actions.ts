@@ -5,7 +5,7 @@ import { query } from "@/lib/db";
 import { getCurrentUser } from "@/lib/session";
 import {
   addChildRow,
-  createItem,
+  createItemWithBoiItems,
   setItemOrderCopy,
   setInvoiceLrFile,
   createOrder,
@@ -73,6 +73,7 @@ import { logAudit } from "@/lib/audit";
 import {
   checkFieldBounds,
   checkReceivedWithinValue,
+  cleanBoiRows,
   numericValue,
 } from "@/lib/order-validation";
 import {
@@ -247,10 +248,15 @@ export type CreateItemResult =
   | { ok: true; itemId: string }
   | { ok: false; error: string };
 
-/** Add an EC/pump item to an SO (the Add-On form). Central Visibility only. */
+/**
+ * Add an EC/pump item to an SO (the Add-On form). Central Visibility only.
+ * `boi` are the bought-out items listed on the form: Central Visibility says
+ * what is bought out, Purchase records what happens to each afterwards.
+ */
 export async function createItemAction(
   orderId: string,
-  input: NewItemInput
+  input: NewItemInput,
+  boi?: unknown
 ): Promise<CreateItemResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
@@ -277,8 +283,25 @@ export async function createItemAction(
   );
   if (missing) return { ok: false, error: `${missing.label} is required.` };
 
+  // The bought-out items are optional, so an empty list is fine — but a row
+  // that names nothing, or an item outside the list, is not.
+  const boiRows = cleanBoiRows(boi);
+  if (!boiRows.ok) return { ok: false, error: boiRows.error };
+  // The list belongs to an SO that says it has bought-out items. The form
+  // offers it only then; this is the same rule on the endpoint.
+  if (boiRows.rows.length > 0 && String(order.order.boi ?? "") !== "Yes") {
+    return {
+      ok: false,
+      error: "This order's BOI is not set to Yes, so it cannot list bought-out items.",
+    };
+  }
+
   try {
-    const { id: itemId } = await createItem(orderId, itemInput);
+    const { id: itemId } = await createItemWithBoiItems(
+      orderId,
+      itemInput,
+      boiRows.rows
+    );
     const soLabel = String(order.order.so_no ?? `#${order.order.sl_no}`);
     const ecLabel = (input.ec_no ?? "").trim();
     const label = ecLabel ? `${soLabel} · ${ecLabel}` : soLabel;
@@ -290,6 +313,33 @@ export async function createItemAction(
       details: ecLabel ? `Added EC ${ecLabel} to ${soLabel}` : `Added an EC to ${soLabel}`,
       subject: { orderId, itemId, soNo: soLabel, ecNo: ecLabel || null },
     });
+
+    // Bought-out items listed with the EC are Purchase's work, so they hear
+    // about them rather than having to find them.
+    if (boiRows.rows.length > 0) {
+      const named = boiRows.rows
+        .map((r) => (r.boi_item === "Others" ? r.boi_item_other || "Others" : r.boi_item))
+        .join(", ");
+      await logAudit({
+        actor: { id: user.id, email: user.email, role: user.role },
+        action: "order.update",
+        category: "activity",
+        target: label,
+        details: `Listed ${boiRows.rows.length} bought-out item(s) on ${
+          ecLabel || "the EC"
+        } — ${named}`,
+        subject: { orderId, itemId, soNo: soLabel, ecNo: ecLabel || null },
+      });
+      const roles = ["purchase"];
+      if (user.role !== "central_visibility") roles.push("central_visibility");
+      await emitNotification({
+        roles,
+        orderId,
+        itemId,
+        type: "dept_update",
+        message: `Bought-out items to purchase — ${label} · ${named}`,
+      });
+    }
 
     // No target-date notifications here: target dates are SO-level and fire
     // on order create/update, not on adding an EC.
@@ -335,7 +385,18 @@ export async function createSpareItemAction(
     quantity: (formData.get("quantity") as string | null) ?? undefined,
   };
 
-  const result = await createItemAction(orderId, input);
+  // The bought-out items ride along as JSON — FormData carries only strings.
+  let boi: unknown = [];
+  const boiRaw = formData.get("boi");
+  if (typeof boiRaw === "string" && boiRaw.trim() !== "") {
+    try {
+      boi = JSON.parse(boiRaw);
+    } catch {
+      return { ok: false, error: "Bought-out items are malformed." };
+    }
+  }
+
+  const result = await createItemAction(orderId, input, boi);
   if (!result.ok) return result;
 
   if (hasFile) {
@@ -1177,7 +1238,7 @@ export async function boiItemsAction(itemId: string): Promise<BoiItemsResult> {
 
   try {
     const result = await query<Record<string, unknown>>(
-      `SELECT id, boi_item, boi_item_other, boi_make_desc,
+      `SELECT id, boi_item, boi_item_other, boi_make, boi_description,
               to_char(expected_receipt_date, 'YYYY-MM-DD') AS expected_receipt_date,
               to_char(receipt_date, 'YYYY-MM-DD') AS receipt_date, remarks
          FROM order_boi_items

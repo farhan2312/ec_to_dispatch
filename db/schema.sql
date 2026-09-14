@@ -1953,3 +1953,12 @@ SELECT setval(
     pg_get_serial_sequence('orders', 'sl_no'),
     GREATEST((SELECT COALESCE(max(sl_no), 0) FROM orders), 1)
 );
+
+-- Bought-out items: make and description are two things, not one field. The
+-- old combined column stays for its history (every value in it was a make).
+ALTER TABLE order_boi_items ADD COLUMN IF NOT EXISTS boi_make TEXT;
+ALTER TABLE order_boi_items ADD COLUMN IF NOT EXISTS boi_description TEXT;
+UPDATE order_boi_items
+   SET boi_make = boi_make_desc
+ WHERE boi_make IS NULL
+   AND btrim(coalesce(boi_make_desc, '')) <> '';

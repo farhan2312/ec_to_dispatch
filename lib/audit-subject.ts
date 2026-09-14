@@ -136,7 +136,10 @@ export async function qcDocumentSubject(
  */
 export async function childValues(table: ChildTable, id: string): Promise<Row | null> {
   if (!UUID_RE.test(id)) return null;
-  const cols = [...new Set(["seq", ...CHILD_FIELDS[table].map((f) => f.column)])];
+  // Just the columns the schema declares. This also asked for "seq", which
+  // order_boi_items and order_lots do not have — so reading the row threw and
+  // every save of a bought-out item or a lot failed before it wrote anything.
+  const cols = [...new Set(CHILD_FIELDS[table].map((f) => f.column))];
   const r = await query<Row>(
     `SELECT ${cols.map((c) => `"${c}"`).join(", ")} FROM ${table} WHERE id = $1`,
     [id]

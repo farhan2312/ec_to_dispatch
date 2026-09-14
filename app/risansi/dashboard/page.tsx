@@ -72,7 +72,10 @@ export default async function DashboardPage({
     );
   }
 
-  const rows = await listOrdersOverview();
+  // Its own orders only: an order this department has nothing to do with
+  // (Purchase on a no-BOI order, Quality where QC is not needed) is off its
+  // dashboard entirely, not shown as N/A.
+  const rows = await listOrdersOverview(view.key);
   const completions = await listDeptCompletions([
     ...new Set(rows.map((r) => r.order_id)),
   ]);

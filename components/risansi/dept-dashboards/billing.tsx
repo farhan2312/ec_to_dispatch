@@ -60,7 +60,7 @@ export function BillingDashboard(props: DeptDashboardProps) {
         <Panel title="Document status" wide>
           <StatusBars d={d} />
         </Panel>
-        <Panel title="Recent sign-offs">
+        <Panel title="Recently completed">
           <SignOffList d={d} />
         </Panel>
       </div>

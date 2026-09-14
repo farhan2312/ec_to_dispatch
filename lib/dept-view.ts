@@ -189,3 +189,44 @@ export function deptViewForRole(role: string): DeptView | null {
 }
 
 export { isPerEcDept };
+
+/**
+ * The same "not involved" rule as each view's `na`, written as SQL over an
+ * `orders` alias — so the queues and dashboards filter in the database on
+ * exactly the grounds the UI would grey a row out on.
+ *
+ * A department that has nothing to do with an order does not see the order:
+ * Purchase only works orders with BOI, Quality only those needing QC docs,
+ * Accounts only those carrying a receivable. The rest work every order.
+ */
+export function deptInvolvementSql(dept: DeptKey, alias = "o"): string {
+  switch (dept) {
+    case "purchase":
+      return `lower(coalesce(${alias}.boi, '')) = 'yes'`;
+    case "quality":
+      return `lower(coalesce(${alias}.qc_required, '')) <> 'no'`;
+    case "accounts":
+      return `lower(coalesce(${alias}.bill_type, '')) <> 'challan'`;
+    default:
+      return "TRUE";
+  }
+}
+
+/**
+ * Whether this role's department has anything to do with this order at all.
+ * Roles without a department of their own (Central Visibility, Admin) see
+ * every order. Used to keep an order that is none of a department's business
+ * off its screens entirely, URL included.
+ */
+export function roleSeesOrder(
+  role: string,
+  order: { boi?: unknown; qc_required?: unknown; bill_type?: unknown }
+): boolean {
+  const view = deptViewForRole(role);
+  if (!view) return true;
+  return !view.na({
+    boi: order.boi == null ? null : String(order.boi),
+    qc_required: order.qc_required == null ? null : String(order.qc_required),
+    bill_type: order.bill_type == null ? null : String(order.bill_type),
+  } as OrderOverviewRow);
+}

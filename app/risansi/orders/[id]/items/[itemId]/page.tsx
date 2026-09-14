@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getItemDetail } from "@/lib/orders";
 import { getCurrentUser } from "@/lib/session";
+import { roleSeesOrder } from "@/lib/dept-view";
 import { ItemDetail } from "@/components/risansi/item-detail";
 
 export const metadata: Metadata = {
@@ -21,6 +22,7 @@ export default async function ItemDetailPage({
 
   const detail = await getItemDetail(itemId);
   if (!detail || String(detail.order.id) !== id) notFound();
+  if (!roleSeesOrder(user.role, detail.order)) notFound();
 
   return <ItemDetail detail={detail} orderId={id} itemId={itemId} role={user.role} />;
 }

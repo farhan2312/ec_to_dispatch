@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getOrderDetail, listTargetRevisions } from "@/lib/orders";
 import { getCurrentUser } from "@/lib/session";
+import { roleSeesOrder } from "@/lib/dept-view";
 import { OrderDetail } from "@/components/risansi/order-detail";
 
 export const metadata: Metadata = {
@@ -21,6 +22,7 @@ export default async function OrderDetailPage({
 
   const detail = await getOrderDetail(id);
   if (!detail) notFound();
+  if (!roleSeesOrder(user.role, detail.order)) notFound();
 
   // Target dates keep their full history; the panel shows the current value
   // with every earlier one behind it.

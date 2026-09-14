@@ -6,10 +6,12 @@ import {
   type TargetRevision,
 } from "@/lib/target-dates";
 import {
+  deptForTable,
   targetKeyForDept,
   type DeptCompletion,
   type DeptKey,
 } from "@/lib/dept-completion";
+import { deptInvolvementSql } from "@/lib/dept-view";
 import {
   isPerEcDept,
   NOT_APPLICABLE,
@@ -1286,10 +1288,16 @@ const OVERVIEW_FROM = `FROM orders o
        LEFT JOIN order_planning pl          ON pl.item_id = it.id
        LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id`;
 
-export async function listOrdersOverview(): Promise<OrderOverviewRow[]> {
+export async function listOrdersOverview(
+  // A department's own dashboard passes itself, so orders it has nothing to do
+  // with are out of its rows and out of its figures. Omitted (Central, Admin)
+  // returns every order.
+  dept?: DeptKey
+): Promise<OrderOverviewRow[]> {
   const result = await query<OrderOverviewRow>(
     `SELECT ${overviewColumns()}
        ${OVERVIEW_FROM}
+      WHERE ${dept ? deptInvolvementSql(dept) : "TRUE"}
       ORDER BY o.sl_no ASC, it.seq ASC NULLS FIRST`
   );
   return result.rows;
@@ -2093,12 +2101,10 @@ export async function listItemsForSectionPage(
   contextColumns: ContextColumn[],
   opts: { page: number; search: string; focusOrderId?: string | null }
 ): Promise<PageResult<Row>> {
-  // QC isn't involved when the SO is flagged QC Needed = No — the same rule
-  // the unpaged query applies.
-  const restrict =
-    table === "order_qc"
-      ? `(o.qc_required IS NULL OR o.qc_required <> 'No')`
-      : `TRUE`;
+  // A department does not see an order it has nothing to do with (QC when
+  // the SO says QC is not needed). One rule, in lib/dept-view.
+  const dept = deptForTable(table);
+  const restrict = dept ? deptInvolvementSql(dept) : "TRUE";
 
   const { ids, total, page } = await pageOfOrderIds({
     page: opts.page,
@@ -2125,10 +2131,9 @@ export async function listOrdersForSectionPage(
     focusOrderId: opts.focusOrderId ?? null,
     // Accounts is not involved for Challan orders, so they must be out of
     // the count as well as out of the rows.
-    restrict:
-      table === "order_accounts"
-        ? `COALESCE(o.bill_type, '') <> 'Challan'`
-        : `TRUE`,
+    restrict: deptForTable(table)
+      ? deptInvolvementSql(deptForTable(table)!)
+      : "TRUE",
     searchable: SO_AND_EC_SEARCH,
   });
 
@@ -2147,7 +2152,7 @@ export async function listItemsForPurchasePage(opts: {
     page: opts.page,
     search: opts.search,
     focusOrderId: opts.focusOrderId ?? null,
-    restrict: `o.boi = 'Yes' AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id)`,
+    restrict: `${deptInvolvementSql("purchase")} AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id)`,
     searchable: SO_AND_EC_SEARCH,
   });
 

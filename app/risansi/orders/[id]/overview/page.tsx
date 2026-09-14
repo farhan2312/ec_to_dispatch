@@ -7,6 +7,7 @@ import {
   listItemDetails,
 } from "@/lib/orders";
 import { getCurrentUser } from "@/lib/session";
+import { roleSeesOrder } from "@/lib/dept-view";
 import { OrderOverview } from "@/components/risansi/order-overview";
 
 export const metadata: Metadata = {
@@ -34,6 +35,9 @@ export default async function OrderOverviewPage({
     listDeptCompletions([id]),
   ]);
   if (!detail) notFound();
+  // A department that has nothing to do with this order cannot reach it by
+  // URL either — the same rule that keeps it off their queue and dashboard.
+  if (!roleSeesOrder(user.role, detail.order)) notFound();
 
   return (
     <OrderOverview

@@ -65,7 +65,7 @@ export function AccountsDashboard(props: DeptDashboardProps) {
         <Panel title="Payment status" wide>
           <StatusBars d={d} />
         </Panel>
-        <Panel title="Recent sign-offs">
+        <Panel title="Recently completed">
           <SignOffList d={d} />
         </Panel>
       </div>

@@ -101,7 +101,7 @@ export function DeptStatCards({ d, extra }: { d: DeptDashboard; extra?: ReactNod
         icon={CheckCircle2}
         label="Finished"
         value={stats.finished.length}
-        hint={`${stats.signedOff} signed off`}
+        hint={`${stats.signedOff} marked complete`}
         accent="bg-emerald-50 text-emerald-600"
       />
       {extra}
@@ -212,7 +212,7 @@ export function DeadlineList({ d }: { d: DeptDashboard }) {
 /** For departments with no deadline: what they have closed off lately. */
 export function SignOffList({ d }: { d: DeptDashboard }) {
   if (d.stats.recentSignOffs.length === 0) {
-    return <p className="py-6 text-sm text-muted">Nothing signed off yet.</p>;
+    return <p className="py-6 text-sm text-muted">Nothing marked complete yet.</p>;
   }
   return (
     <ol className="space-y-2">
@@ -280,11 +280,12 @@ export function FilterBar({ d, extra }: { d: DeptDashboard; extra?: ReactNode })
           onChange={f.setStatus}
         />
         <SingleSelectFilter
-          label="Sign-off"
+          label="Completion"
           allLabel="Any"
           options={[
-            { value: "Signed off", label: "Signed off" },
-            { value: "Not signed off", label: "Not signed off" },
+            // The stored values stay as they were; only the words changed.
+            { value: "Signed off", label: "Completed" },
+            { value: "Not signed off", label: "Not completed" },
           ]}
           selected={f.signOff}
           onChange={f.setSignOff}
@@ -449,7 +450,7 @@ export function baseColumns(d: DeptDashboard) {
     } satisfies Column,
     signOff: {
       key: "signOff",
-      label: "Sign-off",
+      label: "Completed",
       className: "whitespace-nowrap",
       cell: (r: OrderOverviewRow) => {
         const signed = d.signOffOf(r);

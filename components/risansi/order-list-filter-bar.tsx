@@ -117,7 +117,7 @@ export function OrderListFilterBar({
           onChange={(next) => setParams({ dstatus: next })}
         />
         <SingleSelectFilter
-          label="Sign-off"
+          label="Completion"
           allLabel="Any"
           disabled={!filter.dept}
           options={SIGN_OFF_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}

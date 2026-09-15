@@ -391,6 +391,33 @@ export function drawingHandoffDetail(
  * their own revision flow — but the recipients are the same, so both read this
  * one map rather than keeping two lists in step.
  */
+/**
+ * A payment term that has just been set. The two departments that chase and
+ * record the money work to these terms, so both hear it; Central Visibility
+ * hears it unless they are the one who typed it.
+ *
+ * The term itself is the message — "40% Before Dispatch" is the whole point —
+ * and a row with no term yet is not a term, so it says nothing.
+ */
+export function paymentTermNotice(
+  row: { term?: unknown; percent?: unknown; days?: unknown } | null,
+  actorIsCentral: boolean
+): { roles: string[]; detail: string } | null {
+  const text = (v: unknown) => String(v ?? "").trim();
+  const term = text(row?.term);
+  const percent = text(row?.percent);
+  const days = text(row?.days);
+  if (!term) return null;
+  const roles = ["accounts", "operations"];
+  if (!actorIsCentral) roles.push("central_visibility");
+  return {
+    roles,
+    detail: [percent ? `${Number(percent)}%` : null, term, days ? `${days} days` : null]
+      .filter(Boolean)
+      .join(" "),
+  };
+}
+
 export function targetDateRecipients(
   column: string
 ): { label: string; roles: string[] } | null {

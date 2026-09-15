@@ -155,6 +155,9 @@ const CHILD_NOUN: Record<ChildTable, { noun: string; key: string }> = {
   order_drawing_revisions: { noun: "Drawing revision", key: "revision_no" },
   order_packing_slips: { noun: "Packing slip", key: "packing_slip_no" },
   order_lots: { noun: "Lot", key: "lot_no" },
+  // "Payment term Advance Against ABG" reads better in an audit line than the
+  // percentage would.
+  order_payment_terms: { noun: "Payment term", key: "term" },
 };
 
 /** "PI 0042", "Bought-out item Motor", or just "PI" while it has no number. */

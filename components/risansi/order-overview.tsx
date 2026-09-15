@@ -20,6 +20,7 @@ import {
   SO_SECTIONS,
   canonicalSelectValue,
   dependsOnSatisfied,
+  isAfterReceiptOnly,
   type ChildTable,
   type OrderField,
   type OrderSection,
@@ -189,9 +190,11 @@ function childCaption(table: ChildTable, kind?: string): string {
     case "order_billing_docs":
       return "PIs";
     case "order_invoices":
-      return "Invoices";
+      return "Invoice and dispatch";
     case "order_lots":
       return "Lots";
+    case "order_payment_terms":
+      return "Payment terms";
   }
 }
 
@@ -261,11 +264,18 @@ export function OrderOverview({
     (s) => canAccessDepartment(role, s.table) && (s.table !== "order_qc" || qcNeeded)
   );
 
+  // The departments that chase and record the money work to the payment
+  // terms and are notified of each one, so they can read the list even though
+  // the rest of Order details is Central's.
+  const seesTerms =
+    canAccessDepartment(role, "orders") ||
+    canAccessDepartment(role, "order_accounts") ||
+    canAccessDepartment(role, "order_billing");
   const seesValue = canAccessDepartment(role, "orders");
   const seesMoney = canAccessDepartment(role, "order_accounts");
   // Paid only on receipt: the two departments that chase money have nothing
   // to record, so say so where their panels would otherwise look unfilled.
-  const paidAfterReceipt = str(order.paid_after_receipt).trim().toLowerCase() === "yes";
+  const paidAfterReceipt = isAfterReceiptOnly(detail.order_payment_terms);
   const notRequired: Partial<Record<string, string>> = paidAfterReceipt
     ? {
         order_billing: "No PI on this order — it is paid after receipt.",
@@ -572,6 +582,17 @@ export function OrderOverview({
 
       {/* ---------- order-level detail ---------- */}
       <div className="mt-6 space-y-4">
+        {/* Shown on its own for Accounts and Billing, who do not see the rest
+            of Order details; for Central it appears inside that section. */}
+        {seesTerms && !canAccessDepartment(role, "orders") && (
+          <Panel title="Payment terms">
+            <ChildTableView
+              table="order_payment_terms"
+              rows={detail.order_payment_terms}
+              context={order}
+            />
+          </Panel>
+        )}
         {soSections.map((section) => {
           const row =
             section.table === "orders"

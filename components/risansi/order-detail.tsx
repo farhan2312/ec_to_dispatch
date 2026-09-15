@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { deleteItemAction } from "@/app/risansi/orders/actions";
 import { BILLING_DOC_FIELDS, INVOICE_FIELDS, SO_SECTIONS } from "@/lib/order-schema";
+import { paymentTermsExtra } from "./payment-terms-control";
 import { lockReason } from "@/lib/order-lock";
 import {
   canAccessDepartment,
@@ -155,22 +156,15 @@ export function OrderDetail({
           // (Challan fields or the PI list; the invoice cards are Dispatch's).
           const renderSection = (section: typeof SO_SECTIONS[number]) => {
             if (section.table === "order_dispatch") {
-              // Dispatch: its own SO-level note, then one invoice-and-despatch
-              // card per despatch. The cards are created by Packing saving an
-              // actual packing slip, so there is no Add here.
+              // Dispatch: one invoice-and-despatch card per despatch. The cards
+              // are created by Packing saving an actual packing slip, so there
+              // is no Add here.
               return (
-                <div key={section.key} className="space-y-6">
-                <EditableSection
-                  targetId={orderId}
-                  section={section}
-                  data={detail.order_dispatch ?? null}
-                  canEdit={canAccessDepartment(role, section.table)}
-                  canEditCentral={central}
-                />
                 <OrderChildList
+                  key={section.key}
                   orderId={orderId}
                   table="order_invoices"
-                  title={section.title}
+                  title="Invoice and dispatch"
                   fields={INVOICE_FIELDS}
                   rows={(detail.order_invoices ?? []) as Row[]}
                   canEdit={canEditChild(role, "order_invoices")}
@@ -191,7 +185,6 @@ export function OrderDetail({
                     ),
                   }}
                 />
-                </div>
               );
             }
             if (section.table === "order_billing") {
@@ -248,8 +241,8 @@ export function OrderDetail({
               );
             }
             return (
+              <div key={section.key} className="space-y-6">
               <EditableSection
-                key={section.key}
                 targetId={orderId}
                 section={section}
                 data={data ?? null}
@@ -262,10 +255,19 @@ export function OrderDetail({
                 // carries its own revise button and change history instead.
                 fieldExtra={
                   section.table === "orders"
-                    ? targetDateExtra(orderId, targetRevisions, canManageItems)
+                    ? (field) =>
+                        // Target dates carry their own control; Payment Terms
+                        // carries the list of terms. Everything else, nothing.
+                        paymentTermsExtra(
+                          orderId,
+                          detail.order_payment_terms as Row[],
+                          canEditChild(role, "order_payment_terms")
+                        )(field) ??
+                        targetDateExtra(orderId, targetRevisions, canManageItems)(field)
                     : undefined
                 }
               />
+              </div>
             );
           };
 

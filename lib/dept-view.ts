@@ -64,12 +64,11 @@ const never = () => false;
 
 /**
  * Paid only once the client has the material: no PI to raise and no receipt
- * to chase. Central Visibility answers this outright beside the terms —
- * payment terms themselves are prose, and a workflow rule cannot rest on
- * whether someone typed "100% after receipt" or "100 % post recd".
+ * to chase. Read from the order's payment terms — every line counted from
+ * receipt — rather than from prose or a second answer to the same question.
  */
 const paidAfterReceipt = (r: OrderOverviewRow) =>
-  same((r as { paid_after_receipt?: string | null }).paid_after_receipt, "yes");
+  (r as { after_receipt_only?: boolean }).after_receipt_only === true;
 
 export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
   drawing: {

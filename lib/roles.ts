@@ -103,6 +103,7 @@ export function canSeeDispatched(role: string): boolean {
 export function canEditChild(
   role: string,
   table:
+    | "order_payment_terms"
     | "order_lots"
     | "order_boi_items"
     | "order_billing_docs"
@@ -116,6 +117,8 @@ export function canEditChild(
     return canEditSection(role, "order_drawing") || isCentral(role);
   }
   if (table === "order_boi_items") return canEditSection(role, "order_purchase");
+  // The order's payment terms are part of its identity: Central Visibility's.
+  if (table === "order_payment_terms") return canEditSection(role, "orders");
   // PIs are Billing's; the invoice-and-despatch cards are Dispatch's.
   if (table === "order_billing_docs") return canEditSection(role, "order_billing");
   if (table === "order_invoices") return canEditSection(role, "order_dispatch");

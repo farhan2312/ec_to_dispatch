@@ -9,11 +9,10 @@ import type { ChildTable, OrderTable } from "@/lib/order-schema";
 
 /** The order columns the rules below look at. */
 export type LockFacts = {
-  paid_after_receipt?: unknown;
+  /** Every payment term counted from receipt — see isAfterReceiptOnly. */
+  after_receipt_only?: unknown;
   bill_type?: unknown;
 };
-
-const yes = (v: unknown) => String(v ?? "").trim().toLowerCase() === "yes";
 
 /**
  * Why this section or list takes no entries on this order, or null when it
@@ -26,7 +25,7 @@ export function lockReason(
   order: LockFacts | null | undefined
 ): string | null {
   if (!order) return null;
-  if (!yes(order.paid_after_receipt)) return null;
+  if (order.after_receipt_only !== true) return null;
   if (table === "order_billing_docs") {
     return "This order is paid after receipt, so there is no PI to raise.";
   }

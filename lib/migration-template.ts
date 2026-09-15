@@ -32,7 +32,7 @@ const OWNER: Record<string, string> = {
   "EC Items": "Central Visibility",
   Accounts: "Accounts",
   PIs: "Billing & Operations",
-  Dispatch: "Dispatch",
+  "Payment terms": "Central Visibility",
   Invoices: "Dispatch",
   "Drawing revisions": "Drawing",
   "Bought-out items": "Purchase",
@@ -47,7 +47,6 @@ function rowRule(spec: SheetSpec): string {
   if (spec.name === "Orders") return "One row per SO";
   if (spec.name === "EC Items") return "One row per EC";
   if (spec.name === "Accounts") return "One row per SO";
-  if (spec.name === "Dispatch") return "One row per SO";
   if (["Quality", "Planning", "Assembly & Packing"].includes(spec.name)) {
     return "One row per EC";
   }

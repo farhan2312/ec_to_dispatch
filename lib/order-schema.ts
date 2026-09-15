@@ -164,6 +164,8 @@ export const ORDER_SECTIONS: OrderSection[] = [
     title: "Order details",
     table: "orders",
     scope: "so",
+    // The order's payment terms, one line per slice — see PAYMENT_TERM_FIELDS.
+    childTable: "order_payment_terms",
     fields: [
       // Client — client_code and client_type are compulsory at creation.
       { column: "client_code", label: "Client Code", type: "text", group: "Client" },
@@ -252,18 +254,15 @@ export const ORDER_SECTIONS: OrderSection[] = [
         type: "date",
         group: "Terms & Conditions",
       },
-      // Payment Terms is free text (varies per order).
-      { column: "payment_terms", label: "Payment Terms", type: "text", group: "Terms & Conditions" },
-      // The one thing about the terms the workflow needs to act on, as its own
-      // answer rather than something read out of the prose above: paid only
-      // after the client has the material means no PI to raise and no receipt
-      // to chase, so Billing & Operations and Accounts have nothing to record.
-      // The dispatch invoice is unaffected — the goods still ship on one.
+      // The prose the PO used, kept as written. The terms the workflow acts on
+      // are the lines beneath it (PaymentTermsControl), so this is never typed
+      // into the section form — the same arrangement target dates have, where
+      // the value shows here and every change goes through its own control.
       {
-        column: "paid_after_receipt",
-        label: "Paid after Receipt (no PI / no payment tracking)",
-        type: "select",
-        options: YES_NO,
+        column: "payment_terms",
+        label: "Payment Terms",
+        type: "text",
+        readOnly: true,
         group: "Terms & Conditions",
       },
       { column: "ld", label: "LD", type: "select", options: YES_NO, group: "Terms & Conditions" },
@@ -584,7 +583,9 @@ export const ORDER_SECTIONS: OrderSection[] = [
     title: "Dispatch",
     table: "order_dispatch",
     scope: "so",
-    fields: [{ column: "remarks", label: "Dispatch Remarks", type: "text" }],
+    // No fields of its own: like Billing & Operations, the section exists to
+    // own its list. The table behind it is what nav and permissions key off.
+    fields: [],
     childTable: "order_invoices",
   },
 ];
@@ -634,6 +635,7 @@ export function selectOptionsFor(
 // 1:many children: dispatch lots, BOI items and packing slips (per EC);
 // PIs and invoices (per SO).
 export type ChildTable =
+  | "order_payment_terms"
   | "order_lots"
   | "order_boi_items"
   | "order_billing_docs"
@@ -841,6 +843,57 @@ export function firstMissingAddOnField(
   return null;
 }
 
+// How an order is to be paid, one line per slice: "30% Advance Against ABG",
+// "40% Before Dispatch", "30% After Receipt, 45 days". An order carries as
+// many lines as its terms have parts, and they are added to rather than
+// revised — a term that changes is a new agreement, not a correction.
+export const PAYMENT_TERM_OPTIONS = opts([
+  "Advance",
+  "Advance Against ABG",
+  "Before Dispatch",
+  "Payment Against Documents",
+  "After Receipt",
+  "After Receipt Against PBG",
+]);
+
+// Only the terms counted from the client receiving the material carry a credit
+// period; the rest fall due on the event itself.
+export const AFTER_RECEIPT_TERMS = ["After Receipt", "After Receipt Against PBG"];
+const TERMS_WITH_DAYS = AFTER_RECEIPT_TERMS;
+
+/**
+ * Nothing is due before the client has the material: the order has payment
+ * terms and every one of them is counted from receipt. That is what used to be
+ * answered by hand as "Paid after Receipt" — it is now simply what the terms
+ * say. A term line with nothing chosen yet leaves the answer no, since the
+ * terms are not fully stated.
+ */
+export function isAfterReceiptOnly(
+  terms: { term?: unknown }[] | null | undefined
+): boolean {
+  if (!terms || terms.length === 0) return false;
+  return terms.every((t) =>
+    AFTER_RECEIPT_TERMS.includes(String(t?.term ?? "").trim())
+  );
+}
+
+export const PAYMENT_TERM_FIELDS: OrderField[] = [
+  {
+    column: "term",
+    label: "Term",
+    type: "select",
+    options: PAYMENT_TERM_OPTIONS,
+  },
+  { column: "percent", label: "%", type: "number", min: 0 },
+  {
+    column: "days",
+    label: "Days",
+    type: "int",
+    min: 0,
+    dependsOn: [{ column: "term", value: TERMS_WITH_DAYS }],
+  },
+];
+
 export const BILLING_DOC_FIELDS: OrderField[] = [
   { column: "pi_no", label: "PI No.", type: "text" },
   { column: "pi_date", label: "PI Date", type: "date" },
@@ -980,6 +1033,7 @@ export const DRAWING_REVISION_FIELDS: OrderField[] = [
 ];
 
 export const CHILD_FIELDS: Record<ChildTable, OrderField[]> = {
+  order_payment_terms: PAYMENT_TERM_FIELDS,
   order_drawing_revisions: DRAWING_REVISION_FIELDS,
   order_lots: LOT_FIELDS,
   order_boi_items: BOI_ITEM_FIELDS,
@@ -1006,12 +1060,6 @@ export const SO_CONTEXT_FIELDS: OrderField[] = [
 export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
   ...SO_CONTEXT_FIELDS,
   { column: "payment_terms", label: "Payment Terms", type: "text" },
-  {
-    column: "paid_after_receipt",
-    label: "Paid after Receipt",
-    type: "select",
-    options: YES_NO,
-  },
 ];
 
 

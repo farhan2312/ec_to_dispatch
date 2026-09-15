@@ -1,9 +1,10 @@
 "use client";
 
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, PackageCheck, X } from "lucide-react";
 import { UrlSearchInput, useUrlTable } from "./url-table";
 import { MultiSelectFilter, SingleSelectFilter } from "./multi-select-filter";
 import {
+  DEPTS_WITHOUT_PARTY,
   DEPT_FILTER_KEYS,
   DEPT_FILTER_LABELS,
   statusesFor,
@@ -33,6 +34,7 @@ const FILTER_KEYS = [
   "from",
   "to",
   "overdue",
+  "ready",
 ];
 
 /**
@@ -59,6 +61,9 @@ export function OrderListFilterBar({
   /** Whether the pinned department works to a target date at all. */
   hasTarget?: boolean;
 }) {
+  // Who the customer is does not change what these departments do: they work
+  // to dates and statuses, so the party facets are noise on their queues.
+  const showsParty = !dept || !DEPTS_WITHOUT_PARTY.has(dept);
   const { get, setParams } = useUrlTable();
   const filter = parseDeptFilter(
     (key) => get(key) || undefined,
@@ -77,6 +82,8 @@ export function OrderListFilterBar({
     <div className="mb-4 space-y-2 rounded-xl border border-card-border bg-surface p-3 shadow-sm">
       <div className="flex flex-wrap items-center gap-2">
         <UrlSearchInput placeholder={searchPlaceholder} />
+        {showsParty && (
+        <>
         <MultiSelectFilter
           label="Zone"
           options={options.zones}
@@ -101,6 +108,8 @@ export function OrderListFilterBar({
           selected={filter.types}
           onChange={(next) => setParams({ type: next })}
         />
+        </>
+        )}
         {!dept && (
         <SingleSelectFilter
           label="Department"
@@ -163,14 +172,43 @@ export function OrderListFilterBar({
             Overdue only
           </button>
         )}
+        {/* Dispatch comes after Assembly & Packing: this is the shortlist
+            of orders they have packed and that have not gone out. */}
+        {activeDept === "dispatch" && (
+          <button
+            type="button"
+            onClick={() => setParams({ ready: filter.ready ? null : "1" })}
+            aria-pressed={filter.ready}
+            className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors ${
+              filter.ready
+                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700"
+                : "border-input-border text-foreground hover:bg-background"
+            }`}
+          >
+            <PackageCheck className="h-3.5 w-3.5" />
+            Ready to dispatch
+          </button>
+        )}
         <SingleSelectFilter
           label="Date"
-          allLabel="Dispatch target"
-          options={ORDER_DATE_FIELDS.map((f) => ({ value: f.value, label: f.label }))}
+          allLabel={dept ? (hasTarget ? "Target date" : "SO date") : "Dispatch target"}
+          // A department has no use for somebody else's target; it keeps its
+          // own, the order's own dates, and when work was completed. With no
+          // target of its own, "Target date" is dropped entirely.
+          options={ORDER_DATE_FIELDS.filter((f) => {
+            if (!dept) return true;
+            if (f.value === "dispatch_target") return false;
+            return f.value !== "dept_target" || hasTarget;
+          }).map((f) => ({ value: f.value, label: f.label }))}
           selected={filter.dateField}
-          onChange={(next) =>
-            setParams({ datefield: next === "dispatch_target" ? null : next })
-          }
+          onChange={(next) => {
+            const fallback = dept
+              ? hasTarget
+                ? "dept_target"
+                : "so_date"
+              : "dispatch_target";
+            setParams({ datefield: next === fallback ? null : next });
+          }}
         />
         {DATE_PRESETS.map((label) => (
           <button

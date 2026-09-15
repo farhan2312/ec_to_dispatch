@@ -75,7 +75,9 @@ const ALERTS_SQL = `
      AND qc.qc_doc_actual_date IS NULL
 
   UNION ALL
-  -- Dispatch not done by the dispatch team's target date: the EC isn't packed.
+  -- Assembly & Packing: the EC is not packed by the packing team's target.
+  -- Judged on the packing date alone — whether the order has since been
+  -- dispatched is Dispatch's arm, below.
   SELECT o.id, it.id, o.sl_no::int, o.so_no, it.ec_no, o.client_name,
          'Assembly & Packing'::text, 'overdue'::text,
          to_char(o.dispatch_team_target_date, 'YYYY-MM-DD'),
@@ -83,8 +85,20 @@ const ALERTS_SQL = `
     FROM orders o JOIN order_items it ON it.order_id = o.id
     LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
    WHERE o.dispatch_team_target_date < ${TODAY_IST}
-     AND (o.dispatch_status IS NULL OR o.dispatch_status = 'Pending')
      AND ad.actual_packing_date IS NULL
+
+  UNION ALL
+  -- Dispatch: the order has not gone out by its dispatch date (a revision
+  -- supersedes the original). SO-level, like the status it reads.
+  SELECT o.id, NULL::uuid, o.sl_no::int, o.so_no, NULL::text, o.client_name,
+         'Dispatch'::text, 'overdue'::text,
+         to_char(COALESCE(o.dispatch_target_revised_date, o.dispatch_target_date),
+                 'YYYY-MM-DD'),
+         (${TODAY_IST}
+            - COALESCE(o.dispatch_target_revised_date, o.dispatch_target_date))::int
+    FROM orders o
+   WHERE COALESCE(o.dispatch_target_revised_date, o.dispatch_target_date) < ${TODAY_IST}
+     AND lower(COALESCE(o.dispatch_status, '')) <> 'fully dispatch'
 
   UNION ALL
   -- Payment on hold (escalated to Central Visibility, SO-level)

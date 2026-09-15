@@ -46,6 +46,7 @@ function formatValue(v: string | null): string {
 
 export function BillingWorkspace({
   queue,
+  mode = "billing",
   canEdit,
   openOrderId,
   openThreadId,
@@ -57,6 +58,12 @@ export function BillingWorkspace({
 }: {
   // One server-fetched page; search and paging ran in SQL.
   queue: PageResult<BillingQueueRow>;
+  /**
+   * Which department's screen this is. "billing" shows the PI list (the
+   * Operation card); "dispatch" shows the invoice-and-despatch cards, which
+   * is the work that happens after Assembly & Packing.
+   */
+  mode?: "billing" | "dispatch";
   canEdit: boolean;
   // Billing's sign-offs for the SOs on this page. Billing is SO-scope, so a
   // single tick covers the order rather than one of its ECs.
@@ -125,16 +132,16 @@ export function BillingWorkspace({
       <div className="mb-3">
         {/* The same filter bar the orders list carries, with this
             department pinned: its own statuses, its own target. */}
-        {filterOptions && "billing" ? (
+        {filterOptions ? (
           <OrderListFilterBar
             options={filterOptions}
             total={queue.total}
-            dept={"billing"}
-            hasTarget={DEPT_VIEWS["billing"].hasTarget}
-            searchPlaceholder={"Search SO, client…"}
+            dept={mode}
+            hasTarget={DEPT_VIEWS[mode].hasTarget}
+            searchPlaceholder="Search SO, client…"
           />
         ) : (
-          <UrlSearchInput placeholder={"Search SO, client…"} />
+          <UrlSearchInput placeholder="Search SO, client…" />
         )}
       </div>
 
@@ -245,10 +252,9 @@ export function BillingWorkspace({
                         <td colSpan={12} className="p-0">
                           <div className="space-y-4 px-4 py-3">
                             {/* Challan orders skip the Operation card — their
-                                challan fields live inside each Billing &
-                                Dispatch card. Tax Invoice orders keep the
-                                PI list. */}
-                            {!isChallan && piLock && (
+                                challan fields live inside each Dispatch
+                                card. Tax Invoice orders keep the PI list. */}
+                            {mode === "billing" && !isChallan && piLock && (
                               <section className="rounded-xl border border-card-border bg-surface p-4 shadow-sm">
                                 <h3 className="text-sm font-semibold text-foreground">
                                   Operation
@@ -256,7 +262,7 @@ export function BillingWorkspace({
                                 <p className="mt-1 text-sm text-muted">{piLock}</p>
                               </section>
                             )}
-                            {!isChallan && !piLock && (
+                            {mode === "billing" && !isChallan && !piLock && (
                               <OrderChildList
                                 orderId={row.id}
                                 table="order_billing_docs"
@@ -286,14 +292,16 @@ export function BillingWorkspace({
                               />
                             )}
 
-                            {/* Stage 5 — invoice, dispatch and docket details.
-                                Dispatch Status derives from these. For Challan
+                            {/* Dispatch — invoice, despatch and docket
+                                details, one card per despatch. The SO's
+                                dispatch status derives from these. For Challan
                                 orders the "Invoice" phase collects challan
                                 fields instead (bill_type context gates it). */}
+                            {mode === "dispatch" && (
                             <OrderChildList
                               orderId={row.id}
                               table="order_invoices"
-                              title="Billing & Dispatch"
+                              title="Dispatch"
                               fields={INVOICE_FIELDS}
                               rows={(row.invoices ?? []) as Row[]}
                               canEdit={canEdit}
@@ -325,6 +333,7 @@ export function BillingWorkspace({
                                 ),
                               }}
                             />
+                            )}
                           </div>
                         </td>
                       </tr>

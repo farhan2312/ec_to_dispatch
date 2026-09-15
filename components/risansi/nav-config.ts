@@ -9,6 +9,7 @@ import {
   Receipt,
   ScrollText,
   ShieldCheck,
+  PackageCheck,
   Truck,
   Wallet,
   type LucideIcon,
@@ -69,6 +70,13 @@ export const DEPARTMENT_NAV: DeptNavItem[] = [
     href: "/risansi/departments/assembly-dispatch",
     icon: Truck,
     table: "order_assembly_dispatch",
+  },
+  {
+    // Last in the flow: what Assembly & Packing has packed goes out here.
+    label: "Dispatch",
+    href: "/risansi/departments/dispatch",
+    icon: PackageCheck,
+    table: "order_dispatch",
   },
 ];
 

@@ -181,7 +181,7 @@ const ORDER_COPY_FIELD: OrderField = {
 
 // The app prints EC / Packing Slip No. / Qty as the invoice card's header
 // rather than as form fields, so INVOICE_FIELDS omits them — but they are what
-// says which EC an invoice covers. Billing also uploads the LR copy here.
+// says which EC an invoice covers. Dispatch also uploads the LR copy here.
 const INVOICE_EXPORT_FIELDS: OrderField[] = [
   { column: "ec_no", label: "EC No. (invoiced)", type: "text" },
   { column: "packing_slip_no", label: "Packing Slip No.", type: "text" },
@@ -225,6 +225,7 @@ function collect(orders: OrderExportRow[]) {
   type Bucket = SheetSpec["rows"];
   const soRows: Bucket = [];
   const accounts: Bucket = [];
+  const dispatch: Bucket = [];
   const pis: Bucket = [];
   const invoices: Bucket = [];
   const ecs: Bucket = [];
@@ -245,6 +246,7 @@ function collect(orders: OrderExportRow[]) {
     // A missing 1:1 detail row still earns a line — "Accounts hasn't filled
     // this in yet" is different from "this SO isn't in the file".
     accounts.push({ ...key, source: so.order_accounts ?? {} });
+    dispatch.push({ ...key, source: so.order_dispatch ?? {} });
     for (const d of so.order_billing_docs) pis.push({ ...key, source: d });
     for (const inv of so.order_invoices) invoices.push({ ...key, source: inv });
 
@@ -296,6 +298,13 @@ function collect(orders: OrderExportRow[]) {
       rows: accounts,
     },
     {
+      name: "Dispatch",
+      about: "Dispatch's own note on the order. Its despatches are the next sheet.",
+      perEc: false,
+      fields: fieldsOf("order_dispatch"),
+      rows: dispatch,
+    },
+    {
       name: "PIs",
       about: "Proforma invoices raised by Billing & Operations, per SO.",
       perEc: false,
@@ -304,7 +313,7 @@ function collect(orders: OrderExportRow[]) {
     },
     {
       name: "Invoices",
-      about: "Billing & Operations invoices and their dispatch details, per SO.",
+      about: "Dispatch's invoice and despatch cards, one per despatch, per SO.",
       perEc: false,
       fields: INVOICE_EXPORT_FIELDS,
       rows: invoices,

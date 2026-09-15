@@ -35,7 +35,7 @@ function str(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
-// Header shown at the top of each Billing & Dispatch add-on: the packing-slip
+// Header shown at the top of each Dispatch card: the packing-slip
 // context copied from Assembly's actual packing slip. Falls back to a
 // placeholder when the invoice has no linked slip (should be rare).
 export function invoiceRowHeader(inv: Row): React.ReactNode {
@@ -152,18 +152,57 @@ export function OrderDetail({
 
         {(() => {
           // Render a single SO-scope section — Billing is a compound view
-          // (Challan fields or PI list + the Stage-5 invoices list).
+          // (Challan fields or the PI list; the invoice cards are Dispatch's).
           const renderSection = (section: typeof SO_SECTIONS[number]) => {
+            if (section.table === "order_dispatch") {
+              // Dispatch: its own SO-level note, then one invoice-and-despatch
+              // card per despatch. The cards are created by Packing saving an
+              // actual packing slip, so there is no Add here.
+              return (
+                <div key={section.key} className="space-y-6">
+                <EditableSection
+                  targetId={orderId}
+                  section={section}
+                  data={detail.order_dispatch ?? null}
+                  canEdit={canAccessDepartment(role, section.table)}
+                  canEditCentral={central}
+                />
+                <OrderChildList
+                  orderId={orderId}
+                  table="order_invoices"
+                  title={section.title}
+                  fields={INVOICE_FIELDS}
+                  rows={(detail.order_invoices ?? []) as Row[]}
+                  canEdit={canEditChild(role, "order_invoices")}
+                  canAdd={false}
+                  // The parent SO's bill_type decides whether each card shows
+                  // invoice_* or challan_* fields — pass it as context so
+                  // per-field dependsOn can gate the correct set.
+                  context={{ bill_type: order.bill_type }}
+                  rowHeader={invoiceRowHeader}
+                  renderExtra={{
+                    label: "LR Attachment",
+                    render: (inv) => (
+                      <InvoiceLrCell
+                        row={inv}
+                        orderId={orderId}
+                        canEdit={canEditChild(role, "order_invoices")}
+                      />
+                    ),
+                  }}
+                />
+                </div>
+              );
+            }
             if (section.table === "order_billing") {
               const isChallan = String(order.bill_type ?? "") === "Challan";
               const piLock = lockReason("order_billing_docs", order);
               const billingCanEditChild = canEditChild(role, "order_billing_docs");
-              const invoicesCanEditChild = canEditChild(role, "order_invoices");
               return (
                 <div key={section.key} className="space-y-6">
                   {/* Challan orders skip the Operation card entirely — their
-                      challan fields sit inside each Billing & Dispatch card.
-                      Tax Invoice orders keep the PI list here. */}
+                      challan fields sit inside each Dispatch card. Tax
+                      Invoice orders keep the PI list here. */}
                   {!isChallan &&
                     (piLock ? (
                       // Nothing to raise, so the list is closed rather than
@@ -184,30 +223,6 @@ export function OrderDetail({
                         canEdit={billingCanEditChild}
                       />
                     ))}
-                  <OrderChildList
-                    orderId={orderId}
-                    table="order_invoices"
-                    title="Billing & Dispatch"
-                    fields={INVOICE_FIELDS}
-                    rows={(detail.order_invoices ?? []) as Row[]}
-                    canEdit={invoicesCanEditChild}
-                    canAdd={false}
-                    // The parent SO's bill_type decides whether each invoice
-                    // card shows invoice_* or challan_* fields — pass it as
-                    // context so per-field dependsOn can gate the correct set.
-                    context={{ bill_type: order.bill_type }}
-                    rowHeader={invoiceRowHeader}
-                    renderExtra={{
-                      label: "LR Attachment",
-                      render: (inv) => (
-                        <InvoiceLrCell
-                          row={inv}
-                          orderId={orderId}
-                          canEdit={invoicesCanEditChild}
-                        />
-                      ),
-                    }}
-                  />
                 </div>
               );
             }

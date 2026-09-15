@@ -13,7 +13,7 @@ function str(v: unknown): string {
 
 /**
  * The LR attachment control for one invoice row — shows a download link when a
- * file is present, and (for Billing) an attach/replace picker.
+ * file is present, and (for Dispatch) an attach/replace picker.
  */
 export function InvoiceLrCell({
   row,

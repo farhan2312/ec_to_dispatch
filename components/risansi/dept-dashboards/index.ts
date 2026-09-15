@@ -13,13 +13,13 @@ import { DrawingDashboard } from "./drawing";
 import { PlanningDashboard } from "./planning";
 import { PurchaseDashboard } from "./purchase";
 import { QualityDashboard } from "./quality";
+import { DispatchDashboard } from "./dispatch";
 
 export type { DeptDashboardProps };
 
 /**
- * Partial: the `dispatch` key is the SO-level dispatch lane the central
- * pipeline reads. No role owns it — the `dispatch` role is Assembly & Packing,
- * which gets AssemblyDashboard — so there is no page to map it to.
+ * Every department key has a board. Partial only because the type is keyed by
+ * DeptKey and a new key should not break the build before its board exists.
  */
 export const DEPT_DASHBOARDS: Partial<
   Record<DeptKey, ComponentType<DeptDashboardProps>>
@@ -31,4 +31,5 @@ export const DEPT_DASHBOARDS: Partial<
   assembly: AssemblyDashboard,
   billing: BillingDashboard,
   accounts: AccountsDashboard,
+  dispatch: DispatchDashboard,
 };

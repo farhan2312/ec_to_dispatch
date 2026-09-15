@@ -12,7 +12,11 @@ export const ROLE_LABELS = {
   planning: "Planning",
   purchase: "Purchase",
   qc: "Quality",
-  dispatch: "Assembly & Packing",
+  assembly: "Assembly & Packing",
+  // Dispatch is its own department, after Assembly & Packing: it invoices what
+  // has been packed and records the despatch. The role named `dispatch` used to
+  // be the packing team — see the guarded rename in db/schema.sql.
+  dispatch: "Dispatch",
 } as const;
 
 export type Role = keyof typeof ROLE_LABELS;
@@ -28,6 +32,7 @@ export const REQUESTABLE_ROLES: Role[] = [
   "planning",
   "purchase",
   "qc",
+  "assembly",
   "dispatch",
   "central_visibility",
   "admin",
@@ -47,7 +52,9 @@ const TABLE_OWNER: Record<OrderTable, Role> = {
   order_purchase: "purchase",
   order_qc: "qc",
   order_planning: "planning",
-  order_assembly_dispatch: "dispatch",
+  order_assembly_dispatch: "assembly",
+  // Dispatch owns its own SO-level row; the invoice cards hang off it.
+  order_dispatch: "dispatch",
 };
 
 /** Admin and Central Visibility (Mitali). Own `centralOnly` fields. */
@@ -81,9 +88,12 @@ export function canSeeCentralDashboard(role: string): boolean {
   return role === "admin" || role === "central_visibility";
 }
 
-/** The dispatch-completed / LR register is oversight for Central Visibility + Admin. */
+/**
+ * The dispatch-completed / LR register: oversight for Central Visibility and
+ * Admin, and Dispatch's own record of what it has sent out.
+ */
 export function canSeeDispatched(role: string): boolean {
-  return role === "admin" || role === "central_visibility";
+  return role === "admin" || role === "central_visibility" || role === "dispatch";
 }
 
 /**
@@ -106,9 +116,9 @@ export function canEditChild(
     return canEditSection(role, "order_drawing") || isCentral(role);
   }
   if (table === "order_boi_items") return canEditSection(role, "order_purchase");
-  if (table === "order_billing_docs" || table === "order_invoices") {
-    return canEditSection(role, "order_billing");
-  }
+  // PIs are Billing's; the invoice-and-despatch cards are Dispatch's.
+  if (table === "order_billing_docs") return canEditSection(role, "order_billing");
+  if (table === "order_invoices") return canEditSection(role, "order_dispatch");
   // Packing slips are shared: Planning files the tentative set, Packing the
   // actual one. Either owner may edit; which rows they see is scoped by kind.
   if (table === "order_packing_slips") {
@@ -141,14 +151,22 @@ export function canEditQcRequirementDocs(role: string): boolean {
 // (7 days / 72h / 24h out). Billing and Accounts have no such date. Planning
 // has no target date of its own, so it borrows the order's Dispatch Target
 // Date — pump/order readiness (planning_readiness_date) must be in before
-// dispatch, same deadline Assembly & Packing works to.
-export type ReminderDept = "drawing" | "purchase" | "qc" | "planning" | "dispatch";
+// dispatch — which is also the date Dispatch itself works to, while
+// Assembly & Packing works to the packing team's own target.
+export type ReminderDept =
+  | "drawing"
+  | "purchase"
+  | "qc"
+  | "planning"
+  | "assembly"
+  | "dispatch";
 
 const REMINDER_DEPT_BY_ROLE: Partial<Record<Role, ReminderDept>> = {
   drawing: "drawing",
   purchase: "purchase",
   qc: "qc",
   planning: "planning",
+  assembly: "assembly",
   dispatch: "dispatch",
 };
 
@@ -157,7 +175,8 @@ const REMINDER_DEPT_BY_TABLE: Partial<Record<OrderTable, ReminderDept>> = {
   order_purchase: "purchase",
   order_qc: "qc",
   order_planning: "planning",
-  order_assembly_dispatch: "dispatch",
+  order_assembly_dispatch: "assembly",
+  order_dispatch: "dispatch",
 };
 
 /** The reminder department a role is responsible for, if any. */
@@ -178,7 +197,8 @@ const DEPARTMENT_HREF: Partial<Record<Role, string>> = {
   planning: "/risansi/departments/planning",
   purchase: "/risansi/departments/purchase",
   qc: "/risansi/departments/qc",
-  dispatch: "/risansi/departments/assembly-dispatch",
+  assembly: "/risansi/departments/assembly-dispatch",
+  dispatch: "/risansi/departments/dispatch",
 };
 
 /** The department workspace page a role owns, if any (null for central/admin). */

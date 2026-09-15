@@ -11,7 +11,8 @@ export type OrderTable =
   | "order_purchase"
   | "order_qc"
   | "order_planning"
-  | "order_assembly_dispatch";
+  | "order_assembly_dispatch"
+  | "order_dispatch";
 
 // SO-level tables are keyed by order_id (one row per sales order); item-level
 // tables are keyed by item_id (one row per EC/pump). Drives which reader/writer
@@ -115,7 +116,7 @@ export const DISPATCH_STATUS_OPTIONS = opts([
   "Fully dispatch",
 ]);
 
-// --- Stage 5 (Billing) dispatch/docket vocabularies -------------------------
+// --- Dispatch: despatch/docket vocabularies ---------------------------------
 export const DELIVERY_TYPE_OPTIONS = opts(["Door delivery", "Godown delivery"]);
 export const DELIVERY_MODE_OPTIONS = opts([
   "Transport",
@@ -386,7 +387,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
   {
     // Tax Invoice orders keep the PI list here (the "Operation" card).
     // Challan orders skip Operation entirely — their challan fields live
-    // inside each Billing & Dispatch invoice card (see INVOICE_FIELDS).
+    // inside each Dispatch invoice card (see INVOICE_FIELDS).
     key: "billing",
     title: "Billing & Operations",
     table: "order_billing",
@@ -573,6 +574,19 @@ export const ORDER_SECTIONS: OrderSection[] = [
     childGate: { column: "market_type", present: true },
     childKind: "actual",
   },
+  {
+    // Dispatch: last in the order, after Assembly & Packing has packed. Its
+    // work is the invoice-and-despatch cards (order_invoices) — invoice or
+    // challan, transporter and vehicle, docket and charges, the LR — one per
+    // despatch. Raising them is what moves the SO's dispatch status, which is
+    // derived from them rather than typed (see recomputeDispatchStatus).
+    key: "dispatch",
+    title: "Dispatch",
+    table: "order_dispatch",
+    scope: "so",
+    fields: [{ column: "remarks", label: "Dispatch Remarks", type: "text" }],
+    childTable: "order_invoices",
+  },
 ];
 
 export const SECTION_BY_TABLE = new Map<OrderTable, OrderSection>(
@@ -653,10 +667,10 @@ export const PACKING_SLIP_KINDS = {
   actual: { value: "actual", label: "Actual (Packing)" },
 } as const;
 
-// An invoice under an SO — Billing's three phases on one row. The dispatch
+// An invoice under an SO — Dispatch's three phases on one row. The dispatch
 // fields that apply depend on Delivery Mode. EC / Packing Slip No. / Packing
 // Qty live only in the add-on's card header (see OrderChildList's
-// `rowHeader`); they mirror the packing slip and Billing can't edit them,
+// `rowHeader`); they mirror the packing slip and Dispatch can't edit them,
 // so they don't appear in the invoice form itself.
 export const INVOICE_FIELDS: OrderField[] = [
   // Phase 1 — the "Invoice" phase. Two field sets share this slot:
@@ -1000,37 +1014,6 @@ export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
   },
 ];
 
-// Billing's read-only SO context: Payment Terms / Bill Type / Freight /
-// Packing. bill_type is what each PI's document fields gate on. (Amount
-// Received / Balance are per-PI now — see BILLING_DOC_FIELDS.)
-export const BILLING_CONTEXT_FIELDS: OrderField[] = [
-  ...SO_CONTEXT_FIELDS,
-  { column: "payment_terms", label: "Payment Terms", type: "text" },
-  {
-    column: "paid_after_receipt",
-    label: "Paid after Receipt",
-    type: "select",
-    options: YES_NO,
-  },
-  {
-    column: "bill_type",
-    label: "Bill Type",
-    type: "select",
-    options: BILL_TYPE_OPTIONS,
-  },
-  {
-    column: "freight_terms",
-    label: "Freight Terms",
-    type: "select",
-    options: opts(["Paid", "To Pay"]),
-  },
-  {
-    column: "packing_requirement",
-    label: "Packing Requirement",
-    type: "select",
-    options: opts(["Wooden Box", "Loose"]),
-  },
-];
 
 // Target Date for Drawing — an EC attribute (order_items) shown read-only in
 // the Drawing workspace.
@@ -1058,7 +1041,7 @@ export const PURCHASE_CONTEXT_FIELDS: OrderField[] = [
 
 // Target Date for Packing Team (SO-level) shown read-only in the Assembly &
 // Packing workspace.
-export const DISPATCH_CONTEXT_FIELDS: OrderField[] = [
+export const ASSEMBLY_CONTEXT_FIELDS: OrderField[] = [
   ...SO_CONTEXT_FIELDS,
   {
     column: "dispatch_team_target_date",

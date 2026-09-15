@@ -436,12 +436,13 @@ export type OrderDetail = {
   order: Row;
   order_billing: Row | null;
   order_accounts: Row | null;
+  order_dispatch: Row | null;
   order_billing_docs: Row[];
   order_invoices: Row[];
   items: Row[];
 };
 
-/** SO detail: core + billing + accounts + its PI list + EC items. */
+/** SO detail: core + billing + accounts + dispatch + its PI list + EC items. */
 export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
   if (!UUID_RE.test(id)) return null;
   const result = await query<OrderDetail>(
@@ -449,6 +450,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
         to_jsonb(o)  AS order,
         to_jsonb(b)  AS order_billing,
         to_jsonb(ac) AS order_accounts,
+        to_jsonb(dp) AS order_dispatch,
         COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                   FROM order_billing_docs d WHERE d.order_id = o.id),
                  '[]'::jsonb) AS order_billing_docs,
@@ -466,6 +468,7 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
        FROM orders o
        LEFT JOIN order_billing b   ON b.order_id  = o.id
        LEFT JOIN order_accounts ac ON ac.order_id = o.id
+       LEFT JOIN order_dispatch dp ON dp.order_id = o.id
       WHERE o.id = $1`,
     [id]
   );
@@ -575,6 +578,7 @@ export type OrderExportRow = {
   order: Row;
   order_billing: Row | null;
   order_accounts: Row | null;
+  order_dispatch: Row | null;
   order_billing_docs: Row[];
   order_invoices: Row[];
   items: OrderExportItem[];
@@ -593,6 +597,7 @@ export async function listOrderExports(
     `SELECT to_jsonb(o)  AS order,
             to_jsonb(b)  AS order_billing,
             to_jsonb(ac) AS order_accounts,
+            to_jsonb(dp) AS order_dispatch,
             COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                         FROM order_billing_docs d WHERE d.order_id = o.id),
                      '[]'::jsonb) AS order_billing_docs,
@@ -642,6 +647,7 @@ export async function listOrderExports(
        FROM orders o
        LEFT JOIN order_billing b   ON b.order_id  = o.id
        LEFT JOIN order_accounts ac ON ac.order_id = o.id
+       LEFT JOIN order_dispatch dp ON dp.order_id = o.id
       WHERE ($1::uuid[] IS NULL OR o.id = ANY($1))
       ORDER BY o.sl_no ASC`,
     [orderIds ?? null]
@@ -655,7 +661,7 @@ export async function listOrderExports(
 
 /**
  * Update one section of an SO or EC. `id` is the order_id for SO-scope sections
- * (orders/billing/accounts) or the item_id for item-scope sections (the EC
+ * (orders/billing/accounts/dispatch) or the item_id for item-scope sections (the EC
  * attributes + drawing/purchase/qc/planning/dispatch). Base tables (orders,
  * order_items) UPDATE by their own id; detail tables upsert on their key column.
  * Column names are validated against the section schema, never taken raw.
@@ -1573,7 +1579,8 @@ export type BillingQueueRow = {
 };
 
 /**
- * Billing/Accounts queue: one row per SO, with the read-only SO context and
+ * Billing, Accounts and Dispatch queue: one row per SO, with the read-only
+ * SO context and
  * that SO's list of PIs (order_billing_docs) for inline management.
  */
 export async function listOrdersForBilling(
@@ -1755,6 +1762,18 @@ const BOI_RECEIVED = `EXISTS (SELECT 1 FROM order_boi_items bi WHERE bi.item_id 
 const QC_SUBMITTED = `EXISTS (SELECT 1 FROM order_qc q
                               WHERE q.item_id = it.id
                                 AND q.qc_doc_actual_date IS NOT NULL)`;
+/**
+ * Something on this order is packed and it has not all gone out yet — what
+ * Dispatch can act on today. Reads Assembly & Packing's own packing date, so
+ * the two departments agree on what "packed" means.
+ */
+const READY_TO_DISPATCH = `(EXISTS (SELECT 1 FROM order_items it2
+                                     JOIN order_assembly_dispatch ad2
+                                       ON ad2.item_id = it2.id
+                                    WHERE it2.order_id = o.id
+                                      AND ad2.actual_packing_date IS NOT NULL)
+                            AND lower(COALESCE(o.dispatch_status, '')) <> 'fully dispatch')`;
+
 const PACKED = `EXISTS (SELECT 1 FROM order_assembly_dispatch ad
                         WHERE ad.item_id = it.id
                           AND ad.actual_packing_date IS NOT NULL)`;
@@ -1880,7 +1899,7 @@ function deptOverduePredicate(dept: DeptFilterKey): string {
   const outstanding = isPerEcDept(dept)
     ? `EXISTS (SELECT 1 FROM order_items it
                 WHERE it.order_id = o.id AND NOT (${ecDonePredicate(dept)}))`
-    : `COALESCE(o.dispatch_status, '') <> 'Fully Dispatch'`;
+    : `lower(COALESCE(o.dispatch_status, '')) <> 'fully dispatch'`;
   return `(${column} < ${TODAY_IST} AND ${outstanding})`;
 }
 
@@ -1954,6 +1973,8 @@ function orderListClauses(
   if (f.dept && f.deptStatus) clauses.push(deptStatusPredicate(f.dept, f.deptStatus));
   if (f.dept && f.signOff) clauses.push(signOffPredicate(f.dept, f.signOff));
   if (f.dept && f.overdue) clauses.push(deptOverduePredicate(f.dept));
+  // Packed by Assembly & Packing and not yet gone: Dispatch's own shortlist.
+  if (f.ready) clauses.push(READY_TO_DISPATCH);
 
   if (f.from || f.to) {
     const range = (column: string) =>
@@ -1963,7 +1984,13 @@ function orderListClauses(
       ]
         .filter(Boolean)
         .join(" AND ");
-    if (f.dateField === "so_date") clauses.push(range("o.so_date"));
+    if (f.dateField === "dept_target") {
+      // The chosen department own target column. Billing and Accounts have
+      // none, so a date range on their queue matches nothing rather than
+      // quietly falling through to somebody else date.
+      const column = f.dept ? DEPT_TARGET_COLUMN[f.dept] : undefined;
+      clauses.push(column ? range(column) : "FALSE");
+    } else if (f.dateField === "so_date") clauses.push(range("o.so_date"));
     else if (f.dateField === "dispatch_target") clauses.push(range("o.dispatch_target_date"));
     else if (f.dateField === "ec_date") {
       clauses.push(`EXISTS (SELECT 1 FROM order_items s
@@ -2296,7 +2323,7 @@ export async function listItemsForPurchasePage(opts: {
   return pageResult(rows, total, page);
 }
 
-/** Billing queue: one page of SOs, filtered in SQL. */
+/** Billing and Dispatch queue: one page of SOs, filtered in SQL. */
 export async function listOrdersForBillingPage(opts: {
   page: number;
   search: string;
@@ -2859,7 +2886,13 @@ function pipelineRowWhere(f: OrderListFilter): { where: string; params: unknown[
       ]
         .filter(Boolean)
         .join(" AND ");
-    if (f.dateField === "so_date") clauses.push(range("o.so_date"));
+    if (f.dateField === "dept_target") {
+      // The chosen department own target column. Billing and Accounts have
+      // none, so a date range on their queue matches nothing rather than
+      // quietly falling through to somebody else date.
+      const column = f.dept ? DEPT_TARGET_COLUMN[f.dept] : undefined;
+      clauses.push(column ? range(column) : "FALSE");
+    } else if (f.dateField === "so_date") clauses.push(range("o.so_date"));
     else if (f.dateField === "dispatch_target") clauses.push(range("o.dispatch_target_date"));
     else if (f.dateField === "ec_date") clauses.push(range("it.ec_date"));
     else {

@@ -611,16 +611,6 @@ export function OrderOverview({
           );
         })}
 
-        {/* Invoices hang off the SO but belong to no single section's gate. */}
-        {canAccessDepartment(role, "order_billing") && (
-          <Panel title="Billing & Dispatch invoices">
-            <ChildTableView
-              table="order_invoices"
-              rows={detail.order_invoices}
-              context={order}
-            />
-          </Panel>
-        )}
       </div>
     </div>
   );

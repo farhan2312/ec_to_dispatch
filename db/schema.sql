@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
     role          TEXT         NOT NULL
                                CHECK (role IN ('admin', 'central_visibility', 'operations',
                                                'accounts', 'drawing', 'planning', 'purchase',
-                                               'qc', 'dispatch')),
+                                               'qc', 'assembly', 'dispatch')),
     status        TEXT         NOT NULL DEFAULT 'pending'
                                CHECK (status IN ('pending', 'approved', 'rejected', 'disabled')),
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -31,13 +31,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_key
     ON users (lower(email));
 
 -- Bring existing tables up to date with the CHECK constraints above.
--- Drop the old role check first, migrate the legacy 'assembly' role to the new
--- 'dispatch' role, then apply the expanded role set.
+-- The role set is the one in lib/roles.ts. There is no data migration here:
+-- this whole file is re-applied on every migrate, so a bare UPDATE would run
+-- again every time — one-off moves belong in the guarded block further down.
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
-UPDATE users SET role = 'dispatch' WHERE role = 'assembly';
 ALTER TABLE users ADD  CONSTRAINT users_role_check
     CHECK (role IN ('admin', 'central_visibility', 'operations', 'accounts',
-                    'drawing', 'planning', 'purchase', 'qc', 'dispatch'));
+                    'drawing', 'planning', 'purchase', 'qc',
+                    'assembly', 'dispatch'));
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_status_check;
 ALTER TABLE users ADD  CONSTRAINT users_status_check
     CHECK (status IN ('pending', 'approved', 'rejected', 'disabled'));
@@ -1278,14 +1279,14 @@ CREATE INDEX IF NOT EXISTS bug_reports_status_idx ON bug_reports (status);
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS packing_details_required TEXT;
 
 -- ===========================================================================
--- Stage 4 (Assembly & Packing) + Stage 5 (Billing) per the ops spec.
+-- Stage 4 (Assembly & Packing) + Stage 5 (Dispatch) per the ops spec.
 --
 -- Packing slips: one EC can have many. Planning records the TENTATIVE set and
 -- Packing records the ACTUAL set — same field shape, distinguished by `kind`.
 -- The extra export fields (box size, markings, weights) are captured when the
 -- SO's Client Type is Export, and are what the Billing team downloads.
 --
--- Invoices: Billing captures three phases on one row — invoice details,
+-- Invoices: Dispatch captures three phases on one row — invoice details,
 -- despatch details (delivery type/mode + mode-specific fields), and docket/LR
 -- details (incl. an LR attachment). An SO can have many invoices (lot-wise).
 -- ===========================================================================
@@ -1487,7 +1488,7 @@ BEGIN
   END IF;
 END $$;
 
--- For Challan bill types, the "Invoice" phase inside each Billing & Dispatch
+-- For Challan bill types, the "Invoice" phase inside each Dispatch
 -- card carries challan fields instead of invoice fields (per-slip challan
 -- number/date/value + FR reason). Field-level dependsOn on bill_type decides
 -- which set is collected — both live on the invoice row so a single
@@ -1800,6 +1801,7 @@ BEGIN
       ('Order details',        'orders',                  'id',       'so'),
       ('Accounts',             'order_accounts',          'order_id', 'so'),
       ('Billing & Operations', 'order_billing',           'order_id', 'so'),
+      ('Dispatch',             'order_dispatch',          'order_id', 'so'),
       ('Drawing',              'order_drawing',           'item_id',  'ec'),
       ('Purchase',             'order_purchase',          'item_id',  'ec'),
       ('QC',                   'order_qc',                'item_id',  'ec'),
@@ -1994,3 +1996,75 @@ DROP INDEX IF EXISTS audit_log_category_idx;
 -- receipt to chase. Billing & Operations and Accounts then have nothing to
 -- record on the order (they still see it — the dispatch invoice is theirs).
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_after_receipt TEXT;
+
+-- ===========================================================================
+-- One-off data moves
+-- ===========================================================================
+-- This file is applied whole on every migrate, so anything that must happen
+-- exactly once records that it has: a bare UPDATE here would run again on the
+-- next migrate and undo later, legitimate edits.
+CREATE TABLE IF NOT EXISTS applied_migrations (
+    name       TEXT PRIMARY KEY,
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Dispatch became a department of its own, after Assembly & Packing. The role
+-- named `dispatch` was the packing team, so it is renamed to `assembly` and
+-- `dispatch` is now the new department — whose users an admin assigns. Guarded:
+-- without the guard, every later migrate would drag the new Dispatch users
+-- back into Assembly & Packing.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM applied_migrations WHERE name = 'dispatch_role_split') THEN
+    UPDATE users SET role = 'assembly' WHERE role = 'dispatch';
+    INSERT INTO applied_migrations (name) VALUES ('dispatch_role_split');
+  END IF;
+END $$;
+
+-- ===========================================================================
+-- order_dispatch
+-- ===========================================================================
+-- The Dispatch department's own SO-level row. The work itself is the invoice
+-- list (order_invoices, one card per despatch), which hangs off this section;
+-- this table carries what belongs to the order as a whole, and gives the
+-- department a table to own — nav and permissions are keyed off ownership.
+CREATE TABLE IF NOT EXISTS order_dispatch (
+    order_id   UUID PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
+    remarks    TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+DROP TRIGGER IF EXISTS order_dispatch_set_updated_at ON order_dispatch;
+CREATE TRIGGER order_dispatch_set_updated_at
+    BEFORE UPDATE ON order_dispatch
+    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- The role rename above is also stored in rows written before it. Each of
+-- these said "the packing team" when it was written, so each becomes
+-- 'assembly'; left alone, old audit lines would read as the new Dispatch
+-- department and its notifications would land in the wrong feed. Guarded for
+-- the same reason as the rename itself.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM applied_migrations WHERE name = 'dispatch_role_split_rows') THEN
+    -- Who did it, recorded at the time.
+    UPDATE audit_log             SET user_role       = 'assembly' WHERE user_role       = 'dispatch';
+    UPDATE bug_reports           SET user_role       = 'assembly' WHERE user_role       = 'dispatch';
+    UPDATE order_target_revisions SET changed_by_role = 'assembly' WHERE changed_by_role = 'dispatch';
+    UPDATE order_dept_completions SET completed_by_role = 'assembly' WHERE completed_by_role = 'dispatch';
+    UPDATE order_drawing_documents SET created_by_role = 'assembly' WHERE created_by_role = 'dispatch';
+    -- Who it is addressed to: notifications about packing targets and
+    -- assembly dates belong to Assembly & Packing.
+    UPDATE notifications        SET recipient_role  = 'assembly' WHERE recipient_role  = 'dispatch';
+    -- Discussion lanes, and each reader's place in them.
+    UPDATE order_messages       SET dept_role       = 'assembly' WHERE dept_role       = 'dispatch';
+    UPDATE order_messages       SET to_role         = 'assembly' WHERE to_role         = 'dispatch';
+    UPDATE order_messages       SET author_role     = 'assembly' WHERE author_role     = 'dispatch';
+    UPDATE order_message_reads  SET dept_role       = 'assembly' WHERE dept_role       = 'dispatch';
+    -- A drawing document assigned to the packing team.
+    UPDATE order_drawing_documents
+       SET assigned_roles = array_replace(assigned_roles, 'dispatch', 'assembly')
+     WHERE 'dispatch' = ANY(assigned_roles);
+    INSERT INTO applied_migrations (name) VALUES ('dispatch_role_split_rows');
+  END IF;
+END $$;

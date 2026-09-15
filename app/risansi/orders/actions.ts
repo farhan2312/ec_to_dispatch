@@ -895,8 +895,8 @@ export async function updateOrderChildAction(
       }
     } else if (tbl === "order_packing_slips" && actualSlipKind === "actual") {
       // Actual packing slip saved → upsert its matching invoice row so
-      // Billing sees an add-on pre-populated with EC / Packing Slip No. /
-      // Qty (read-only), then tell Billing + Central which slip is ready.
+      // Dispatch sees a card pre-populated with EC / Packing Slip No. / Qty
+      // (read-only), then tell Dispatch + Central which slip is ready.
       const ctx = await upsertInvoiceFromPackingSlip(id);
       const emitOrderId = soOrderId ?? ctx?.order_id ?? null;
       if (emitOrderId) {
@@ -905,27 +905,31 @@ export async function updateOrderChildAction(
         const psn = ctx?.packing_slip_no ?? "";
         const qty = ctx?.quantity != null ? ` · Qty ${ctx.quantity}` : "";
         const detail = `${soLabel} · ${ec}${psn ? ` · Packing Slip ${psn}` : ""}${qty}`;
-        const billingRoles = ["operations"];
+        // Packed and ready to invoice: that is Dispatch's work now.
+        const dispatchRoles = ["dispatch"];
         // Only Mitali (central_visibility) herself is self-muted; admin acting
         // still notifies central_visibility (and admin's bell picks it up via
         // the admin → central_visibility recipient expansion).
-        if (!notifyMuted) billingRoles.push("central_visibility");
+        if (!notifyMuted) dispatchRoles.push("central_visibility");
         await emitNotification({
-          roles: billingRoles,
+          roles: dispatchRoles,
           orderId: emitOrderId,
           type: "dept_update",
-          message: `Actual packing slip ready to invoice — ${detail}`,
+          message: `Packed and ready to dispatch — ${detail}`,
         });
       }
     } else if (tbl === "order_invoices") {
-      // Billing & Dispatch save → Central Visibility (Mitali).
-      if (!notifyMuted && soOrderId) {
+      // A despatch recorded → Central Visibility, and Accounts, whose
+      // receivable starts at the invoice.
+      if (soOrderId) {
         const soLabel = (await getOrderLabel(soOrderId)) ?? soOrderId;
+        const roles = ["accounts"];
+        if (!notifyMuted) roles.push("central_visibility");
         await emitNotification({
-          roles: ["central_visibility"],
+          roles,
           orderId: soOrderId,
           type: "dept_update",
-          message: `Billing & Dispatch updated for ${soLabel}`,
+          message: `Dispatch updated for ${soLabel}`,
         });
       }
     } else if (tbl === "order_packing_slips" && actualSlipKind === "tentative") {
@@ -980,7 +984,7 @@ export async function updateOrderChildAction(
       }
     }
     // Refresh the parent SO detail page when the child is per-EC (its
-    // `orderId` arg is the item_id), so Billing & Dispatch reflects any
+    // `orderId` arg is the item_id), so Dispatch reflects any
     // invoice row we just upserted.
     if (isPerEc && soOrderId) {
       revalidatePath(`/risansi/orders/${soOrderId}`);
@@ -1036,7 +1040,7 @@ async function notifyPiCreated(
 
 const MAX_LR_BYTES = 8 * 1024 * 1024;
 
-/** Attach (or replace) an invoice's LR document. Billing only. */
+/** Attach (or replace) an invoice's LR document. Dispatch only. */
 export async function uploadInvoiceLrAction(
   invoiceId: string,
   orderId: string,
@@ -1536,8 +1540,8 @@ const DEPT_SECTION: Record<DeptKey, OrderTable> = {
   assembly: "order_assembly_dispatch",
   billing: "order_billing",
   accounts: "order_accounts",
-  // Dispatch status is derived from the invoices, which Billing owns.
-  dispatch: "order_billing",
+  // The invoice cards are Dispatch's own section now.
+  dispatch: "order_dispatch",
 };
 
 /**

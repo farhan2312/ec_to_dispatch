@@ -254,8 +254,17 @@ export const ORDER_SECTIONS: OrderSection[] = [
         type: "date",
         group: "Terms & Conditions",
       },
-      // Payment Terms is free text (varies per order).
-      { column: "payment_terms", label: "Payment Terms", type: "text", group: "Terms & Conditions" },
+      // The prose the PO used, kept as written. The terms the workflow acts on
+      // are the lines beneath it (PaymentTermsControl), so this is never typed
+      // into the section form — the same arrangement target dates have, where
+      // the value shows here and every change goes through its own control.
+      {
+        column: "payment_terms",
+        label: "Payment Terms",
+        type: "text",
+        readOnly: true,
+        group: "Terms & Conditions",
+      },
       { column: "ld", label: "LD", type: "select", options: YES_NO, group: "Terms & Conditions" },
       {
         column: "ld_date",

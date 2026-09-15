@@ -10,6 +10,7 @@ import type { OrderExportRow } from "@/lib/orders";
 import {
   BILLING_DOC_FIELDS,
   BOI_ITEM_FIELDS,
+  PAYMENT_TERM_FIELDS,
   DRAWING_REVISION_FIELDS,
   INVOICE_FIELDS,
   PACKING_SLIP_FIELDS,
@@ -226,6 +227,7 @@ function collect(orders: OrderExportRow[]) {
   const soRows: Bucket = [];
   const accounts: Bucket = [];
   const dispatch: Bucket = [];
+  const terms: Bucket = [];
   const pis: Bucket = [];
   const invoices: Bucket = [];
   const ecs: Bucket = [];
@@ -247,6 +249,7 @@ function collect(orders: OrderExportRow[]) {
     // this in yet" is different from "this SO isn't in the file".
     accounts.push({ ...key, source: so.order_accounts ?? {} });
     dispatch.push({ ...key, source: so.order_dispatch ?? {} });
+    for (const t of so.order_payment_terms) terms.push({ ...key, source: t });
     for (const d of so.order_billing_docs) pis.push({ ...key, source: d });
     for (const inv of so.order_invoices) invoices.push({ ...key, source: inv });
 
@@ -289,6 +292,13 @@ function collect(orders: OrderExportRow[]) {
       perEc: true,
       fields: [...fieldsOf("order_items"), ORDER_COPY_FIELD],
       rows: ecs,
+    },
+    {
+      name: "Payment terms",
+      about: "How each SO is to be paid — one row per slice of its terms.",
+      perEc: false,
+      fields: PAYMENT_TERM_FIELDS,
+      rows: terms,
     },
     {
       name: "Accounts",

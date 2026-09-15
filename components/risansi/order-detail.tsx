@@ -12,7 +12,12 @@ import {
   Trash2,
 } from "lucide-react";
 import { deleteItemAction } from "@/app/risansi/orders/actions";
-import { BILLING_DOC_FIELDS, INVOICE_FIELDS, SO_SECTIONS } from "@/lib/order-schema";
+import {
+  BILLING_DOC_FIELDS,
+  INVOICE_FIELDS,
+  PAYMENT_TERM_FIELDS,
+  SO_SECTIONS,
+} from "@/lib/order-schema";
 import { lockReason } from "@/lib/order-lock";
 import {
   canAccessDepartment,
@@ -248,8 +253,8 @@ export function OrderDetail({
               );
             }
             return (
+              <div key={section.key} className="space-y-6">
               <EditableSection
-                key={section.key}
                 targetId={orderId}
                 section={section}
                 data={data ?? null}
@@ -266,6 +271,20 @@ export function OrderDetail({
                     : undefined
                 }
               />
+              {/* How the order is to be paid, a line per slice of its terms.
+                  Added to rather than revised — a term that changes is a new
+                  agreement, not a correction of the old one. */}
+              {section.table === "orders" && (
+                <OrderChildList
+                  orderId={orderId}
+                  table="order_payment_terms"
+                  title="Payment terms"
+                  fields={PAYMENT_TERM_FIELDS}
+                  rows={detail.order_payment_terms as Row[]}
+                  canEdit={canEditChild(role, "order_payment_terms")}
+                />
+              )}
+              </div>
             );
           };
 

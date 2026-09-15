@@ -164,6 +164,8 @@ export const ORDER_SECTIONS: OrderSection[] = [
     title: "Order details",
     table: "orders",
     scope: "so",
+    // The order's payment terms, one line per slice — see PAYMENT_TERM_FIELDS.
+    childTable: "order_payment_terms",
     fields: [
       // Client — client_code and client_type are compulsory at creation.
       { column: "client_code", label: "Client Code", type: "text", group: "Client" },
@@ -634,6 +636,7 @@ export function selectOptionsFor(
 // 1:many children: dispatch lots, BOI items and packing slips (per EC);
 // PIs and invoices (per SO).
 export type ChildTable =
+  | "order_payment_terms"
   | "order_lots"
   | "order_boi_items"
   | "order_billing_docs"
@@ -841,6 +844,40 @@ export function firstMissingAddOnField(
   return null;
 }
 
+// How an order is to be paid, one line per slice: "30% Advance Against ABG",
+// "40% Before Dispatch", "30% After Receipt, 45 days". An order carries as
+// many lines as its terms have parts, and they are added to rather than
+// revised — a term that changes is a new agreement, not a correction.
+export const PAYMENT_TERM_OPTIONS = opts([
+  "Advance",
+  "Advance Against ABG",
+  "Before Dispatch",
+  "Payment Against Documents",
+  "After Receipt",
+  "After Receipt Against PBG",
+]);
+
+// Only the terms counted from the client receiving the material carry a credit
+// period; the rest fall due on the event itself.
+const TERMS_WITH_DAYS = ["After Receipt", "After Receipt Against PBG"];
+
+export const PAYMENT_TERM_FIELDS: OrderField[] = [
+  {
+    column: "term",
+    label: "Term",
+    type: "select",
+    options: PAYMENT_TERM_OPTIONS,
+  },
+  { column: "percent", label: "%", type: "number", min: 0 },
+  {
+    column: "days",
+    label: "Days",
+    type: "int",
+    min: 0,
+    dependsOn: [{ column: "term", value: TERMS_WITH_DAYS }],
+  },
+];
+
 export const BILLING_DOC_FIELDS: OrderField[] = [
   { column: "pi_no", label: "PI No.", type: "text" },
   { column: "pi_date", label: "PI Date", type: "date" },
@@ -980,6 +1017,7 @@ export const DRAWING_REVISION_FIELDS: OrderField[] = [
 ];
 
 export const CHILD_FIELDS: Record<ChildTable, OrderField[]> = {
+  order_payment_terms: PAYMENT_TERM_FIELDS,
   order_drawing_revisions: DRAWING_REVISION_FIELDS,
   order_lots: LOT_FIELDS,
   order_boi_items: BOI_ITEM_FIELDS,

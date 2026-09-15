@@ -91,6 +91,7 @@ import {
   drawingHandoffEvents,
   emitNotification,
   notifySectionSaved,
+  paymentTermNotice,
   targetDateRecipients,
   type DrawingHandoffs,
 } from "@/lib/notifications";
@@ -703,6 +704,7 @@ export type ChildActionResult = { ok: true } | { ok: false; error: string };
 // boundary. Keep in sync with the ChildTable union — the `Record` type below
 // makes a missing entry a compile error rather than a silent "Unknown list."
 const CHILD_TABLES_SET: Record<ChildTable, true> = {
+  order_payment_terms: true,
   order_lots: true,
   order_boi_items: true,
   order_billing_docs: true,
@@ -966,6 +968,19 @@ export async function updateOrderChildAction(
             });
           }
         }
+      }
+    } else if (tbl === "order_payment_terms") {
+      // A term being set — or changed — reaches the departments that work to
+      // it; see paymentTermNotice.
+      const notice = paymentTermNotice(rowAfter, notifyMuted);
+      if (notice && soOrderId) {
+        const soLabel = (await getOrderLabel(soOrderId)) ?? soOrderId;
+        await emitNotification({
+          roles: notice.roles,
+          orderId: soOrderId,
+          type: "payment_terms",
+          message: `Payment term set for ${soLabel} — ${notice.detail}`,
+        });
       }
     } else if (tbl === "order_boi_items") {
       // Purchase BOI item save → Central Visibility, and Planning: a bought-out

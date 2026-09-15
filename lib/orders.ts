@@ -437,6 +437,7 @@ export type OrderDetail = {
   order_billing: Row | null;
   order_accounts: Row | null;
   order_dispatch: Row | null;
+  order_payment_terms: Row[];
   order_billing_docs: Row[];
   order_invoices: Row[];
   items: Row[];
@@ -451,6 +452,9 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
         to_jsonb(b)  AS order_billing,
         to_jsonb(ac) AS order_accounts,
         to_jsonb(dp) AS order_dispatch,
+        COALESCE((SELECT jsonb_agg(to_jsonb(pt) ORDER BY pt.seq)
+                  FROM order_payment_terms pt WHERE pt.order_id = o.id),
+                 '[]'::jsonb) AS order_payment_terms,
         COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                   FROM order_billing_docs d WHERE d.order_id = o.id),
                  '[]'::jsonb) AS order_billing_docs,
@@ -579,6 +583,7 @@ export type OrderExportRow = {
   order_billing: Row | null;
   order_accounts: Row | null;
   order_dispatch: Row | null;
+  order_payment_terms: Row[];
   order_billing_docs: Row[];
   order_invoices: Row[];
   items: OrderExportItem[];
@@ -598,6 +603,9 @@ export async function listOrderExports(
             to_jsonb(b)  AS order_billing,
             to_jsonb(ac) AS order_accounts,
             to_jsonb(dp) AS order_dispatch,
+            COALESCE((SELECT jsonb_agg(to_jsonb(pt) ORDER BY pt.seq)
+                        FROM order_payment_terms pt WHERE pt.order_id = o.id),
+                     '[]'::jsonb) AS order_payment_terms,
             COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                         FROM order_billing_docs d WHERE d.order_id = o.id),
                      '[]'::jsonb) AS order_billing_docs,
@@ -741,6 +749,7 @@ async function recomputeAccountsBalance(orderId: string): Promise<void> {
 // Which parent column each 1:many child hangs off: per-SO tables key on
 // order_id, per-EC tables on item_id.
 export const CHILD_PARENT_COLUMN: Record<ChildTable, "order_id" | "item_id"> = {
+  order_payment_terms: "order_id",
   order_lots: "item_id",
   order_boi_items: "item_id",
   order_packing_slips: "item_id",

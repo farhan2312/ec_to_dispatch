@@ -17,6 +17,8 @@ import {
   getItemDetail,
   getOrderDetail,
   insertBillingDocs,
+  lockFactsForChild,
+  lockFactsForOrder,
   getOrderLabel,
   insertQcDocument,
   listQcDocuments,
@@ -68,6 +70,7 @@ import {
   type TargetRevision,
 } from "@/lib/target-dates";
 import { logAudit } from "@/lib/audit";
+import { lockReason } from "@/lib/order-lock";
 import {
   checkFieldBounds,
   checkReceivedWithinValue,
@@ -583,6 +586,11 @@ export async function updateOrderSectionAction(
   try {
     if (section.scope === "so") {
       const before = await getOrderDetail(id);
+      // Sections an order carries no work for take no entries: an order paid
+      // after receipt has no payment for Accounts to record. The form hides
+      // the fields; this is the same rule on the endpoint.
+      const locked = lockReason(tbl, before?.order as never);
+      if (locked) return { ok: false, error: locked };
       // Amount received never exceeds the order value — checked from whichever
       // side is being saved, so neither can be moved past the other.
       if (before && tbl === "order_accounts" && "amount_received" in allowedValues) {
@@ -751,6 +759,12 @@ export async function addOrderChildAction(
 ): Promise<ChildActionResult> {
   const guard = await guardChild(table);
   if (!guard.ok) return guard;
+  // No PI on an order that is paid after receipt — see lib/order-lock.
+  const addLock = lockReason(
+    table as ChildTable,
+    await lockFactsForOrder(orderId)
+  );
+  if (addLock) return { ok: false, error: addLock };
   try {
     const created = await addChildRow(table as ChildTable, orderId, kind);
     if (created) {
@@ -802,6 +816,8 @@ export async function updateOrderChildAction(
   const clean = Object.fromEntries(
     Object.entries(values).filter(([k]) => allowed.has(k))
   );
+  const rowLock = lockReason(tbl, await lockFactsForChild(tbl, id));
+  if (rowLock) return { ok: false, error: rowLock };
   try {
     // For PIs: capture pre-save pi_no so we can notify Accounts only when it
     // becomes newly filled (empty → set), not on every subsequent edit.
@@ -1283,6 +1299,12 @@ export async function importPiExcelAction(
   if (!file.name.toLowerCase().endsWith(".xlsx")) {
     return { ok: false, error: "Only .xlsx files can be uploaded." };
   }
+
+  const importLock = lockReason(
+    "order_billing_docs",
+    await lockFactsForOrder(orderId)
+  );
+  if (importLock) return { ok: false, error: importLock };
 
   try {
     const parsed = await parsePiWorkbook(Buffer.from(await file.arrayBuffer()));

@@ -12,6 +12,7 @@ import {
 import { getCurrentUser } from "@/lib/session";
 import { canCreateOrders, isCentral } from "@/lib/roles";
 import { OrdersTable } from "@/components/risansi/orders-table";
+import { MissingDetailsButton } from "@/components/risansi/missing-details-modal";
 
 export const metadata: Metadata = {
   title: "Orders | Risansi",
@@ -64,6 +65,9 @@ export default async function OrdersPage({
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {/* What the tracker is still waiting on, across every SO — see
+              lib/order-gaps.ts. */}
+          <MissingDetailsButton />
           <a
             href={exportHref}
             className="inline-flex h-10 items-center gap-2 rounded-lg border border-input-border bg-surface px-4 text-sm font-semibold text-foreground transition-colors hover:bg-background"

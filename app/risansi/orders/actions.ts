@@ -698,7 +698,11 @@ export async function updateOrderSectionAction(
   }
 }
 
-export type ChildActionResult = { ok: true } | { ok: false; error: string };
+export type ChildActionResult =
+  // `id` is set by addOrderChildAction, for a caller that fills the row it
+  // just created rather than waiting for the list to render it.
+  | { ok: true; id?: string }
+  | { ok: false; error: string };
 
 // Runtime allow-list for the `table` argument, which crosses a server-action
 // boundary. Keep in sync with the ChildTable union — the `Record` type below
@@ -790,7 +794,7 @@ export async function addOrderChildAction(
       if (soId) revalidatePath(`/risansi/orders/${soId}`);
     }
     revalidatePath(`/risansi/orders/${orderId}`);
-    return { ok: true };
+    return { ok: true, id: created?.id };
   } catch (error) {
     console.error("addOrderChild failed:", error);
     return { ok: false, error: "Could not add the row." };

@@ -164,7 +164,7 @@ export function OrderDetail({
                   key={section.key}
                   orderId={orderId}
                   table="order_invoices"
-                  title="Invoices & despatches"
+                  title="Invoice and dispatch"
                   fields={INVOICE_FIELDS}
                   rows={(detail.order_invoices ?? []) as Row[]}
                   canEdit={canEditChild(role, "order_invoices")}

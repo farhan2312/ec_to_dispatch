@@ -190,7 +190,7 @@ function childCaption(table: ChildTable, kind?: string): string {
     case "order_billing_docs":
       return "PIs";
     case "order_invoices":
-      return "Invoices & despatches";
+      return "Invoice and dispatch";
     case "order_lots":
       return "Lots";
     case "order_payment_terms":

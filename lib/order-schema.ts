@@ -583,7 +583,9 @@ export const ORDER_SECTIONS: OrderSection[] = [
     title: "Dispatch",
     table: "order_dispatch",
     scope: "so",
-    fields: [{ column: "remarks", label: "Dispatch Remarks", type: "text" }],
+    // No fields of its own: like Billing & Operations, the section exists to
+    // own its list. The table behind it is what nav and permissions key off.
+    fields: [],
     childTable: "order_invoices",
   },
 ];

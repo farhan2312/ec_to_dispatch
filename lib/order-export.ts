@@ -226,7 +226,6 @@ function collect(orders: OrderExportRow[]) {
   type Bucket = SheetSpec["rows"];
   const soRows: Bucket = [];
   const accounts: Bucket = [];
-  const dispatch: Bucket = [];
   const terms: Bucket = [];
   const pis: Bucket = [];
   const invoices: Bucket = [];
@@ -248,7 +247,6 @@ function collect(orders: OrderExportRow[]) {
     // A missing 1:1 detail row still earns a line — "Accounts hasn't filled
     // this in yet" is different from "this SO isn't in the file".
     accounts.push({ ...key, source: so.order_accounts ?? {} });
-    dispatch.push({ ...key, source: so.order_dispatch ?? {} });
     for (const t of so.order_payment_terms) terms.push({ ...key, source: t });
     for (const d of so.order_billing_docs) pis.push({ ...key, source: d });
     for (const inv of so.order_invoices) invoices.push({ ...key, source: inv });
@@ -306,13 +304,6 @@ function collect(orders: OrderExportRow[]) {
       perEc: false,
       fields: fieldsOf("order_accounts"),
       rows: accounts,
-    },
-    {
-      name: "Dispatch",
-      about: "Dispatch's own note on the order. Its despatches are the next sheet.",
-      perEc: false,
-      fields: fieldsOf("order_dispatch"),
-      rows: dispatch,
     },
     {
       name: "PIs",

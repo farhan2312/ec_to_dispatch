@@ -433,7 +433,6 @@ export type OrderDetail = {
   order: Row;
   order_billing: Row | null;
   order_accounts: Row | null;
-  order_dispatch: Row | null;
   order_payment_terms: Row[];
   order_billing_docs: Row[];
   order_invoices: Row[];
@@ -452,7 +451,6 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
         ) AS order,
         to_jsonb(b)  AS order_billing,
         to_jsonb(ac) AS order_accounts,
-        to_jsonb(dp) AS order_dispatch,
         COALESCE((SELECT jsonb_agg(to_jsonb(pt) ORDER BY pt.seq)
                   FROM order_payment_terms pt WHERE pt.order_id = o.id),
                  '[]'::jsonb) AS order_payment_terms,
@@ -473,7 +471,6 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
        FROM orders o
        LEFT JOIN order_billing b   ON b.order_id  = o.id
        LEFT JOIN order_accounts ac ON ac.order_id = o.id
-       LEFT JOIN order_dispatch dp ON dp.order_id = o.id
       WHERE o.id = $1`,
     [id]
   );
@@ -583,7 +580,6 @@ export type OrderExportRow = {
   order: Row;
   order_billing: Row | null;
   order_accounts: Row | null;
-  order_dispatch: Row | null;
   order_payment_terms: Row[];
   order_billing_docs: Row[];
   order_invoices: Row[];
@@ -603,8 +599,7 @@ export async function listOrderExports(
     `SELECT to_jsonb(o)  AS order,
             to_jsonb(b)  AS order_billing,
             to_jsonb(ac) AS order_accounts,
-            to_jsonb(dp) AS order_dispatch,
-            COALESCE((SELECT jsonb_agg(to_jsonb(pt) ORDER BY pt.seq)
+                COALESCE((SELECT jsonb_agg(to_jsonb(pt) ORDER BY pt.seq)
                         FROM order_payment_terms pt WHERE pt.order_id = o.id),
                      '[]'::jsonb) AS order_payment_terms,
             COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
@@ -656,7 +651,6 @@ export async function listOrderExports(
        FROM orders o
        LEFT JOIN order_billing b   ON b.order_id  = o.id
        LEFT JOIN order_accounts ac ON ac.order_id = o.id
-       LEFT JOIN order_dispatch dp ON dp.order_id = o.id
       WHERE ($1::uuid[] IS NULL OR o.id = ANY($1))
       ORDER BY o.sl_no ASC`,
     [orderIds ?? null]

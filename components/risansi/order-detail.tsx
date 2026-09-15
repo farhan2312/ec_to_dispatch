@@ -156,19 +156,12 @@ export function OrderDetail({
           // (Challan fields or the PI list; the invoice cards are Dispatch's).
           const renderSection = (section: typeof SO_SECTIONS[number]) => {
             if (section.table === "order_dispatch") {
-              // Dispatch: its own SO-level note, then one invoice-and-despatch
-              // card per despatch. The cards are created by Packing saving an
-              // actual packing slip, so there is no Add here.
+              // Dispatch: one invoice-and-despatch card per despatch. The cards
+              // are created by Packing saving an actual packing slip, so there
+              // is no Add here.
               return (
-                <div key={section.key} className="space-y-6">
-                <EditableSection
-                  targetId={orderId}
-                  section={section}
-                  data={detail.order_dispatch ?? null}
-                  canEdit={canAccessDepartment(role, section.table)}
-                  canEditCentral={central}
-                />
                 <OrderChildList
+                  key={section.key}
                   orderId={orderId}
                   table="order_invoices"
                   title="Invoices & despatches"
@@ -192,7 +185,6 @@ export function OrderDetail({
                     ),
                   }}
                 />
-                </div>
               );
             }
             if (section.table === "order_billing") {

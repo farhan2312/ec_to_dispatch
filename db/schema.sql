@@ -2029,10 +2029,13 @@ END $$;
 -- department a table to own — nav and permissions are keyed off ownership.
 CREATE TABLE IF NOT EXISTS order_dispatch (
     order_id   UUID PRIMARY KEY REFERENCES orders(id) ON DELETE CASCADE,
-    remarks    TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- It briefly carried a remarks field. Nobody fills one: the despatch details
+-- live on the cards, so the section has no fields of its own — the table is
+-- what nav and permissions key off, exactly as order_billing is for the PI list.
+ALTER TABLE order_dispatch DROP COLUMN IF EXISTS remarks;
 DROP TRIGGER IF EXISTS order_dispatch_set_updated_at ON order_dispatch;
 CREATE TRIGGER order_dispatch_set_updated_at
     BEFORE UPDATE ON order_dispatch

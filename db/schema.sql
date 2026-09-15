@@ -1989,13 +1989,12 @@ CREATE INDEX IF NOT EXISTS audit_log_category_created_idx
     ON audit_log (category, created_at DESC);
 DROP INDEX IF EXISTS audit_log_category_idx;
 
--- Payment terms are free text — real ones read "30% ABG + 30% PBG + 40%
--- before Dispatch" — so the workflow does not try to parse them. This is the
--- one consequence it needs, answered outright by Central Visibility: paid only
--- after the client receives the material, so there is no PI to raise and no
--- receipt to chase. Billing & Operations and Accounts then have nothing to
--- record on the order (they still see it — the dispatch invoice is theirs).
-ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_after_receipt TEXT;
+-- Paid-after-receipt was once answered by hand here, in its own column. The
+-- order payment terms answer it now — every line counted from receipt, see
+-- isAfterReceiptOnly and its SQL twin AFTER_RECEIPT_ONLY — so a second answer
+-- could only ever disagree with them. Dropped rather than left to rot: the
+-- file is re-applied whole, so the old ADD had to go with it.
+ALTER TABLE orders DROP COLUMN IF EXISTS paid_after_receipt;
 
 -- ===========================================================================
 -- One-off data moves

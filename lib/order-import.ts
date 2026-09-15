@@ -22,9 +22,6 @@ const COLUMN_MAP: Record<string, keyof NewOrderInput> = {
   sono: "so_no",
   sodate: "so_date",
   paymentterms: "payment_terms",
-  // "Paid after Receipt (no PI / no payment tracking)" — Yes/No.
-  paidafterreceipt: "paid_after_receipt",
-  paidafterreceiptnopinopaymenttracking: "paid_after_receipt",
   ldyesno: "ld",
   ld: "ld",
   lddate: "ld_date",

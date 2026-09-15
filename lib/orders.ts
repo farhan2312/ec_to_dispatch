@@ -128,7 +128,6 @@ export type NewOrderInput = {
   packing_requirement?: string;
   delivery_date_as_per_so?: string;
   payment_terms?: string;
-  paid_after_receipt?: string;
   ld?: string;
   ld_date?: string;
   order_value?: string;
@@ -219,8 +218,7 @@ export async function createOrder(
           sl_no,
           so_no, so_date, client_code, client_type, client_name, reps,
           market_type, zone, industry_type, quotation_no, po_no, customer_po_date,
-          order_value, order_currency, qc_required, payment_terms, paid_after_receipt,
-        ld, ld_date,
+          order_value, order_currency, qc_required, payment_terms, ld, ld_date,
           freight_terms, packing_requirement, delivery_date_as_per_so,
           order_type, bill_type, boi,
           total_quantity, drg_target_date, dispatch_target_date,
@@ -230,7 +228,7 @@ export async function createOrder(
           -- The next free number, under the lock above.
           (SELECT COALESCE(max(sl_no), 0) + 1 FROM orders),
           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
-          $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33
+          $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
        )
        RETURNING id, sl_no::int AS sl_no`,
       [
@@ -250,7 +248,6 @@ export async function createOrder(
         nullify(input.order_currency),
         nullify(input.qc_required),
         nullify(input.payment_terms),
-      nullify(input.paid_after_receipt),
         nullify(input.ld),
         nullify(input.ld_date),
         nullify(input.freight_terms),
@@ -448,7 +445,11 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
   if (!UUID_RE.test(id)) return null;
   const result = await query<OrderDetail>(
     `SELECT
-        to_jsonb(o)  AS order,
+        -- The order, plus what its payment terms say about who still has work
+        -- to do on it: the forms read the lock off this row.
+        to_jsonb(o) || jsonb_build_object(
+          'after_receipt_only', ${AFTER_RECEIPT_ONLY}
+        ) AS order,
         to_jsonb(b)  AS order_billing,
         to_jsonb(ac) AS order_accounts,
         to_jsonb(dp) AS order_dispatch,
@@ -927,7 +928,8 @@ export async function upsertInvoiceFromPackingSlip(
 export async function lockFactsForOrder(orderId: string): Promise<LockFacts | null> {
   if (!UUID_RE.test(orderId)) return null;
   const result = await query<LockFacts>(
-    `SELECT paid_after_receipt, bill_type FROM orders WHERE id = $1`,
+    `SELECT ${AFTER_RECEIPT_ONLY} AS after_receipt_only, bill_type
+       FROM orders o WHERE o.id = $1`,
     [orderId]
   );
   return result.rows[0] ?? null;
@@ -1233,9 +1235,9 @@ export type OrderOverviewRow = {
   // the date it is being judged against. All live on the SO — one target
   // applies across every EC of the order.
   payment_terms: string | null;
-  // Yes when the client pays only on receipt: no PI, and nothing for Accounts
-  // to confirm until the money arrives. See lib/dept-view.
-  paid_after_receipt: string | null;
+  // True when every payment term is counted from receipt: no PI is due and
+  // Accounts has nothing to confirm until the money arrives. See lib/dept-view.
+  after_receipt_only: boolean;
   drg_target_date: string | null;
   purchase_target_date: string | null;
   qc_doc_target_date: string | null;
@@ -1314,7 +1316,7 @@ const overviewColumns = () => `it.id,
             (ad.actual_packing_date IS NOT NULL) AS assembly_done,
             ${DISPATCH_STATUS} AS dispatch_status,
             o.payment_terms,
-            o.paid_after_receipt,
+            ${AFTER_RECEIPT_ONLY} AS after_receipt_only,
             to_char(o.drg_target_date, 'YYYY-MM-DD') AS drg_target_date,
             to_char(o.purchase_target_date, 'YYYY-MM-DD') AS purchase_target_date,
             to_char(o.qc_doc_target_date, 'YYYY-MM-DD') AS qc_doc_target_date,
@@ -1460,7 +1462,10 @@ export async function listOrdersForSection(
             o.sl_no::int AS sl_no,
             o.so_no,
             NULL::text AS ec_no,
-            o.client_name${detailSelects ? `,\n            ${detailSelects}` : ""}${contextSelects}
+            o.client_name,
+            -- What the payment terms say about whether this department
+            -- still has anything to record here (lib/order-lock).
+            ${AFTER_RECEIPT_ONLY} AS after_receipt_only${detailSelects ? `,\n            ${detailSelects}` : ""}${contextSelects}
        FROM orders o
        LEFT JOIN ${table} d ON d.order_id = o.id
        ${extraJoinSql}
@@ -1572,7 +1577,7 @@ export type BillingQueueRow = {
   bill_type: string | null;
   payment_terms: string | null;
   // Closes the PI list on this order (lib/order-lock).
-  paid_after_receipt: string | null;
+  after_receipt_only: boolean;
   freight_terms: string | null;
   packing_requirement: string | null;
   order_value: string | null;
@@ -1604,7 +1609,7 @@ export async function listOrdersForBilling(
             o.client_name,
             o.bill_type,
             o.payment_terms,
-            o.paid_after_receipt,
+            ${AFTER_RECEIPT_ONLY} AS after_receipt_only,
             o.freight_terms,
             o.packing_requirement,
             o.order_value::text AS order_value,
@@ -1799,9 +1804,19 @@ const PLANNING_ANY = `EXISTS (SELECT 1 FROM order_planning pl
 
 const NO_BOI = `COALESCE(o.boi, '') <> 'Yes'`;
 const NO_QC = `COALESCE(o.qc_required, '') = 'No'`;
-// Paid only on receipt: no PI is due and Accounts has nothing to confirm,
-// so both departments read N/A on these orders.
-const PAID_AFTER_RECEIPT = `(lower(coalesce(o.paid_after_receipt, '')) = 'yes')`;
+// Paid only on receipt: no PI is due and Accounts has nothing to confirm, so
+// both departments read N/A on these orders. Read from the order's payment
+// terms — every line counted from receipt, and at least one line — which is
+// the SQL twin of isAfterReceiptOnly. A line with no term chosen yet counts
+// against, since the terms are not fully stated.
+const AFTER_RECEIPT_ONLY = `(EXISTS (SELECT 1 FROM order_payment_terms pt
+                                      WHERE pt.order_id = o.id)
+                            AND NOT EXISTS (SELECT 1 FROM order_payment_terms pt
+                                             WHERE pt.order_id = o.id
+                                               AND btrim(coalesce(pt.term, ''))
+                                                     NOT IN ('After Receipt',
+                                                             'After Receipt Against PBG')))`;
+const PAID_AFTER_RECEIPT = AFTER_RECEIPT_ONLY;
 const IS_CHALLAN = `COALESCE(o.bill_type, '') = 'Challan'`;
 const BILL_RAISED = BILLING_RAISED;
 const PAYMENT_SET = `EXISTS (SELECT 1 FROM order_accounts a
@@ -2408,7 +2423,7 @@ export async function getOrderDeptStatus(
   const so = await query<{
     dispatch_status: string | null;
     bill_type: string | null;
-    paid_after_receipt: string | null;
+    after_receipt_only: boolean;
     has_pi: boolean;
     payment_status: string | null;
     drg_target_date: string | null;
@@ -2418,7 +2433,8 @@ export async function getOrderDeptStatus(
     dispatch_target_date: string | null;
     dispatch_target_revised_date: string | null;
   }>(
-    `SELECT ${DISPATCH_STATUS} AS dispatch_status, o.bill_type, o.paid_after_receipt,
+    `SELECT ${DISPATCH_STATUS} AS dispatch_status, o.bill_type,
+            ${AFTER_RECEIPT_ONLY} AS after_receipt_only,
             ${BILLING_RAISED} AS has_pi,
             a.payment_status,
             to_char(o.drg_target_date, 'YYYY-MM-DD') AS drg_target_date,
@@ -2504,8 +2520,7 @@ export async function getOrderDeptStatus(
 
   const isChallan = String(head.bill_type ?? "") === "Challan";
 
-  const paidAfterReceipt =
-    (head.paid_after_receipt ?? "").trim().toLowerCase() === "yes";
+  const paidAfterReceipt = head.after_receipt_only === true;
   return {
     // Paid after receipt: no PI is due, so Billing reads N/A rather than
     // pending forever. Its dispatch invoice is a separate matter.

@@ -20,6 +20,7 @@ import {
   SO_SECTIONS,
   canonicalSelectValue,
   dependsOnSatisfied,
+  isAfterReceiptOnly,
   type ChildTable,
   type OrderField,
   type OrderSection,
@@ -274,7 +275,7 @@ export function OrderOverview({
   const seesMoney = canAccessDepartment(role, "order_accounts");
   // Paid only on receipt: the two departments that chase money have nothing
   // to record, so say so where their panels would otherwise look unfilled.
-  const paidAfterReceipt = str(order.paid_after_receipt).trim().toLowerCase() === "yes";
+  const paidAfterReceipt = isAfterReceiptOnly(detail.order_payment_terms);
   const notRequired: Partial<Record<string, string>> = paidAfterReceipt
     ? {
         order_billing: "No PI on this order — it is paid after receipt.",

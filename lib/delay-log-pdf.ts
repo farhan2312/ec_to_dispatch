@@ -24,9 +24,23 @@ const TARGET_BY_ROLE: Record<string, string> = {
   drawing: "drg_target_date",
   purchase: "purchase_target_date",
   qc: "qc_doc_target_date",
-  dispatch: "dispatch_team_target_date",
+  // The packing team's own target. Dispatch is absent on purpose: it works to
+  // the SO's dispatch date, which is what targetFor falls back to.
+  assembly: "dispatch_team_target_date",
 };
-const FALLBACK_TARGET = "dispatch_target_date";
+
+/**
+ * The date this department is judged against, out of the SO's targets. A
+ * revised dispatch date supersedes the original wherever it is quoted.
+ */
+function targetFor(
+  role: string,
+  targets: Record<string, string | null | undefined>
+): string | null {
+  const column = TARGET_BY_ROLE[role];
+  if (column) return targets[column] ?? null;
+  return targets.dispatch_target_revised_date ?? targets.dispatch_target_date ?? null;
+}
 
 function dayOnly(iso: string | null): string {
   if (!iso) return "—";
@@ -125,10 +139,14 @@ export async function buildDelayLogPdf(
   }
 
   for (const log of report.logs) {
-    const column = TARGET_BY_ROLE[log.dept_role] ?? FALLBACK_TARGET;
     const cells = [
       wrap(roleLabel(log.dept_role), font, 9, COLUMNS[0].width - 10),
-      wrap(dayOnly(report.targets[column] ?? null), font, 9, COLUMNS[1].width - 10),
+      wrap(
+        dayOnly(targetFor(log.dept_role, report.targets)),
+        font,
+        9,
+        COLUMNS[1].width - 10
+      ),
       wrap(stamp(log.created_at), font, 9, COLUMNS[2].width - 10),
       wrap(log.body, font, 9, COLUMNS[3].width - 10),
       wrap(log.author_name, font, 9, COLUMNS[4].width - 10),

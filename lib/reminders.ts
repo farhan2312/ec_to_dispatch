@@ -109,21 +109,33 @@ const REMINDERS_SQL = `
      )
 
   UNION ALL
-  -- Assembly & Packing due to complete, against the dispatch team's target
-  -- date (SO-level). Fires while any EC is still unpacked.
+  -- Assembly & Packing due to complete, against the packing team's target
+  -- date (SO-level). Fires while any EC is still unpacked. Whether the
+  -- order has since gone out is Dispatch's arm, below.
   SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.client_name,
-         'dispatch'::text, 'Assembly & Packing'::text,
+         'assembly'::text, 'Assembly & Packing'::text,
          to_char(o.dispatch_team_target_date, 'YYYY-MM-DD'),
          (o.dispatch_team_target_date - ${TODAY_IST})::int
     FROM orders o
    WHERE o.dispatch_team_target_date >= ${TODAY_IST}
      AND o.dispatch_team_target_date <= ${TODAY_IST} + 7
-     AND (o.dispatch_status IS NULL OR o.dispatch_status = 'Pending')
      AND EXISTS (
        SELECT 1 FROM order_items it
         LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
         WHERE it.order_id = o.id AND ad.actual_packing_date IS NULL
      )
+
+  UNION ALL
+  -- Dispatch due to go out, against the SO's dispatch date (revised if set)
+  -- — the same date Planning schedules to.
+  SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.client_name,
+         'dispatch'::text, 'Dispatch'::text,
+         to_char(${PLANNING_DUE}, 'YYYY-MM-DD'),
+         (${PLANNING_DUE} - ${TODAY_IST})::int
+    FROM orders o
+   WHERE ${PLANNING_DUE} >= ${TODAY_IST}
+     AND ${PLANNING_DUE} <= ${TODAY_IST} + 7
+     AND lower(COALESCE(o.dispatch_status, '')) <> 'fully dispatch'
 `;
 
 function tierOf(daysLeft: number): ReminderTier {

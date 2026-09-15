@@ -171,18 +171,18 @@ const TARGET_DATE_RECIPIENTS: Partial<
 > = {
   orders: [
     { column: "drg_target_date", label: "Drawing target date", roles: ["drawing"] },
-    // Dispatch target is what Planning works to; the dispatch team has its own
-    // target date (below, on order_assembly_dispatch).
+    // The date Dispatch works to, and the one Planning schedules to, so it
+    // goes to both. Assembly & Packing has its own, further down.
     {
       column: "dispatch_target_date",
       label: "Dispatch target date",
-      roles: ["planning"],
+      roles: ["dispatch", "planning"],
     },
-    // A revision matters just as much to Planning as the original date.
+    // A revision matters just as much to both as the original date.
     {
       column: "dispatch_target_revised_date",
       label: "Revised dispatch target date",
-      roles: ["planning"],
+      roles: ["dispatch", "planning"],
     },
     {
       column: "qc_doc_target_date",
@@ -196,8 +196,8 @@ const TARGET_DATE_RECIPIENTS: Partial<
     },
     {
       column: "dispatch_team_target_date",
-      label: "Dispatch team target date",
-      roles: ["dispatch"],
+      label: "Packing team target date",
+      roles: ["assembly"],
     },
   ],
   // Planning schedules the assembly; Assembly & Packing is the team that has
@@ -206,7 +206,7 @@ const TARGET_DATE_RECIPIENTS: Partial<
     {
       column: "assembly_date",
       label: "Assembly date",
-      roles: ["dispatch"],
+      roles: ["assembly"],
     },
   ],
 };

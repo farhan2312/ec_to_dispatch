@@ -64,6 +64,18 @@ const DEPT_STATUSES: Record<DeptFilterKey, string[]> = {
   dispatch: values(DISPATCH_STATUS_OPTIONS).filter((v) => v !== PENDING).concat(PENDING),
 };
 
+/**
+ * Departments whose work does not vary by customer: they make, check, plan and
+ * pack to dates and statuses, so zone, rep, market and order type are noise on
+ * their queues. The commercial departments keep them.
+ */
+export const DEPTS_WITHOUT_PARTY: ReadonlySet<DeptFilterKey> = new Set<DeptFilterKey>([
+  "planning",
+  "purchase",
+  "quality",
+  "assembly",
+]);
+
 export function statusesFor(dept: DeptFilterKey): string[] {
   return DEPT_STATUSES[dept];
 }

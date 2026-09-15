@@ -15,9 +15,23 @@ const TARGET_BY_ROLE: Record<string, string> = {
   drawing: "drg_target_date",
   purchase: "purchase_target_date",
   qc: "qc_doc_target_date",
-  dispatch: "dispatch_team_target_date",
+  // The packing team's own target. Dispatch is absent on purpose: it works to
+  // the SO's dispatch date, which is what targetFor falls back to.
+  assembly: "dispatch_team_target_date",
 };
-const FALLBACK_TARGET = "dispatch_target_date";
+
+/**
+ * The date this department is judged against, out of the SO's targets. A
+ * revised dispatch date supersedes the original wherever it is quoted.
+ */
+function targetFor(
+  role: string,
+  targets: Record<string, string | null | undefined>
+): string | null {
+  const column = TARGET_BY_ROLE[role];
+  if (column) return targets[column] ?? null;
+  return targets.dispatch_target_revised_date ?? targets.dispatch_target_date ?? null;
+}
 
 function dayOnly(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -164,9 +178,7 @@ export function DelayLogsModal({
               </thead>
               <tbody className="divide-y divide-card-border">
                 {logs.map((log) => {
-                  const column =
-                    TARGET_BY_ROLE[log.dept_role] ?? FALLBACK_TARGET;
-                  const date = report?.targets?.[column] ?? null;
+                  const date = targetFor(log.dept_role, report?.targets ?? {});
                   return (
                     <tr key={log.id} className="align-top">
                       <td className="px-4 py-3 whitespace-nowrap font-medium text-foreground">

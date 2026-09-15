@@ -385,13 +385,16 @@ export async function listDelayLogs(
     qc_doc_target_date: string | null;
     dispatch_team_target_date: string | null;
     dispatch_target_date: string | null;
+    dispatch_target_revised_date: string | null;
   }>(
     `SELECT so_no, sl_no::int AS sl_no,
             to_char(drg_target_date, 'YYYY-MM-DD')           AS drg_target_date,
             to_char(purchase_target_date, 'YYYY-MM-DD')      AS purchase_target_date,
             to_char(qc_doc_target_date, 'YYYY-MM-DD')        AS qc_doc_target_date,
             to_char(dispatch_team_target_date, 'YYYY-MM-DD') AS dispatch_team_target_date,
-            to_char(dispatch_target_date, 'YYYY-MM-DD')      AS dispatch_target_date
+            to_char(dispatch_target_date, 'YYYY-MM-DD')      AS dispatch_target_date,
+            to_char(dispatch_target_revised_date, 'YYYY-MM-DD')
+              AS dispatch_target_revised_date
        FROM orders WHERE id = $1`,
     [orderId]
   );

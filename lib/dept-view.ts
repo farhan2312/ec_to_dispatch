@@ -37,7 +37,7 @@ export type DeptView = {
    * The order is none of this department's business at all: off its queue,
    * its dashboard, and its URLs. Stronger than `na` — an order can be N/A
    * and still belong to the department, the way a paid-after-receipt order
-   * still gets its dispatch invoice from Billing & Operations.
+   * still gets its despatch recorded by Dispatch.
    */
   hidden: (row: OrderOverviewRow) => boolean;
   /** The date it is judged against, if it has one. */
@@ -164,8 +164,8 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
           ? "Challan filed"
           : "PI raised",
     done: (r) => r.has_pi,
-    // No PI on a paid-after-receipt order — but the dispatch invoice is
-    // still Billing's, so the order stays on their screens.
+    // No PI on a paid-after-receipt order. Billing keeps the order on their
+    // screens all the same — the bill type and its terms are theirs.
     na: paidAfterReceipt,
     hidden: never,
     target: () => null,
@@ -210,7 +210,8 @@ const VIEW_BY_ROLE: Record<string, DeptKey> = {
   purchase: "purchase",
   qc: "quality",
   planning: "planning",
-  dispatch: "assembly",
+  assembly: "assembly",
+  dispatch: "dispatch",
   operations: "billing",
   accounts: "accounts",
 };

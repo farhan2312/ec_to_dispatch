@@ -13,6 +13,10 @@ import {
 } from "@/lib/dept-status";
 
 export const ORDER_DATE_FIELDS = [
+  // Inside a department's own queue this is the date that matters: the one it
+  // is judged against. Which column that is depends on the department — see
+  // DEPT_TARGET_COLUMN — so it is chosen by meaning, not by column name.
+  { value: "dept_target", label: "Target date" },
   { value: "dispatch_target", label: "Dispatch target" },
   { value: "so_date", label: "SO date" },
   { value: "ec_date", label: "EC date" },
@@ -89,6 +93,12 @@ export type OrderListFilter = {
    * that no status answers.
    */
   overdue: boolean;
+  /**
+   * Dispatch only: Assembly & Packing has packed something on this order, so
+   * it can go out. Dispatch comes after them, and this is how their queue
+   * says so without hiding anything.
+   */
+  ready: boolean;
 };
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -155,12 +165,14 @@ export function parseOrderListFilter(
     from,
     to,
     overdue: get("overdue") === "1",
+    ready: get("ready") === "1",
   };
 }
 
 /** Whether anything narrows the list at all. */
 export function isOrderListFiltered(f: OrderListFilter): boolean {
   return !!(
+    f.ready ||
     f.overdue ||
     f.search ||
     f.zones.length ||
@@ -183,6 +195,7 @@ export function orderListFilterParams(f: OrderListFilter): URLSearchParams {
   if (f.types.length) p.set("type", f.types.join(","));
   if (f.dept) p.set("dept", f.dept);
   if (f.overdue) p.set("overdue", "1");
+  if (f.ready) p.set("ready", "1");
   if (f.deptStatus) p.set("dstatus", f.deptStatus);
   if (f.signOff) p.set("signoff", f.signOff);
   if (f.from || f.to) {
@@ -198,6 +211,7 @@ export function describeOrderListFilter(f: OrderListFilter): string {
   const parts: string[] = [];
   if (f.search) parts.push(`Search: ${f.search}`);
   if (f.overdue) parts.push("Overdue only");
+  if (f.ready) parts.push("Ready to dispatch");
   if (f.zones.length) parts.push(`Zone: ${f.zones.join(", ")}`);
   if (f.reps.length) parts.push(`Rep: ${f.reps.join(", ")}`);
   if (f.markets.length) parts.push(`Market: ${f.markets.join(", ")}`);
@@ -229,7 +243,11 @@ export function parseDeptFilter(
   get: (key: string) => string | undefined,
   dept: DeptFilterKey | null
 ): OrderListFilter {
-  return parseOrderListFilter((key) =>
-    key === "dept" ? (dept ?? get(key)) : get(key)
-  );
+  return parseOrderListFilter((key) => {
+    if (key === "dept") return dept ?? get(key);
+    // A department's queue dates by the department's own target date, not the
+    // order list's dispatch-target default. An explicit choice still wins.
+    if (key === "datefield" && dept) return get(key) ?? "dept_target";
+    return get(key);
+  });
 }

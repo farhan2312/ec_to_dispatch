@@ -54,7 +54,7 @@ export function OrderChildList({
   canDelete?: boolean;
   // Whether new rows may be added — defaults to canEdit. Set false to keep
   // existing rows editable/deletable while retiring new additions (e.g.
-  // Dispatch Lots, now superseded by Billing's per-SO invoices).
+  // Dispatch Lots, now superseded by Dispatch's per-SO invoices).
   canAdd?: boolean;
   // Packing slips only: new rows are created with this kind ('tentative' for
   // Planning, 'actual' for Packing).

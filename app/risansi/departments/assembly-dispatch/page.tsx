@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { Truck } from "lucide-react";
+import { Boxes } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
 import { listItemsForSectionPage,
@@ -11,7 +11,7 @@ import { listItemsForSectionPage,
 import { parsePage, parseQuery } from "@/lib/pagination";
 import { parseDeptFilter } from "@/lib/order-list-filter";
 import { listRemindersForDepartment } from "@/lib/reminders";
-import { DISPATCH_CONTEXT_FIELDS, SECTION_BY_TABLE } from "@/lib/order-schema";
+import { ASSEMBLY_CONTEXT_FIELDS, SECTION_BY_TABLE } from "@/lib/order-schema";
 import { unreadByOrder } from "@/lib/order-messages";
 import { DepartmentWorkspace } from "@/components/risansi/department-workspace";
 import { RemindersPanel } from "@/components/risansi/reminders-panel";
@@ -45,7 +45,7 @@ export default async function AssemblyDispatchWorkspacePage({
   const [queue, reminders] = await Promise.all([
     listItemsForSectionPage(
       TABLE,
-      DISPATCH_CONTEXT_FIELDS.map((f) => ({
+      ASSEMBLY_CONTEXT_FIELDS.map((f) => ({
         column: f.column,
         type: f.type,
         // A context field can name its own source table (e.g. Assembly
@@ -76,14 +76,14 @@ export default async function AssemblyDispatchWorkspacePage({
     <div className="px-4 py-6 sm:px-8 sm:py-8">
       <div className="mb-6 flex items-center gap-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-          <Truck className="h-6 w-6" />
+          <Boxes className="h-6 w-6" />
         </div>
         <div>
           <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
             Assembly &amp; Packing
           </h1>
           <p className="text-sm text-muted">
-            Update assembly, packing and dispatch status for each order.
+            Record assembly and packing for each EC. Dispatch takes it from there.
           </p>
         </div>
       </div>
@@ -100,7 +100,7 @@ export default async function AssemblyDispatchWorkspacePage({
         fields={section.fields}
         queue={queue}
         filterOptions={filterOptions}
-        readonlyFields={DISPATCH_CONTEXT_FIELDS}
+        readonlyFields={ASSEMBLY_CONTEXT_FIELDS}
         canEditCentral={isCentral(user.role)}
         openOrderId={edit}
       />

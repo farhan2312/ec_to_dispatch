@@ -29,6 +29,7 @@ const DEPT_BY_TABLE: Partial<Record<OrderTable, DeptKey>> = {
   order_assembly_dispatch: "assembly",
   order_billing: "billing",
   order_accounts: "accounts",
+  order_dispatch: "dispatch",
 };
 
 export function deptForTable(table: OrderTable): DeptKey | null {

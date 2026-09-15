@@ -191,19 +191,24 @@ export function OrderListFilterBar({
         )}
         <SingleSelectFilter
           label="Date"
-          allLabel={dept ? "Target date" : "Dispatch target"}
+          allLabel={dept ? (hasTarget ? "Target date" : "SO date") : "Dispatch target"}
           // A department has no use for somebody else's target; it keeps its
-          // own, the order's own dates, and when work was completed.
-          options={ORDER_DATE_FIELDS.filter(
-            (f) => !dept || f.value !== "dispatch_target"
-          ).map((f) => ({ value: f.value, label: f.label }))}
+          // own, the order's own dates, and when work was completed. With no
+          // target of its own, "Target date" is dropped entirely.
+          options={ORDER_DATE_FIELDS.filter((f) => {
+            if (!dept) return true;
+            if (f.value === "dispatch_target") return false;
+            return f.value !== "dept_target" || hasTarget;
+          }).map((f) => ({ value: f.value, label: f.label }))}
           selected={filter.dateField}
-          onChange={(next) =>
-            setParams({
-              datefield:
-                next === (dept ? "dept_target" : "dispatch_target") ? null : next,
-            })
-          }
+          onChange={(next) => {
+            const fallback = dept
+              ? hasTarget
+                ? "dept_target"
+                : "so_date"
+              : "dispatch_target";
+            setParams({ datefield: next === fallback ? null : next });
+          }}
         />
         {DATE_PRESETS.map((label) => (
           <button

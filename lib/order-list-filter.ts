@@ -5,6 +5,7 @@
 // Plain module (no server imports): the filter bar, the page, the export
 // route and the SQL builder all read one definition.
 
+import { DEPT_VIEWS } from "@/lib/dept-view";
 import {
   DEPT_FILTER_KEYS,
   DEPT_FILTER_LABELS,
@@ -246,8 +247,12 @@ export function parseDeptFilter(
   return parseOrderListFilter((key) => {
     if (key === "dept") return dept ?? get(key);
     // A department's queue dates by the department's own target date, not the
-    // order list's dispatch-target default. An explicit choice still wins.
-    if (key === "datefield" && dept) return get(key) ?? "dept_target";
+    // order list's dispatch-target default — unless it has no target date at
+    // all (Billing, Accounts), when the order's own date is the useful one.
+    // An explicit choice still wins.
+    if (key === "datefield" && dept) {
+      return get(key) ?? (DEPT_VIEWS[dept].hasTarget ? "dept_target" : "so_date");
+    }
     return get(key);
   });
 }

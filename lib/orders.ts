@@ -127,6 +127,7 @@ export type NewOrderInput = {
   packing_requirement?: string;
   delivery_date_as_per_so?: string;
   payment_terms?: string;
+  paid_after_receipt?: string;
   ld?: string;
   ld_date?: string;
   order_value?: string;
@@ -217,7 +218,8 @@ export async function createOrder(
           sl_no,
           so_no, so_date, client_code, client_type, client_name, reps,
           market_type, zone, industry_type, quotation_no, po_no, customer_po_date,
-          order_value, order_currency, qc_required, payment_terms, ld, ld_date,
+          order_value, order_currency, qc_required, payment_terms, paid_after_receipt,
+        ld, ld_date,
           freight_terms, packing_requirement, delivery_date_as_per_so,
           order_type, bill_type, boi,
           total_quantity, drg_target_date, dispatch_target_date,
@@ -227,7 +229,7 @@ export async function createOrder(
           -- The next free number, under the lock above.
           (SELECT COALESCE(max(sl_no), 0) + 1 FROM orders),
           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
-          $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
+          $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33
        )
        RETURNING id, sl_no::int AS sl_no`,
       [
@@ -247,6 +249,7 @@ export async function createOrder(
         nullify(input.order_currency),
         nullify(input.qc_required),
         nullify(input.payment_terms),
+      nullify(input.paid_after_receipt),
         nullify(input.ld),
         nullify(input.ld_date),
         nullify(input.freight_terms),
@@ -1192,6 +1195,9 @@ export type OrderOverviewRow = {
   // the date it is being judged against. All live on the SO — one target
   // applies across every EC of the order.
   payment_terms: string | null;
+  // Yes when the client pays only on receipt: no PI, and nothing for Accounts
+  // to confirm until the money arrives. See lib/dept-view.
+  paid_after_receipt: string | null;
   drg_target_date: string | null;
   purchase_target_date: string | null;
   qc_doc_target_date: string | null;
@@ -1270,6 +1276,7 @@ const overviewColumns = () => `it.id,
             (ad.actual_packing_date IS NOT NULL) AS assembly_done,
             ${DISPATCH_STATUS} AS dispatch_status,
             o.payment_terms,
+            o.paid_after_receipt,
             to_char(o.drg_target_date, 'YYYY-MM-DD') AS drg_target_date,
             to_char(o.purchase_target_date, 'YYYY-MM-DD') AS purchase_target_date,
             to_char(o.qc_doc_target_date, 'YYYY-MM-DD') AS qc_doc_target_date,
@@ -1738,6 +1745,9 @@ const PLANNING_ANY = `EXISTS (SELECT 1 FROM order_planning pl
 
 const NO_BOI = `COALESCE(o.boi, '') <> 'Yes'`;
 const NO_QC = `COALESCE(o.qc_required, '') = 'No'`;
+// Paid only on receipt: no PI is due and Accounts has nothing to confirm,
+// so both departments read N/A on these orders.
+const PAID_AFTER_RECEIPT = `(lower(coalesce(o.paid_after_receipt, '')) = 'yes')`;
 const IS_CHALLAN = `COALESCE(o.bill_type, '') = 'Challan'`;
 const BILL_RAISED = BILLING_RAISED;
 const PAYMENT_SET = `EXISTS (SELECT 1 FROM order_accounts a
@@ -1775,14 +1785,21 @@ function ecState(dept: DeptFilterKey, status: string): string {
 /** The state of the SO itself for an SO-scope department. */
 function soState(dept: DeptFilterKey, status: string): string {
   if (dept === "billing") {
-    if (status === "PI raised") return `${BILL_RAISED} AND NOT (${IS_CHALLAN})`;
-    if (status === "Challan filed") return `${BILL_RAISED} AND ${IS_CHALLAN}`;
-    return `NOT ${BILL_RAISED}`;
+    if (status === NOT_APPLICABLE) return PAID_AFTER_RECEIPT;
+    if (status === "PI raised") {
+      return `${BILL_RAISED} AND NOT (${IS_CHALLAN}) AND NOT ${PAID_AFTER_RECEIPT}`;
+    }
+    if (status === "Challan filed") {
+      return `${BILL_RAISED} AND ${IS_CHALLAN} AND NOT ${PAID_AFTER_RECEIPT}`;
+    }
+    return `NOT ${BILL_RAISED} AND NOT ${PAID_AFTER_RECEIPT}`;
   }
   if (dept === "accounts") {
-    if (status === NOT_APPLICABLE) return IS_CHALLAN;
-    if (status === PENDING) return `NOT (${IS_CHALLAN}) AND NOT ${PAYMENT_SET}`;
-    return `NOT (${IS_CHALLAN})
+    if (status === NOT_APPLICABLE) return `(${IS_CHALLAN} OR ${PAID_AFTER_RECEIPT})`;
+    if (status === PENDING) {
+      return `NOT (${IS_CHALLAN}) AND NOT ${PAID_AFTER_RECEIPT} AND NOT ${PAYMENT_SET}`;
+    }
+    return `NOT (${IS_CHALLAN}) AND NOT ${PAID_AFTER_RECEIPT}
             AND EXISTS (SELECT 1 FROM order_accounts a
                          WHERE a.order_id = o.id
                            AND a.payment_status = ${lit(status)})`;
@@ -2234,6 +2251,7 @@ export async function getOrderDeptStatus(
   const so = await query<{
     dispatch_status: string | null;
     bill_type: string | null;
+    paid_after_receipt: string | null;
     has_pi: boolean;
     payment_status: string | null;
     drg_target_date: string | null;
@@ -2243,7 +2261,7 @@ export async function getOrderDeptStatus(
     dispatch_target_date: string | null;
     dispatch_target_revised_date: string | null;
   }>(
-    `SELECT ${DISPATCH_STATUS} AS dispatch_status, o.bill_type,
+    `SELECT ${DISPATCH_STATUS} AS dispatch_status, o.bill_type, o.paid_after_receipt,
             ${BILLING_RAISED} AS has_pi,
             a.payment_status,
             to_char(o.drg_target_date, 'YYYY-MM-DD') AS drg_target_date,
@@ -2328,10 +2346,19 @@ export async function getOrderDeptStatus(
   }));
 
   const isChallan = String(head.bill_type ?? "") === "Challan";
+
+  const paidAfterReceipt =
+    (head.paid_after_receipt ?? "").trim().toLowerCase() === "yes";
   return {
-    billing: head.has_pi ? done(isChallan ? "Challan filed" : "PI raised") : pending(),
+    // Paid after receipt: no PI is due, so Billing reads N/A rather than
+    // pending forever. Its dispatch invoice is a separate matter.
+    billing: paidAfterReceipt
+      ? NA
+      : head.has_pi
+        ? done(isChallan ? "Challan filed" : "PI raised")
+        : pending(),
     // Accounts is skipped for Challan orders (no A/R), matching the workspace.
-    accounts: isChallan
+    accounts: isChallan || paidAfterReceipt
       ? NA
       : head.payment_status
         ? done(head.payment_status)

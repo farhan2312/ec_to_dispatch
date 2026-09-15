@@ -28,8 +28,18 @@ export type DeptView = {
   status: (row: OrderOverviewRow) => string;
   /** Finished, in the sense the department would recognise. */
   done: (row: OrderOverviewRow) => boolean;
-  /** The department has nothing to do on this order. */
+  /**
+   * The department has nothing to record on this order, so its status reads
+   * N/A and it is not counted as outstanding.
+   */
   na: (row: OrderOverviewRow) => boolean;
+  /**
+   * The order is none of this department's business at all: off its queue,
+   * its dashboard, and its URLs. Stronger than `na` — an order can be N/A
+   * and still belong to the department, the way a paid-after-receipt order
+   * still gets its dispatch invoice from Billing & Operations.
+   */
+  hidden: (row: OrderOverviewRow) => boolean;
   /** The date it is judged against, if it has one. */
   target: (row: OrderOverviewRow) => string | null;
   /**
@@ -52,6 +62,15 @@ export function dispatchTarget(row: OrderOverviewRow): string | null {
 
 const never = () => false;
 
+/**
+ * Paid only once the client has the material: no PI to raise and no receipt
+ * to chase. Central Visibility answers this outright beside the terms —
+ * payment terms themselves are prose, and a workflow rule cannot rest on
+ * whether someone typed "100% after receipt" or "100 % post recd".
+ */
+const paidAfterReceipt = (r: OrderOverviewRow) =>
+  same((r as { paid_after_receipt?: string | null }).paid_after_receipt, "yes");
+
 export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
   drawing: {
     key: "drawing",
@@ -69,6 +88,7 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
             : PENDING,
     done: (r) => same(r.drg_status, "drg approved"),
     na: never,
+    hidden: never,
     target: (r) => r.drg_target_date,
     hasTarget: true,
   },
@@ -85,7 +105,9 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
           ? "Received"
           : PENDING,
     done: (r) => same(r.boi, "yes") && r.purchase_done,
+    // Nothing bought out on this order, so Purchase never acts on it.
     na: (r) => !same(r.boi, "yes"),
+    hidden: (r) => !same(r.boi, "yes"),
     target: (r) => r.purchase_target_date,
     hasTarget: true,
   },
@@ -101,6 +123,7 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
           : PENDING,
     done: (r) => !same(r.qc_required, "no") && r.qc_submitted,
     na: (r) => same(r.qc_required, "no"),
+    hidden: (r) => same(r.qc_required, "no"),
     target: (r) => r.qc_doc_target_date,
     hasTarget: true,
   },
@@ -114,6 +137,7 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     // the values Planning can file, so the old check never matched.)
     done: (r) => !!text(r.planning_status),
     na: never,
+    hidden: never,
     // Planning has no target of its own; it schedules to the dispatch date.
     target: dispatchTarget,
     hasTarget: true,
@@ -125,6 +149,7 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     status: (r) => (r.assembly_done ? "Packed" : PENDING),
     done: (r) => r.assembly_done,
     na: never,
+    hidden: never,
     target: (r) => r.dispatch_team_target_date,
     hasTarget: true,
   },
@@ -139,7 +164,10 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
           ? "Challan filed"
           : "PI raised",
     done: (r) => r.has_pi,
-    na: never,
+    // No PI on a paid-after-receipt order — but the dispatch invoice is
+    // still Billing's, so the order stays on their screens.
+    na: paidAfterReceipt,
+    hidden: never,
     target: () => null,
     hasTarget: false,
   },
@@ -156,7 +184,10 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
       !same(r.bill_type, "challan") &&
       (same(r.payment_status, "payment rcvd") ||
         same(r.payment_status, "after receipt")),
-    na: (r) => same(r.bill_type, "challan"),
+    // A Challan order carries no receivable; a paid-after-receipt one has
+    // nothing to confirm until the money simply arrives.
+    na: (r) => same(r.bill_type, "challan") || paidAfterReceipt(r),
+    hidden: (r) => same(r.bill_type, "challan"),
     target: () => null,
     hasTarget: false,
   },
@@ -167,6 +198,7 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     status: (r) => text(r.dispatch_status) || PENDING,
     done: (r) => same(r.dispatch_status, "fully dispatch"),
     na: never,
+    hidden: never,
     target: dispatchTarget,
     hasTarget: true,
   },
@@ -191,9 +223,9 @@ export function deptViewForRole(role: string): DeptView | null {
 export { isPerEcDept };
 
 /**
- * The same "not involved" rule as each view's `na`, written as SQL over an
- * `orders` alias — so the queues and dashboards filter in the database on
- * exactly the grounds the UI would grey a row out on.
+ * The same rule as each view's `hidden`, written as SQL over an `orders`
+ * alias — so the queues and dashboards drop in the database exactly the orders
+ * the department has no business seeing.
  *
  * A department that has nothing to do with an order does not see the order:
  * Purchase only works orders with BOI, Quality only those needing QC docs,
@@ -224,7 +256,7 @@ export function roleSeesOrder(
 ): boolean {
   const view = deptViewForRole(role);
   if (!view) return true;
-  return !view.na({
+  return !view.hidden({
     boi: order.boi == null ? null : String(order.boi),
     qc_required: order.qc_required == null ? null : String(order.qc_required),
     bill_type: order.bill_type == null ? null : String(order.bill_type),

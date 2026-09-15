@@ -533,6 +533,9 @@ export function CentralDashboard({
     dispatch_done: boolean;
     // Sign-offs for the three SO-scope departments, shown on the SO line.
     signed: Record<"billing" | "accounts" | "dispatch", DeptCompletion | null>;
+    // No PI is due on a paid-after-receipt order, so Billing has nothing
+    // outstanding on it either.
+    billing_na: boolean;
     // Every EC finished and the three SO-level departments too — the green
     // line. Filled once the card's ECs are all in (see below).
     complete?: boolean;
@@ -567,6 +570,7 @@ export function CentralDashboard({
             accounts: completionOf(r, "accounts"),
             dispatch: completionOf(r, "dispatch"),
           },
+          billing_na: DEPT_VIEWS.billing.na(r),
           accounts_na: DEPT_VIEWS.accounts.na(r),
           order_value: r.order_value,
           ecs: r.id !== null ? [r] : [],
@@ -580,7 +584,7 @@ export function CentralDashboard({
         card.ecs.length > 0 &&
         card.ecs.every(ecSettled) &&
         allDeptsSettled([
-          { done: card.has_pi, na: false },
+          { done: card.has_pi, na: card.billing_na },
           { done: done.accounts(card.ecs[0]), na: card.accounts_na },
           { done: card.dispatch_done, na: false },
         ]);
@@ -816,10 +820,15 @@ export function CentralDashboard({
                       <td className="px-4 py-3">{card.client_name ?? "—"}</td>
                       <td className="px-3 py-3 align-top">
                         <Chip
-                          value={card.has_pi ? "PI done" : null}
-                          tone={card.has_pi ? "green" : "neutral"}
+                          value={
+                            card.billing_na ? "N/A" : card.has_pi ? "PI done" : null
+                          }
+                          tone={card.has_pi && !card.billing_na ? "green" : "neutral"}
                         />
-                        <Signed completion={card.signed.billing} />
+                        <Signed
+                          completion={card.signed.billing}
+                          applicable={!card.billing_na}
+                        />
                       </td>
                       <td className="px-3 py-3 align-top">
                         <Chip

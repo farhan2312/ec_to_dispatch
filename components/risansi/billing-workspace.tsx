@@ -301,7 +301,7 @@ export function BillingWorkspace({
                             <OrderChildList
                               orderId={row.id}
                               table="order_invoices"
-                              title="Dispatch"
+                              title="Invoices & despatches"
                               fields={INVOICE_FIELDS}
                               rows={(row.invoices ?? []) as Row[]}
                               canEdit={canEdit}

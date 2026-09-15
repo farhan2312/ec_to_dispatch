@@ -171,7 +171,7 @@ export function OrderDetail({
                 <OrderChildList
                   orderId={orderId}
                   table="order_invoices"
-                  title={section.title}
+                  title="Invoices & despatches"
                   fields={INVOICE_FIELDS}
                   rows={(detail.order_invoices ?? []) as Row[]}
                   canEdit={canEditChild(role, "order_invoices")}

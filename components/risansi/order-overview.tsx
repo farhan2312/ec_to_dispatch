@@ -263,6 +263,17 @@ export function OrderOverview({
 
   const seesValue = canAccessDepartment(role, "orders");
   const seesMoney = canAccessDepartment(role, "order_accounts");
+  // Paid only on receipt: the two departments that chase money have nothing
+  // to record, so say so where their panels would otherwise look unfilled.
+  const paidAfterReceipt = str(order.paid_after_receipt).trim().toLowerCase() === "yes";
+  const notRequired: Partial<Record<string, string>> = paidAfterReceipt
+    ? {
+        order_billing: "No PI on this order — it is paid after receipt.",
+        order_accounts:
+          "Nothing to confirm until the payment arrives — this order is paid after receipt.",
+      }
+    : {};
+
   const received = Number(str(detail.order_accounts?.amount_received) || "0");
   const value = Number(str(order.order_value) || "0");
   const balance =
@@ -567,8 +578,10 @@ export function OrderOverview({
               ? order
               : ((detail as unknown as Record<string, unknown>)[section.table] ??
                   null) as Row | null;
+          const note = notRequired[section.table];
           return (
             <Panel key={section.key} title={section.title}>
+              {note && <p className="mb-3 text-sm text-muted">{note}</p>}
               {section.fields.length > 0 && (
                 <FieldGrid fields={section.fields} row={row} extra={order} />
               )}

@@ -172,10 +172,15 @@ function completionFor(
  */
 export function Completion({
   completion,
+  applicable = true,
 }: {
   completion: DeptCompletion | null;
+  // A department with nothing to do on this order shows neither line: there is
+  // nothing for it to have completed.
+  applicable?: boolean;
 }) {
   if (!completion) {
+    if (!applicable) return null;
     return (
       <span className="mt-1 block text-[10px] text-muted-foreground">Not completed</span>
     );
@@ -239,7 +244,10 @@ export function DeptStatusBoard({
                   </span>
                   <Badge cell={d.cell} />
                 </div>
-                <Completion completion={completionFor(completions, d.dept, null)} />
+                <Completion
+                  completion={completionFor(completions, d.dept, null)}
+                  applicable={d.cell.state !== "na"}
+                />
               </div>
             );
           })}
@@ -313,7 +321,10 @@ export function DeptStatusBoard({
                     {EC_DEPTS.map((d) => (
                       <td key={d.key} className="px-3 py-2.5">
                         <Badge cell={ec[d.key] as DeptCell} />
-                        <Completion completion={completionFor(completions, d.key, ec.id)} />
+                        <Completion
+                          completion={completionFor(completions, d.key, ec.id)}
+                          applicable={(ec[d.key] as DeptCell).state !== "na"}
+                        />
                       </td>
                     ))}
                   </tr>

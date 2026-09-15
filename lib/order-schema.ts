@@ -253,6 +253,18 @@ export const ORDER_SECTIONS: OrderSection[] = [
       },
       // Payment Terms is free text (varies per order).
       { column: "payment_terms", label: "Payment Terms", type: "text", group: "Terms & Conditions" },
+      // The one thing about the terms the workflow needs to act on, as its own
+      // answer rather than something read out of the prose above: paid only
+      // after the client has the material means no PI to raise and no receipt
+      // to chase, so Billing & Operations and Accounts have nothing to record.
+      // The dispatch invoice is unaffected — the goods still ship on one.
+      {
+        column: "paid_after_receipt",
+        label: "Paid after Receipt (no PI / no payment tracking)",
+        type: "select",
+        options: YES_NO,
+        group: "Terms & Conditions",
+      },
       { column: "ld", label: "LD", type: "select", options: YES_NO, group: "Terms & Conditions" },
       {
         column: "ld_date",
@@ -980,6 +992,12 @@ export const SO_CONTEXT_FIELDS: OrderField[] = [
 export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
   ...SO_CONTEXT_FIELDS,
   { column: "payment_terms", label: "Payment Terms", type: "text" },
+  {
+    column: "paid_after_receipt",
+    label: "Paid after Receipt",
+    type: "select",
+    options: YES_NO,
+  },
 ];
 
 // Billing's read-only SO context: Payment Terms / Bill Type / Freight /
@@ -988,6 +1006,12 @@ export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
 export const BILLING_CONTEXT_FIELDS: OrderField[] = [
   ...SO_CONTEXT_FIELDS,
   { column: "payment_terms", label: "Payment Terms", type: "text" },
+  {
+    column: "paid_after_receipt",
+    label: "Paid after Receipt",
+    type: "select",
+    options: YES_NO,
+  },
   {
     column: "bill_type",
     label: "Bill Type",

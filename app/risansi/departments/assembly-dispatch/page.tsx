@@ -6,8 +6,10 @@ import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
 import { listItemsForSectionPage,
   resolveFocusOrderId,
   listDeptCompletions,
+  listOrderListOptions,
 } from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
+import { parseDeptFilter } from "@/lib/order-list-filter";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import { DISPATCH_CONTEXT_FIELDS, SECTION_BY_TABLE } from "@/lib/order-schema";
 import { unreadByOrder } from "@/lib/order-messages";
@@ -25,16 +27,20 @@ const TABLE = "order_assembly_dispatch" as const;
 export default async function AssemblyDispatchWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string; thread?: string; page?: string; q?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit, thread, page, q } = await searchParams;
+  const params = await searchParams;
+  const { edit, thread, page, q } = params;
+  // This department's own filter bar, with the department pinned.
+  const filter = parseDeptFilter((key) => params[key], "assembly");
   // A notification links to an EC (item id) or an SO; either way the queue
   // must open on the page that holds it.
   const focusOrderId = await resolveFocusOrderId(thread ?? edit);
+  const filterOptions = await listOrderListOptions();
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const [queue, reminders] = await Promise.all([
     listItemsForSectionPage(
@@ -47,7 +53,7 @@ export default async function AssemblyDispatchWorkspacePage({
         from: f.from ?? ("orders" as const),
       }))
     ,
-      { page: parsePage(page), search: parseQuery(q), focusOrderId }
+      { page: parsePage(page), search: parseQuery(q), focusOrderId, filter }
     ),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);
@@ -93,6 +99,7 @@ export default async function AssemblyDispatchWorkspacePage({
         table={TABLE}
         fields={section.fields}
         queue={queue}
+        filterOptions={filterOptions}
         readonlyFields={DISPATCH_CONTEXT_FIELDS}
         canEditCentral={isCentral(user.role)}
         openOrderId={edit}

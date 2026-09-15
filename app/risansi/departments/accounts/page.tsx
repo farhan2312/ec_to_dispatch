@@ -6,8 +6,10 @@ import { canEditSection } from "@/lib/roles";
 import { listOrdersForSectionPage,
   resolveFocusOrderId,
   listDeptCompletions,
+  listOrderListOptions,
 } from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
+import { parseDeptFilter } from "@/lib/order-list-filter";
 import {
   PAYMENT_TERMS_CONTEXT_FIELDS,
   SECTION_BY_TABLE,
@@ -26,22 +28,26 @@ const TABLE = "order_accounts" as const;
 export default async function AccountsWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string; thread?: string; page?: string; q?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit, thread, page, q } = await searchParams;
+  const params = await searchParams;
+  const { edit, thread, page, q } = params;
+  // This department's own filter bar, with the department pinned.
+  const filter = parseDeptFilter((key) => params[key], "accounts");
   // A notification links to an EC (item id) or an SO; either way the queue
   // must open on the page that holds it.
   const focusOrderId = await resolveFocusOrderId(thread ?? edit);
+  const filterOptions = await listOrderListOptions();
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const queue = await listOrdersForSectionPage(
     TABLE,
     PAYMENT_TERMS_CONTEXT_FIELDS.map((f) => ({ column: f.column, type: f.type }))
   ,
-      { page: parsePage(page), search: parseQuery(q), focusOrderId }
+      { page: parsePage(page), search: parseQuery(q), focusOrderId, filter }
     );
 
   // Unread discussion messages per SO, for the row badge. Rows are ECs in
@@ -85,6 +91,7 @@ export default async function AccountsWorkspacePage({
         table={TABLE}
         fields={section.fields}
         queue={queue}
+        filterOptions={filterOptions}
         readonlyFields={PAYMENT_TERMS_CONTEXT_FIELDS}
         openOrderId={edit}
       />

@@ -8,6 +8,9 @@ import { isCentral } from "@/lib/roles";
 import { OrderChildList } from "./order-children";
 import { EcDrawingDocsButton } from "./drawing-docs";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
+import { OrderListFilterBar } from "./order-list-filter-bar";
+import type { OrderListOptions } from "@/lib/orders";
+import { DEPT_VIEWS } from "@/lib/dept-view";
 import { useFocusRow } from "./use-focus-row";
 import type { PageResult } from "@/lib/pagination";
 import { OrderThreadModal } from "./order-thread-modal";
@@ -40,6 +43,7 @@ export function PurchaseWorkspace({
   role,
   unreadThreads = {},
   completions = [],
+  filterOptions,
   drawingDocCounts = {},
 }: {
   // One server-fetched page of SOs, with every EC of those SOs.
@@ -56,6 +60,8 @@ export function PurchaseWorkspace({
   unreadThreads?: Record<string, number>;
   // Purchase's sign-offs for the SOs on this page.
   completions?: DeptCompletion[];
+  // Facet values for the filter bar; omitted, the plain search box stays.
+  filterOptions?: OrderListOptions;
   // Drawing documents shared with Purchase, per EC id.
   drawingDocCounts?: Record<string, number>;
 }) {
@@ -123,7 +129,19 @@ export function PurchaseWorkspace({
   return (
     <div>
       <div className="mb-3">
-        <UrlSearchInput placeholder="Search SO, EC…" />
+        {/* The same filter bar the orders list carries, with this
+            department pinned: its own statuses, its own target. */}
+        {filterOptions && "purchase" ? (
+          <OrderListFilterBar
+            options={filterOptions}
+            total={queue.total}
+            dept={"purchase"}
+            hasTarget={DEPT_VIEWS["purchase"].hasTarget}
+            searchPlaceholder={"Search SO, EC…"}
+          />
+        ) : (
+          <UrlSearchInput placeholder={"Search SO, EC…"} />
+        )}
       </div>
 
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">

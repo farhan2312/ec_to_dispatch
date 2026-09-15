@@ -11,6 +11,9 @@ import { OrderDetailsModal } from "./order-details-modal";
 import { InvoiceLrCell } from "./invoice-lr-cell";
 import { invoiceRowHeader } from "./order-detail";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
+import { OrderListFilterBar } from "./order-list-filter-bar";
+import type { OrderListOptions } from "@/lib/orders";
+import { DEPT_VIEWS } from "@/lib/dept-view";
 import { useFocusRow } from "./use-focus-row";
 import type { PageResult } from "@/lib/pagination";
 import { OrderThreadModal } from "./order-thread-modal";
@@ -50,6 +53,7 @@ export function BillingWorkspace({
   role,
   unreadThreads = {},
   completions = [],
+  filterOptions,
 }: {
   // One server-fetched page; search and paging ran in SQL.
   queue: PageResult<BillingQueueRow>;
@@ -57,6 +61,8 @@ export function BillingWorkspace({
   // Billing's sign-offs for the SOs on this page. Billing is SO-scope, so a
   // single tick covers the order rather than one of its ECs.
   completions?: DeptCompletion[];
+  // Facet values for the filter bar; omitted, the plain search box stays.
+  filterOptions?: OrderListOptions;
   openOrderId?: string;
   // Deep-link from the discussion icon: open this SO's thread on load.
   openThreadId?: string;
@@ -117,7 +123,19 @@ export function BillingWorkspace({
   return (
     <div>
       <div className="mb-3">
-        <UrlSearchInput placeholder="Search SO, client…" />
+        {/* The same filter bar the orders list carries, with this
+            department pinned: its own statuses, its own target. */}
+        {filterOptions && "billing" ? (
+          <OrderListFilterBar
+            options={filterOptions}
+            total={queue.total}
+            dept={"billing"}
+            hasTarget={DEPT_VIEWS["billing"].hasTarget}
+            searchPlaceholder={"Search SO, client…"}
+          />
+        ) : (
+          <UrlSearchInput placeholder={"Search SO, client…"} />
+        )}
       </div>
 
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">

@@ -1836,6 +1836,54 @@ function soState(dept: DeptFilterKey, status: string): string {
     : `o.dispatch_status = ${lit(status)}`;
 }
 
+/** The target column a department is judged against, if it has one. */
+const DEPT_TARGET_COLUMN: Partial<Record<DeptFilterKey, string>> = {
+  drawing: "o.drg_target_date",
+  purchase: "o.purchase_target_date",
+  quality: "o.qc_doc_target_date",
+  assembly: "o.dispatch_team_target_date",
+  // Planning schedules to the dispatch date; a revision supersedes it.
+  planning: "COALESCE(o.dispatch_target_revised_date, o.dispatch_target_date)",
+  dispatch: "COALESCE(o.dispatch_target_revised_date, o.dispatch_target_date)",
+};
+
+/**
+ * Finished, in the sense the department itself would recognise — the SQL twin
+ * of DEPT_VIEWS[dept].done, per EC (`it`) for the per-EC departments. An EC
+ * the department has nothing to do with counts as finished: it is not work
+ * anyone is waiting on.
+ */
+function ecDonePredicate(dept: DeptFilterKey): string {
+  switch (dept) {
+    case "drawing":
+      return DRG_APPROVED;
+    case "purchase":
+      return `((${NO_BOI}) OR (${BOI_RECEIVED}))`;
+    case "quality":
+      return `((${NO_QC}) OR ${QC_SUBMITTED})`;
+    case "planning":
+      return PLANNING_ANY;
+    default:
+      return PACKED;
+  }
+}
+
+/**
+ * Past its target with work still outstanding. "Outstanding" is the
+ * department's own idea of unfinished — not merely "nothing recorded yet", or
+ * a drawing issued but not approved would read as on time while the
+ * escalation list chased it.
+ */
+function deptOverduePredicate(dept: DeptFilterKey): string {
+  const column = DEPT_TARGET_COLUMN[dept];
+  if (!column) return "FALSE";
+  const outstanding = isPerEcDept(dept)
+    ? `EXISTS (SELECT 1 FROM order_items it
+                WHERE it.order_id = o.id AND NOT (${ecDonePredicate(dept)}))`
+    : `COALESCE(o.dispatch_status, '') <> 'Fully Dispatch'`;
+  return `(${column} < ${TODAY_IST} AND ${outstanding})`;
+}
+
 function deptStatusPredicate(dept: DeptFilterKey, status: string): string {
   if (!isPerEcDept(dept)) return `(${soState(dept, status)})`;
   return `EXISTS (SELECT 1 FROM order_items it
@@ -1871,11 +1919,19 @@ function signOffPredicate(dept: DeptFilterKey, signOff: SignOff): string {
  * from $1. Values go in as parameters; the only inlined text is department
  * keys and statuses, which come from fixed lists and pass through lit().
  */
-function orderListWhere(f: OrderListFilter): { where: string; params: unknown[] } {
+/**
+ * The filter as clauses over an `orders o` alias, with parameters numbered
+ * from `startAt` — so a queue that already has parameters of its own can AND
+ * this in rather than growing a second dialect of the same filter.
+ */
+function orderListClauses(
+  f: OrderListFilter,
+  startAt = 0
+): { clauses: string[]; params: unknown[] } {
   const params: unknown[] = [];
   const p = (value: unknown) => {
     params.push(value);
-    return `$${params.length}`;
+    return `$${startAt + params.length}`;
   };
   const clauses: string[] = [];
   // Facets match the trimmed value, the same way their options are listed.
@@ -1897,6 +1953,7 @@ function orderListWhere(f: OrderListFilter): { where: string; params: unknown[] 
   }
   if (f.dept && f.deptStatus) clauses.push(deptStatusPredicate(f.dept, f.deptStatus));
   if (f.dept && f.signOff) clauses.push(signOffPredicate(f.dept, f.signOff));
+  if (f.dept && f.overdue) clauses.push(deptOverduePredicate(f.dept));
 
   if (f.from || f.to) {
     const range = (column: string) =>
@@ -1921,6 +1978,12 @@ function orderListWhere(f: OrderListFilter): { where: string; params: unknown[] 
     }
   }
 
+  return { clauses, params };
+}
+
+/** The filter as a WHERE clause of its own, for the queries it owns. */
+function orderListWhere(f: OrderListFilter): { where: string; params: unknown[] } {
+  const { clauses, params } = orderListClauses(f);
   return {
     where: clauses.length ? `WHERE ${clauses.join("\n        AND ")}` : "",
     params,
@@ -2087,22 +2150,37 @@ async function pageOfOrderIds(opts: {
   search: string;
   /** Extra SQL restricting which SOs belong in this queue. */
   restrict: string;
-  /** Extra SQL matching the search against the SO and its ECs. */
-  searchable: string;
+  /**
+   * Extra SQL matching the search against the SO and its ECs, given the
+   * placeholder the term ended up on — the filter's parameters are numbered
+   * first, so it is not always $1.
+   */
+  searchable: (term: string) => string;
   /**
    * Deep link target (from a notification). When this SO is in the queue,
    * the page holding it wins over the requested page — otherwise following
    * a notification for an SO on page 3 would silently land on page 1.
    */
   focusOrderId?: string | null;
+  /**
+   * The department's own filter bar. Its clauses are numbered first so this
+   * queue's own parameters can follow them, and its `search` is skipped —
+   * the queue already has the same term, matched against its own columns.
+   */
+  filter?: OrderListFilter;
 }): Promise<{ ids: string[]; total: number; page: number }> {
   const search = opts.search ? likePattern(opts.search) : null;
+  const facets = opts.filter
+    ? orderListClauses({ ...opts.filter, search: "" })
+    : { clauses: [], params: [] };
+  const own = (n: number) => `$${facets.params.length + n}`;
   const where = `WHERE ${opts.restrict}
-        AND ($1::text IS NULL OR ${opts.searchable})`;
+        ${facets.clauses.map((c) => `AND ${c}`).join("\n        ")}
+        AND (${own(1)}::text IS NULL OR ${opts.searchable(own(1))})`;
 
   const totals = await query<{ count: string }>(
     `SELECT count(*) AS count FROM orders o ${where}`,
-    [search]
+    [...facets.params, search]
   );
   const total = Number(totals.rows[0]?.count ?? 0);
 
@@ -2114,8 +2192,8 @@ async function pageOfOrderIds(opts: {
   if (opts.focusOrderId && UUID_RE.test(opts.focusOrderId)) {
     const rank = await query<{ n: string }>(
       `SELECT count(*) AS n FROM orders o ${where}
-         AND o.sl_no <= (SELECT sl_no FROM orders WHERE id = $2)`,
-      [search, opts.focusOrderId]
+         AND o.sl_no <= (SELECT sl_no FROM orders WHERE id = ${own(2)})`,
+      [...facets.params, search, opts.focusOrderId]
     );
     const n = Number(rank.rows[0]?.n ?? 0);
     if (n > 0) requested = Math.ceil(n / PAGE_SIZE);
@@ -2125,24 +2203,29 @@ async function pageOfOrderIds(opts: {
   const ids = await query<{ id: string }>(
     `SELECT o.id FROM orders o ${where}
       ORDER BY o.sl_no ASC
-      LIMIT $2 OFFSET $3`,
-    [search, PAGE_SIZE, offsetFor(page)]
+      LIMIT ${own(2)} OFFSET ${own(3)}`,
+    [...facets.params, search, PAGE_SIZE, offsetFor(page)]
   );
 
   return { ids: ids.rows.map((r) => r.id), total, page };
 }
 
 // Matches the SO's own identity columns or any of its ECs.
-const SO_AND_EC_SEARCH = `(o.so_no ILIKE $1 OR o.client_name ILIKE $1
-             OR o.sl_no::text ILIKE $1
+const soAndEcSearch = (term: string) => `(o.so_no ILIKE ${term} OR o.client_name ILIKE ${term}
+             OR o.sl_no::text ILIKE ${term}
              OR EXISTS (SELECT 1 FROM order_items s
-                         WHERE s.order_id = o.id AND s.ec_no ILIKE $1))`;
+                         WHERE s.order_id = o.id AND s.ec_no ILIKE ${term}))`;
 
 /** Item-scope department queue, one page of SOs' worth of ECs. */
 export async function listItemsForSectionPage(
   table: OrderTable,
   contextColumns: ContextColumn[],
-  opts: { page: number; search: string; focusOrderId?: string | null }
+  opts: {
+    page: number;
+    search: string;
+    focusOrderId?: string | null;
+    filter?: OrderListFilter;
+  }
 ): Promise<PageResult<Row>> {
   // A department does not see an order it has nothing to do with (QC when
   // the SO says QC is not needed). One rule, in lib/dept-view.
@@ -2154,7 +2237,8 @@ export async function listItemsForSectionPage(
     search: opts.search,
     focusOrderId: opts.focusOrderId ?? null,
     restrict: `${restrict} AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id)`,
-    searchable: SO_AND_EC_SEARCH,
+    searchable: soAndEcSearch,
+    filter: opts.filter,
   });
 
   const rows = ids.length === 0 ? [] : await listItemsForSection(table, contextColumns, ids);
@@ -2166,7 +2250,12 @@ export async function listItemsForSectionPage(
 export async function listOrdersForSectionPage(
   table: OrderTable,
   contextColumns: ContextColumn[],
-  opts: { page: number; search: string; focusOrderId?: string | null }
+  opts: {
+    page: number;
+    search: string;
+    focusOrderId?: string | null;
+    filter?: OrderListFilter;
+  }
 ): Promise<PageResult<Row>> {
   const { ids, total, page } = await pageOfOrderIds({
     page: opts.page,
@@ -2177,7 +2266,8 @@ export async function listOrdersForSectionPage(
     restrict: deptForTable(table)
       ? deptInvolvementSql(deptForTable(table)!)
       : "TRUE",
-    searchable: SO_AND_EC_SEARCH,
+    searchable: soAndEcSearch,
+    filter: opts.filter,
   });
 
   const rows = ids.length === 0 ? [] : await listOrdersForSection(table, contextColumns, ids);
@@ -2190,13 +2280,15 @@ export async function listItemsForPurchasePage(opts: {
   page: number;
   search: string;
   focusOrderId?: string | null;
+  filter?: OrderListFilter;
 }): Promise<PageResult<PurchaseQueueRow>> {
   const { ids, total, page } = await pageOfOrderIds({
     page: opts.page,
     search: opts.search,
     focusOrderId: opts.focusOrderId ?? null,
     restrict: `${deptInvolvementSql("purchase")} AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id)`,
-    searchable: SO_AND_EC_SEARCH,
+    searchable: soAndEcSearch,
+    filter: opts.filter,
   });
 
   const rows = ids.length === 0 ? [] : await listItemsForPurchase(ids);
@@ -2209,13 +2301,16 @@ export async function listOrdersForBillingPage(opts: {
   page: number;
   search: string;
   focusOrderId?: string | null;
+  filter?: OrderListFilter;
 }): Promise<PageResult<BillingQueueRow>> {
   const { ids, total, page } = await pageOfOrderIds({
     page: opts.page,
     search: opts.search,
     focusOrderId: opts.focusOrderId ?? null,
     restrict: `TRUE`,
-    searchable: `(o.so_no ILIKE $1 OR o.client_name ILIKE $1 OR o.sl_no::text ILIKE $1)`,
+    searchable: (term) =>
+      `(o.so_no ILIKE ${term} OR o.client_name ILIKE ${term} OR o.sl_no::text ILIKE ${term})`,
+    filter: opts.filter,
   });
 
   const rows = ids.length === 0 ? [] : await listOrdersForBilling(ids);

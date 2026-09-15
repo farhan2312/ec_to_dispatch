@@ -7,8 +7,10 @@ import {
   listOrdersForBillingPage,
   resolveFocusOrderId,
   listDeptCompletions,
+  listOrderListOptions,
 } from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
+import { parseDeptFilter } from "@/lib/order-list-filter";
 import { unreadByOrder } from "@/lib/order-messages";
 import { BillingWorkspace } from "@/components/risansi/billing-workspace";
 
@@ -23,19 +25,24 @@ const TABLE = "order_billing" as const;
 export default async function BillingWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string; thread?: string; page?: string; q?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit, thread, page, q } = await searchParams;
+  const params = await searchParams;
+  const { edit, thread, page, q } = params;
+  // This department's own filter bar, with the department pinned.
+  const filter = parseDeptFilter((key) => params[key], "billing");
   // A notification links to an SO; open the page that holds it.
   const focusOrderId = await resolveFocusOrderId(thread ?? edit);
+  const filterOptions = await listOrderListOptions();
   const queue = await listOrdersForBillingPage({
     page: parsePage(page),
     search: parseQuery(q),
     focusOrderId,
+    filter,
   });
 
   // Unread discussion messages per SO, for the row badge.
@@ -75,6 +82,7 @@ export default async function BillingWorkspacePage({
         role={user.role}
         unreadThreads={unreadThreads}
         queue={queue}
+        filterOptions={filterOptions}
         canEdit={canEditChild(user.role, "order_billing_docs")}
         openOrderId={edit}
       />

@@ -12,6 +12,7 @@ import {
   type DeptKey,
 } from "@/lib/dept-completion";
 import { deptInvolvementSql } from "@/lib/dept-view";
+import type { LockFacts } from "@/lib/order-lock";
 import {
   isPerEcDept,
   NOT_APPLICABLE,
@@ -903,6 +904,28 @@ export async function upsertInvoiceFromPackingSlip(
   return row;
 }
 
+/**
+ * The order columns the section locks are judged on (lib/order-lock). Takes
+ * an SO id, or a child row whose parent it resolves first, so an action can
+ * check before it writes.
+ */
+export async function lockFactsForOrder(orderId: string): Promise<LockFacts | null> {
+  if (!UUID_RE.test(orderId)) return null;
+  const result = await query<LockFacts>(
+    `SELECT paid_after_receipt, bill_type FROM orders WHERE id = $1`,
+    [orderId]
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function lockFactsForChild(
+  table: ChildTable,
+  childId: string
+): Promise<LockFacts | null> {
+  const orderId = await getChildOrderId(table, childId);
+  return orderId ? lockFactsForOrder(orderId) : null;
+}
+
 /** Look up an SO's display label (so_no, falling back to #sl_no). */
 export async function getOrderLabel(orderId: string): Promise<string | null> {
   if (!UUID_RE.test(orderId)) return null;
@@ -1533,6 +1556,8 @@ export type BillingQueueRow = {
   client_name: string | null;
   bill_type: string | null;
   payment_terms: string | null;
+  // Closes the PI list on this order (lib/order-lock).
+  paid_after_receipt: string | null;
   freight_terms: string | null;
   packing_requirement: string | null;
   order_value: string | null;
@@ -1563,6 +1588,7 @@ export async function listOrdersForBilling(
             o.client_name,
             o.bill_type,
             o.payment_terms,
+            o.paid_after_receipt,
             o.freight_terms,
             o.packing_requirement,
             o.order_value::text AS order_value,

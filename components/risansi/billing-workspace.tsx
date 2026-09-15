@@ -5,6 +5,7 @@ import { ChevronDown, ClipboardList, MessageSquare, Plus } from "lucide-react";
 import type { BillingQueueRow } from "@/lib/orders";
 import { BILLING_DOC_FIELDS, INVOICE_FIELDS } from "@/lib/order-schema";
 import { OrderChildList } from "./order-children";
+import { lockReason } from "@/lib/order-lock";
 import { PiExcelUpload } from "./pi-excel-upload";
 import { OrderDetailsModal } from "./order-details-modal";
 import { InvoiceLrCell } from "./invoice-lr-cell";
@@ -148,6 +149,7 @@ export function BillingWorkspace({
               )}
               {pageRows.map((row) => {
                 const isChallan = row.bill_type === "Challan";
+                const piLock = lockReason("order_billing_docs", row);
                 const isOpen = expanded.has(row.id);
                 return (
                   <Fragment key={row.id}>
@@ -228,7 +230,15 @@ export function BillingWorkspace({
                                 challan fields live inside each Billing &
                                 Dispatch card. Tax Invoice orders keep the
                                 PI list. */}
-                            {!isChallan && (
+                            {!isChallan && piLock && (
+                              <section className="rounded-xl border border-card-border bg-surface p-4 shadow-sm">
+                                <h3 className="text-sm font-semibold text-foreground">
+                                  Operation
+                                </h3>
+                                <p className="mt-1 text-sm text-muted">{piLock}</p>
+                              </section>
+                            )}
+                            {!isChallan && !piLock && (
                               <OrderChildList
                                 orderId={row.id}
                                 table="order_billing_docs"

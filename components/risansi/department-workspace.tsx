@@ -26,6 +26,7 @@ import {
 import { OrderChildList } from "./order-children";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { useFocusRow } from "./use-focus-row";
+import { lockReason } from "@/lib/order-lock";
 import type { PageResult } from "@/lib/pagination";
 import { QcDocumentsModal } from "./qc-documents-modal";
 import { OrderDetailsModal } from "./order-details-modal";
@@ -493,6 +494,11 @@ export function DepartmentWorkspace({
                     )}
                     {canEdit && (
                       <td className="px-4 py-3 text-right">
+                        {lockReason(table, order) ? (
+                          // Accounts on an order paid after receipt: nothing
+                          // to record, so no form to open.
+                          <span className="text-xs text-muted-foreground">—</span>
+                        ) : (
                         <button
                           type="button"
                           onClick={() => setEditRow(order)}
@@ -501,6 +507,7 @@ export function DepartmentWorkspace({
                           <Pencil className="h-3.5 w-3.5" />
                           Edit
                         </button>
+                        )}
                       </td>
                     )}
                   </tr>

@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { deleteItemAction } from "@/app/risansi/orders/actions";
 import { BILLING_DOC_FIELDS, INVOICE_FIELDS, SO_SECTIONS } from "@/lib/order-schema";
+import { lockReason } from "@/lib/order-lock";
 import {
   canAccessDepartment,
   canCreateOrders,
@@ -155,6 +156,7 @@ export function OrderDetail({
           const renderSection = (section: typeof SO_SECTIONS[number]) => {
             if (section.table === "order_billing") {
               const isChallan = String(order.bill_type ?? "") === "Challan";
+              const piLock = lockReason("order_billing_docs", order);
               const billingCanEditChild = canEditChild(role, "order_billing_docs");
               const invoicesCanEditChild = canEditChild(role, "order_invoices");
               return (
@@ -162,16 +164,26 @@ export function OrderDetail({
                   {/* Challan orders skip the Operation card entirely — their
                       challan fields sit inside each Billing & Dispatch card.
                       Tax Invoice orders keep the PI list here. */}
-                  {!isChallan && (
-                    <OrderChildList
-                      orderId={orderId}
-                      table="order_billing_docs"
-                      title={section.title}
-                      fields={BILLING_DOC_FIELDS}
-                      rows={detail.order_billing_docs as Row[]}
-                      canEdit={billingCanEditChild}
-                    />
-                  )}
+                  {!isChallan &&
+                    (piLock ? (
+                      // Nothing to raise, so the list is closed rather than
+                      // sitting there inviting a PI nobody should file.
+                      <section className="rounded-xl border border-card-border bg-surface p-6 shadow-sm">
+                      <h2 className="font-display text-base font-semibold text-foreground">
+                        {section.title}
+                      </h2>
+                      <p className="mt-1 text-sm text-muted">{piLock}</p>
+                    </section>
+                    ) : (
+                      <OrderChildList
+                        orderId={orderId}
+                        table="order_billing_docs"
+                        title={section.title}
+                        fields={BILLING_DOC_FIELDS}
+                        rows={detail.order_billing_docs as Row[]}
+                        canEdit={billingCanEditChild}
+                      />
+                    ))}
                   <OrderChildList
                     orderId={orderId}
                     table="order_invoices"
@@ -204,6 +216,22 @@ export function OrderDetail({
               section.table === "orders"
                 ? detail.order
                 : (detail[section.table as "order_billing" | "order_accounts"] as Row | null);
+            // A section this order carries no work for takes no entries: say
+            // so instead of offering a form the action would refuse.
+            const sectionLock = lockReason(section.table, order);
+            if (sectionLock) {
+              return (
+                <section
+                  key={section.key}
+                  className="rounded-xl border border-card-border bg-surface p-6 shadow-sm"
+                >
+                  <h2 className="font-display text-base font-semibold text-foreground">
+                    {section.title}
+                  </h2>
+                  <p className="mt-1 text-sm text-muted">{sectionLock}</p>
+                </section>
+              );
+            }
             return (
               <EditableSection
                 key={section.key}

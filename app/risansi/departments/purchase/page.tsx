@@ -7,8 +7,10 @@ import {
   listItemsForPurchasePage,
   resolveFocusOrderId,
   listDeptCompletions,
+  listOrderListOptions,
 } from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
+import { parseDeptFilter } from "@/lib/order-list-filter";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import { unreadByOrder } from "@/lib/order-messages";
 import { PurchaseWorkspace } from "@/components/risansi/purchase-workspace";
@@ -26,20 +28,25 @@ const TABLE = "order_purchase" as const;
 export default async function PurchaseWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string; thread?: string; page?: string; q?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit, thread, page, q } = await searchParams;
+  const params = await searchParams;
+  const { edit, thread, page, q } = params;
+  // This department's own filter bar, with the department pinned.
+  const filter = parseDeptFilter((key) => params[key], "purchase");
   // A notification links to an EC (item id) or an SO; open the page that holds it.
   const focusOrderId = await resolveFocusOrderId(thread ?? edit);
+  const filterOptions = await listOrderListOptions();
   const [queue, reminders] = await Promise.all([
     listItemsForPurchasePage({
       page: parsePage(page),
       search: parseQuery(q),
       focusOrderId,
+      filter,
     }),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);
@@ -88,6 +95,7 @@ export default async function PurchaseWorkspacePage({
         role={user.role}
         unreadThreads={unreadThreads}
         queue={queue}
+        filterOptions={filterOptions}
         canEdit={canEditChild(user.role, "order_boi_items")}
         openItemId={edit}
         drawingDocCounts={drawingDocCounts}

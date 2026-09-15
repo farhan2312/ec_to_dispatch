@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
 import { UrlSearchInput, useUrlTable } from "./url-table";
 import { MultiSelectFilter, SingleSelectFilter } from "./multi-select-filter";
 import {
@@ -14,7 +14,7 @@ import {
   ORDER_DATE_FIELDS,
   SIGN_OFF_OPTIONS,
   isOrderListFiltered,
-  parseOrderListFilter,
+  parseDeptFilter,
   presetRange,
 } from "@/lib/order-list-filter";
 import type { OrderListOptions } from "@/lib/orders";
@@ -32,6 +32,7 @@ const FILTER_KEYS = [
   "datefield",
   "from",
   "to",
+  "overdue",
 ];
 
 /**
@@ -42,13 +43,29 @@ const FILTER_KEYS = [
 export function OrderListFilterBar({
   options,
   total,
+  dept,
+  searchPlaceholder = "Search SO, client name, client code, EC…",
+  hasTarget = true,
 }: {
   options: OrderListOptions;
   total: number;
+  /**
+   * Inside a department's own queue the department is not a choice: it is
+   * pinned, the selector is dropped, and Status and Completion read that
+   * department's vocabulary.
+   */
+  dept?: DeptFilterKey;
+  searchPlaceholder?: string;
+  /** Whether the pinned department works to a target date at all. */
+  hasTarget?: boolean;
 }) {
   const { get, setParams } = useUrlTable();
-  const filter = parseOrderListFilter((key) => get(key) || undefined);
+  const filter = parseDeptFilter(
+    (key) => get(key) || undefined,
+    dept ?? null
+  );
   const filtered = isOrderListFiltered(filter);
+  const activeDept = dept ?? filter.dept;
 
   const activePreset =
     DATE_PRESETS.find((p) => {
@@ -59,7 +76,7 @@ export function OrderListFilterBar({
   return (
     <div className="mb-4 space-y-2 rounded-xl border border-card-border bg-surface p-3 shadow-sm">
       <div className="flex flex-wrap items-center gap-2">
-        <UrlSearchInput placeholder="Search SO, client name, client code, EC…" />
+        <UrlSearchInput placeholder={searchPlaceholder} />
         <MultiSelectFilter
           label="Zone"
           options={options.zones}
@@ -84,6 +101,7 @@ export function OrderListFilterBar({
           selected={filter.types}
           onChange={(next) => setParams({ type: next })}
         />
+        {!dept && (
         <SingleSelectFilter
           label="Department"
           allLabel="All departments"
@@ -105,11 +123,12 @@ export function OrderListFilterBar({
             });
           }}
         />
+        )}
         <SingleSelectFilter
           label="Status"
           allLabel="Any status"
-          disabled={!filter.dept}
-          options={(filter.dept ? statusesFor(filter.dept) : []).map((v) => ({
+          disabled={!activeDept}
+          options={(activeDept ? statusesFor(activeDept) : []).map((v) => ({
             value: v,
             label: v,
           }))}
@@ -119,7 +138,7 @@ export function OrderListFilterBar({
         <SingleSelectFilter
           label="Completion"
           allLabel="Any"
-          disabled={!filter.dept}
+          disabled={!activeDept}
           options={SIGN_OFF_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
           selected={filter.signOff}
           onChange={(next) => setParams({ signoff: next })}
@@ -127,6 +146,23 @@ export function OrderListFilterBar({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
+        {/* Past its own target with work outstanding — only meaningful for a
+            department that works to a date. */}
+        {activeDept && hasTarget && (
+          <button
+            type="button"
+            onClick={() => setParams({ overdue: filter.overdue ? null : "1" })}
+            aria-pressed={filter.overdue}
+            className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors ${
+              filter.overdue
+                ? "border-danger-border bg-danger-bg text-danger"
+                : "border-input-border text-foreground hover:bg-background"
+            }`}
+          >
+            <AlertTriangle className="h-3.5 w-3.5" />
+            Overdue only
+          </button>
+        )}
         <SingleSelectFilter
           label="Date"
           allLabel="Dispatch target"

@@ -83,6 +83,12 @@ export type OrderListFilter = {
   dateField: OrderDateField;
   from: string | null;
   to: string | null;
+  /**
+   * Only with a department: its target date has passed and its work on the
+   * order is not finished. The one question a department asks its own queue
+   * that no status answers.
+   */
+  overdue: boolean;
 };
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -148,12 +154,14 @@ export function parseOrderListFilter(
     dateField,
     from,
     to,
+    overdue: get("overdue") === "1",
   };
 }
 
 /** Whether anything narrows the list at all. */
 export function isOrderListFiltered(f: OrderListFilter): boolean {
   return !!(
+    f.overdue ||
     f.search ||
     f.zones.length ||
     f.reps.length ||
@@ -174,6 +182,7 @@ export function orderListFilterParams(f: OrderListFilter): URLSearchParams {
   if (f.markets.length) p.set("market", f.markets.join(","));
   if (f.types.length) p.set("type", f.types.join(","));
   if (f.dept) p.set("dept", f.dept);
+  if (f.overdue) p.set("overdue", "1");
   if (f.deptStatus) p.set("dstatus", f.deptStatus);
   if (f.signOff) p.set("signoff", f.signOff);
   if (f.from || f.to) {
@@ -188,6 +197,7 @@ export function orderListFilterParams(f: OrderListFilter): URLSearchParams {
 export function describeOrderListFilter(f: OrderListFilter): string {
   const parts: string[] = [];
   if (f.search) parts.push(`Search: ${f.search}`);
+  if (f.overdue) parts.push("Overdue only");
   if (f.zones.length) parts.push(`Zone: ${f.zones.join(", ")}`);
   if (f.reps.length) parts.push(`Rep: ${f.reps.join(", ")}`);
   if (f.markets.length) parts.push(`Market: ${f.markets.join(", ")}`);
@@ -207,4 +217,19 @@ export function describeOrderListFilter(f: OrderListFilter): string {
     );
   }
   return parts.length ? parts.join("  ·  ") : "All orders";
+}
+
+/**
+ * The same filter read inside one department's own queue, where the
+ * department is not a choice: it is pinned, so a status and a sign-off state
+ * are validated against that department's vocabulary even though the URL
+ * carries no `dept`.
+ */
+export function parseDeptFilter(
+  get: (key: string) => string | undefined,
+  dept: DeptFilterKey | null
+): OrderListFilter {
+  return parseOrderListFilter((key) =>
+    key === "dept" ? (dept ?? get(key)) : get(key)
+  );
 }

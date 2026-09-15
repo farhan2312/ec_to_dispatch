@@ -25,6 +25,9 @@ import {
 } from "@/lib/order-schema";
 import { OrderChildList } from "./order-children";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
+import { OrderListFilterBar } from "./order-list-filter-bar";
+import type { OrderListOptions } from "@/lib/orders";
+import { DEPT_VIEWS } from "@/lib/dept-view";
 import { useFocusRow } from "./use-focus-row";
 import { lockReason } from "@/lib/order-lock";
 import type { PageResult } from "@/lib/pagination";
@@ -135,6 +138,7 @@ export function DepartmentWorkspace({
   unreadThreads = {},
   completions = [],
   drawingDocCounts,
+  filterOptions,
 }: {
   table: OrderTable;
   fields: OrderField[];
@@ -163,6 +167,9 @@ export function DepartmentWorkspace({
   // Drawing documents shared with this department, per EC id. Set only for
   // the departments documents can be assigned to (Planning).
   drawingDocCounts?: Record<string, number>;
+  // Facet values for the filter bar. Omitted, the queue keeps its plain
+  // search box.
+  filterOptions?: OrderListOptions;
 }) {
   const [editRow, setEditRow] = useState<Row | null>(null);
   const [docsPanel, setDocsPanel] = useState<{ row: Row; config: DocumentsConfig } | null>(
@@ -376,7 +383,19 @@ export function DepartmentWorkspace({
   return (
     <div>
       <div className="mb-3">
-        <UrlSearchInput placeholder={searchPlaceholder} />
+        {/* The same filter bar the orders list carries, with this
+            department pinned: its own statuses, its own target. */}
+        {filterOptions && dept ? (
+          <OrderListFilterBar
+            options={filterOptions}
+            total={queue.total}
+            dept={dept}
+            hasTarget={DEPT_VIEWS[dept].hasTarget}
+            searchPlaceholder={searchPlaceholder}
+          />
+        ) : (
+          <UrlSearchInput placeholder={searchPlaceholder} />
+        )}
       </div>
 
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">

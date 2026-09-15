@@ -6,8 +6,10 @@ import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
 import { listItemsForSectionPage,
   resolveFocusOrderId,
   listDeptCompletions,
+  listOrderListOptions,
 } from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
+import { parseDeptFilter } from "@/lib/order-list-filter";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import {
   DRAWING_CONTEXT_FIELDS,
@@ -28,16 +30,20 @@ const TABLE = "order_drawing" as const;
 export default async function DrawingWorkspacePage({
   searchParams,
 }: {
-  searchParams: Promise<{ edit?: string; thread?: string; page?: string; q?: string }>;
+  searchParams: Promise<Record<string, string | undefined>>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
 
-  const { edit, thread, page, q } = await searchParams;
+  const params = await searchParams;
+  const { edit, thread, page, q } = params;
+  // This department's own filter bar, with the department pinned.
+  const filter = parseDeptFilter((key) => params[key], "drawing");
   // A notification links to an EC (item id) or an SO; either way the queue
   // must open on the page that holds it.
   const focusOrderId = await resolveFocusOrderId(thread ?? edit);
+  const filterOptions = await listOrderListOptions();
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const [queue, reminders] = await Promise.all([
     listItemsForSectionPage(
@@ -50,7 +56,7 @@ export default async function DrawingWorkspacePage({
         from: f.from ?? ("orders" as const),
       }))
     ,
-      { page: parsePage(page), search: parseQuery(q), focusOrderId }
+      { page: parsePage(page), search: parseQuery(q), focusOrderId, filter }
     ),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
   ]);
@@ -98,6 +104,7 @@ export default async function DrawingWorkspacePage({
         table={TABLE}
         fields={section.fields}
         queue={queue}
+        filterOptions={filterOptions}
         readonlyFields={DRAWING_CONTEXT_FIELDS}
         // Approval on a revision is Central Visibility's to set — Drawing sees
         // it read-only. Without this the prop defaults to true and Drawing

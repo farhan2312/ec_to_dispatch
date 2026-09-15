@@ -3,6 +3,7 @@
 import { AlertTriangle, PackageCheck, X } from "lucide-react";
 import { UrlSearchInput, useUrlTable } from "./url-table";
 import { MultiSelectFilter, SingleSelectFilter } from "./multi-select-filter";
+import { DEPT_VIEWS } from "@/lib/dept-view";
 import {
   DEPTS_WITHOUT_PARTY,
   DEPT_FILTER_KEYS,
@@ -71,6 +72,17 @@ export function OrderListFilterBar({
   );
   const filtered = isOrderListFiltered(filter);
   const activeDept = dept ?? filter.dept;
+  // "Target date" only means something once a department is settled, and only
+  // for one that works to a date at all. On the order list, where the
+  // department is a choice, the option says whose target it is.
+  const deptTarget = activeDept
+    ? dept
+      ? hasTarget
+      : DEPT_VIEWS[activeDept].hasTarget
+    : false;
+  const targetLabel = activeDept
+    ? `${DEPT_FILTER_LABELS[activeDept]} target`
+    : "Target date";
 
   const activePreset =
     DATE_PRESETS.find((p) => {
@@ -125,10 +137,18 @@ export function OrderListFilterBar({
               statusesFor(next as DeptFilterKey).includes(filter.deptStatus)
                 ? filter.deptStatus
                 : null;
+            const keepsTarget =
+              next && DEPT_VIEWS[next as DeptFilterKey].hasTarget;
             setParams({
               dept: next,
               dstatus: status,
               signoff: next ? filter.signOff : null,
+              datefield:
+                filter.dateField === "dept_target" && !keepsTarget
+                  ? null
+                  : filter.dateField === "dispatch_target"
+                    ? null
+                    : filter.dateField,
             });
           }}
         />
@@ -191,15 +211,20 @@ export function OrderListFilterBar({
         )}
         <SingleSelectFilter
           label="Date"
-          allLabel={dept ? (hasTarget ? "Target date" : "SO date") : "Dispatch target"}
-          // A department has no use for somebody else's target; it keeps its
-          // own, the order's own dates, and when work was completed. With no
-          // target of its own, "Target date" is dropped entirely.
+          allLabel={dept ? (hasTarget ? targetLabel : "SO date") : "Dispatch target"}
+          // A department has no use for somebody else's target; inside its own
+          // queue it keeps its own, the order's own dates, and when work was
+          // completed. Elsewhere "Target date" appears only once a department
+          // is chosen — and only one that works to a date — since otherwise it
+          // names no column at all.
           options={ORDER_DATE_FIELDS.filter((f) => {
-            if (!dept) return true;
-            if (f.value === "dispatch_target") return false;
-            return f.value !== "dept_target" || hasTarget;
-          }).map((f) => ({ value: f.value, label: f.label }))}
+            if (f.value === "dept_target") return deptTarget;
+            if (f.value === "dispatch_target") return !dept;
+            return true;
+          }).map((f) => ({
+            value: f.value,
+            label: f.value === "dept_target" ? targetLabel : f.label,
+          }))}
           selected={filter.dateField}
           onChange={(next) => {
             const fallback = dept

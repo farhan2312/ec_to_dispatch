@@ -144,9 +144,13 @@ export function parseOrderListFilter(
       ? (signOffRaw as SignOff)
       : null;
   const fieldRaw = get("datefield");
-  const dateField = ORDER_DATE_FIELDS.some((f) => f.value === fieldRaw)
+  const dateFieldRaw = ORDER_DATE_FIELDS.some((f) => f.value === fieldRaw)
     ? (fieldRaw as OrderDateField)
     : "dispatch_target";
+  // "Their target" needs a department to belong to; without one it names no
+  // column, so it falls back rather than matching nothing.
+  const dateField: OrderDateField =
+    dateFieldRaw === "dept_target" && !dept ? "dispatch_target" : dateFieldRaw;
 
   // Picked backwards, the two dates still mean the span between them.
   let from = date(get("from"));

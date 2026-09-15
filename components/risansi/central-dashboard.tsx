@@ -863,8 +863,8 @@ export function CentralDashboard({
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Link
-                          href={overview}
-                          className="inline-flex h-8 items-center rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                          href={`/risansi/orders/${card.order_id}`}
+                          className="inline-flex h-8 items-center rounded-lg border border-primary/40 bg-primary/10 px-3 text-xs font-semibold text-primary transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
                         >
                           Open
                         </Link>

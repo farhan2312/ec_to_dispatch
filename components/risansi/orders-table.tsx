@@ -199,6 +199,7 @@ export function OrdersTable({
                 const isOpen = expanded.has(order.id);
                 const items = order.items ?? [];
                 const overview = `/risansi/orders/${order.id}/overview`;
+                const orderPage = `/risansi/orders/${order.id}`;
                 return (
                   <Fragment key={order.id}>
                     {/* The whole row opens the SO's overview — the one page
@@ -247,8 +248,8 @@ export function OrdersTable({
                       >
                         <div className="flex items-center gap-2">
                           <Link
-                            href={overview}
-                            className="inline-flex h-8 items-center rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                            href={orderPage}
+                            className="inline-flex h-8 items-center rounded-lg border border-primary/40 bg-primary/10 px-3 text-xs font-semibold text-primary transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
                           >
                             Open
                           </Link>

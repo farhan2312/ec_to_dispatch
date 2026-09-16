@@ -171,11 +171,35 @@ const COLUMNS: {
   statuses: BugStatus[];
   /** What a card dropped here becomes. */
   dropAs: BugStatus;
+  /** The header dot, in the same hue as the status chips. */
+  dot: string;
 }[] = [
-  { key: "open", label: "Open", statuses: ["open"], dropAs: "open" },
-  { key: "in_progress", label: "In progress", statuses: ["in_progress"], dropAs: "in_progress" },
-  { key: "done", label: "Done", statuses: ["resolved", "wont_fix"], dropAs: "resolved" },
+  { key: "open", label: "Open", statuses: ["open"], dropAs: "open", dot: "bg-rose-500" },
+  {
+    key: "in_progress",
+    label: "In progress",
+    statuses: ["in_progress"],
+    dropAs: "in_progress",
+    dot: "bg-blue-500",
+  },
+  {
+    key: "done",
+    label: "Done",
+    statuses: ["resolved", "wont_fix"],
+    dropAs: "resolved",
+    dot: "bg-emerald-500",
+  },
 ];
+
+/**
+ * Three steps of ground, so page, column and card never merge: the page; the
+ * column, the page with a little of the text colour mixed in (a step darker in
+ * light mode, a step lighter in dark); and the card — white in light mode, and
+ * in dark a further step lighter than its column.
+ */
+const COLUMN_BG =
+  "bg-[color-mix(in_oklab,var(--foreground)_6%,var(--background))] dark:bg-[color-mix(in_oklab,var(--foreground)_8%,var(--background))]";
+const CARD_BG = "bg-surface dark:bg-[color-mix(in_oklab,var(--foreground)_17%,var(--background))]";
 
 /** Cards shown in Done before "Show more" — it is history, not work. */
 const DONE_SHOWN = 15;
@@ -198,7 +222,7 @@ function BoardCard({
     <li
       draggable={!saving}
       onDragStart={onDragStart}
-      className={`group rounded-lg border border-card-border bg-surface p-3 shadow-sm transition-shadow hover:shadow-md ${
+      className={`group rounded-lg border border-card-border ${CARD_BG} p-3 shadow-sm transition-shadow hover:shadow-md ${
         saving ? "opacity-60" : "cursor-grab active:cursor-grabbing"
       }`}
     >
@@ -312,18 +336,23 @@ function Board({
               if (!row || col.statuses.includes(row.status)) return;
               onChange(id, col.dropAs);
             }}
-            className={`flex min-h-48 flex-col rounded-xl border bg-background/60 p-3 transition-colors ${
-              over === col.key ? "border-primary bg-primary/5" : "border-card-border"
+            className={`flex min-h-48 flex-col rounded-xl border p-3 transition-colors ${
+              over === col.key
+                ? "border-primary bg-primary/10"
+                : `border-card-border ${COLUMN_BG}`
             }`}
           >
             <header className="mb-3 flex items-center justify-between px-1">
-              <h2 className="text-sm font-semibold text-foreground">{col.label}</h2>
-              <span className="rounded-full bg-card-border px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+              <h2 className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+                <span className={`h-2 w-2 rounded-full ${col.dot}`} aria-hidden />
+                {col.label}
+              </h2>
+              <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-muted">
                 {cards.length}
               </span>
             </header>
             {cards.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-card-border px-3 py-8 text-center text-xs text-muted">
+              <p className="rounded-lg border border-dashed border-input-border px-3 py-8 text-center text-xs text-muted">
                 {col.key === "done" ? "Nothing finished yet." : "Nothing here."}
               </p>
             ) : (

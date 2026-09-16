@@ -45,10 +45,11 @@ export type AuditOverview = {
     activeUsers: number;
   }[];
   devices: { label: string; count: number }[];
-  browsers: { label: string; count: number }[];
-  systems: { label: string; count: number }[];
+  /** Browser and operating system together: "Chrome · Windows". */
+  platforms: { label: string; count: number }[];
   actions: { action: string; count: number }[];
-  departments: { role: string | null; count: number; users: number }[];
+  /** Events per role of the person acting; roles with none are simply absent. */
+  roles: { role: string | null; count: number; users: number }[];
   userGrid: {
     days: string[];
     users: {
@@ -59,7 +60,6 @@ export type AuditOverview = {
       perDay: number[];
     }[];
   };
-  topOrders: { so_no: string; order_id: string | null; count: number; users: number }[];
   failedByIp: {
     ip: string;
     attempts: number;
@@ -137,9 +137,8 @@ export async function getAuditOverview(window: AuditWindow): Promise<AuditOvervi
     dailyRes,
     originRes,
     actionRes,
-    deptRes,
+    roleRes,
     gridRes,
-    orderRes,
     failedRes,
     ipUserRes,
   ] = await Promise.all([
@@ -206,15 +205,17 @@ export async function getAuditOverview(window: AuditWindow): Promise<AuditOvervi
       p
     ),
 
-    // Device, browser and OS in one pass, told apart by `kind`.
+    // Device, and browser with OS, in one pass, told apart by `kind`.
     query<{ kind: string; label: string; count: number }>(
       `SELECT kind, label, count(*)::int AS count
          FROM (
            SELECT x.kind, COALESCE(x.label, 'Unknown') AS label
              FROM audit_log a
-            CROSS JOIN LATERAL (VALUES ('device', a.device_type),
-                                       ('browser', a.browser),
-                                       ('os', a.os)) AS x(kind, label)
+            CROSS JOIN LATERAL (VALUES
+                 ('device', a.device_type),
+                 ('platform', CASE WHEN a.browser IS NULL AND a.os IS NULL THEN NULL
+                                   ELSE COALESCE(a.browser, 'Other') || ' · ' || COALESCE(a.os, 'Other')
+                              END)) AS x(kind, label)
             WHERE ${IN_WINDOW.replace(/created_at/g, "a.created_at")}
               AND a.${REAL}
          ) t
@@ -290,22 +291,6 @@ export async function getAuditOverview(window: AuditWindow): Promise<AuditOvervi
       p
     ),
 
-    query<{ so_no: string; order_id: string | null; count: number; users: number }>(
-      `SELECT a.so_no,
-              (array_agg(a.order_id ORDER BY a.created_at DESC)
-                 FILTER (WHERE a.order_id IS NOT NULL
-                           AND EXISTS (SELECT 1 FROM orders o WHERE o.id = a.order_id)))[1]
-                AS order_id,
-              count(*)::int AS count,
-              count(DISTINCT lower(a.user_email))::int AS users
-         FROM audit_log a
-        WHERE ${IN_WINDOW.replace(/created_at/g, "a.created_at")} AND a.so_no IS NOT NULL
-        GROUP BY a.so_no
-        ORDER BY count DESC, max(a.created_at) DESC
-        LIMIT 8`,
-      p
-    ),
-
     // Failed sign-ins grouped by where they came from: several emails tried
     // from one address is the pattern worth noticing.
     query<{ ip: string; attempts: number; emails: number; last_at: string }>(
@@ -374,10 +359,9 @@ export async function getAuditOverview(window: AuditWindow): Promise<AuditOvervi
       activeUsers: r.active_users,
     })),
     devices: byKind("device"),
-    browsers: byKind("browser"),
-    systems: byKind("os"),
+    platforms: byKind("platform"),
     actions: actionRes.rows,
-    departments: deptRes.rows,
+    roles: roleRes.rows,
     userGrid: {
       days: gridDays,
       users: gridRes.rows.map((r) => ({
@@ -388,7 +372,6 @@ export async function getAuditOverview(window: AuditWindow): Promise<AuditOvervi
         perDay: gridDays.map((d) => r.per_day?.[d] ?? 0),
       })),
     },
-    topOrders: orderRes.rows,
     failedByIp: failedRes.rows.map((r) => ({
       ip: r.ip,
       attempts: r.attempts,

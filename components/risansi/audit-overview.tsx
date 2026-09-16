@@ -7,10 +7,8 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
-import Link from "next/link";
 import { ArrowDownRight, ArrowUpRight, Info, ShieldAlert } from "lucide-react";
-import { roleLabel } from "@/lib/roles";
-import { actionLabel } from "@/lib/audit-labels";
+import { ALL_ROLES, roleLabel } from "@/lib/roles";
 import type { AuditOverview, OverviewKpis } from "@/lib/audit-overview";
 
 // ---------------------------------------------------------------------------
@@ -231,9 +229,6 @@ function Highlights({ data }: { data: AuditOverview }) {
     (best, d) => (!best || d.events > best.events ? d : best),
     null
   );
-  const perUser = data.kpis.activeUsers
-    ? Math.round(data.kpis.actions / data.kpis.activeUsers)
-    : 0;
   const failRate =
     data.kpis.logins + data.kpis.failed
       ? Math.round((data.kpis.failed / (data.kpis.logins + data.kpis.failed)) * 100)
@@ -252,7 +247,6 @@ function Highlights({ data }: { data: AuditOverview }) {
       label: "Busiest day",
       value: busiest && busiest.events ? `${dayLabel(busiest.day)} · ${num(busiest.events)}` : "—",
     },
-    { label: "Actions per active user", value: perUser ? num(perUser) : "—" },
     { label: "Sign-in failure rate", value: data.kpis.logins + data.kpis.failed ? `${failRate}%` : "—" },
     { label: "Distinct IP addresses", value: num(data.kpis.uniqueIps) },
   ];
@@ -472,7 +466,7 @@ function Heatmap({ grid }: { grid: number[][] }) {
   return (
     <div data-tip-root className="relative">
       <div className="overflow-x-auto">
-        <div className="min-w-[640px]">
+        <div className="min-w-[560px]">
           <div
             className="grid gap-[2px]"
             style={{ gridTemplateColumns: "36px repeat(24, minmax(0, 1fr)) 44px" }}
@@ -490,7 +484,7 @@ function Heatmap({ grid }: { grid: number[][] }) {
                 {row.map((c, h) => (
                   <div
                     key={h}
-                    className="h-6 rounded-[3px] outline-offset-1 hover:outline hover:outline-2 hover:outline-foreground/40"
+                    className="aspect-square rounded-[3px] outline-offset-1 hover:outline hover:outline-2 hover:outline-foreground/40"
                     style={{ background: rampColor(rampStep(c, max)) }}
                     onMouseMove={(e) =>
                       tip.show(
@@ -645,9 +639,6 @@ function Donut({ data, unit = "events" }: { data: Slice[]; unit?: string }) {
   );
 }
 
-/** The action list stops here; the rest are summed beneath it. */
-const TOP_ACTIONS = 10;
-
 /** Actions grouped into what they mean, so the donut stays at five parts. */
 const ACTION_GROUPS: { label: string; match: (a: string) => boolean }[] = [
   { label: "Order edits", match: (a) => a === "order.update" || a === "order.target_date" },
@@ -771,6 +762,50 @@ function UserDailyGrid({ grid }: { grid: AuditOverview["userGrid"] }) {
 // The tab
 // ---------------------------------------------------------------------------
 
+/**
+ * The common browser-and-system pairs, each keeping its colour whatever the
+ * period's counts; any other pair folds into Other.
+ */
+const PLATFORM_ORDER = [
+  "Chrome · Windows",
+  "Edge · Windows",
+  "Chrome · Android",
+  "Safari · iOS",
+  "Chrome · macOS",
+];
+
+/**
+ * Every role, including those with no activity in the period — a department
+ * missing from the list reads as an oversight, a zero reads as a fact.
+ */
+function RoleBars({ rows }: { rows: AuditOverview["roles"] }) {
+  const byRole = new Map(rows.map((r) => [r.role ?? "", r]));
+  const known = ALL_ROLES.map((role) => ({
+    role: role as string,
+    count: byRole.get(role)?.count ?? 0,
+    users: byRole.get(role)?.users ?? 0,
+  }));
+  // Events from a role since renamed or removed, or with none recorded.
+  const extra = rows.filter((r) => !(ALL_ROLES as string[]).includes(r.role ?? ""));
+  const all = [
+    ...known,
+    ...extra.map((r) => ({ role: r.role ?? "", count: r.count, users: r.users })),
+  ].sort((a, b) => b.count - a.count);
+
+  return (
+    <BarList
+      rows={all.map((r) => ({
+        key: r.role || "none",
+        label: r.role ? roleLabel(r.role) : "No role recorded",
+        value: r.count,
+        note: r.count
+          ? `${r.users} ${r.users === 1 ? "user" : "users"}`
+          : "no activity",
+      }))}
+    />
+  );
+}
+
 export function AuditOverviewPanel({ data }: { data: AuditOverview }) {
   const days = data.daily.map((d) => d.day);
   const originMissing = data.withoutOrigin > 0;
@@ -834,12 +869,18 @@ export function AuditOverviewPanel({ data }: { data: AuditOverview }) {
         </Card>
       </div>
 
-      <Card
-        title="When people work"
-        subtitle="Events by weekday and hour of day (IST), failed sign-ins excluded"
-      >
-        <Heatmap grid={data.heatmap} />
-      </Card>
+      <div className="grid gap-4 xl:grid-cols-3">
+        <Card
+          title="When people work"
+          subtitle="Events by weekday and hour of day (IST), failed sign-ins excluded"
+          className="xl:col-span-2"
+        >
+          <Heatmap grid={data.heatmap} />
+        </Card>
+        <Card title="By role" subtitle="Events, and how many people behind them">
+          <RoleBars rows={data.roles} />
+        </Card>
+      </div>
 
       {originMissing && (
         <p className="flex items-start gap-2 rounded-lg border border-card-border bg-surface px-4 py-2.5 text-xs text-muted">
@@ -850,86 +891,15 @@ export function AuditOverviewPanel({ data }: { data: AuditOverview }) {
         </p>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Card title="Actions" subtitle="What the events were">
           <Donut data={actionSlices(data.actions)} />
         </Card>
         <Card title="Devices" subtitle="Desktop, phone or tablet">
-          <Donut
-            data={slices(data.devices, ["Desktop", "Mobile", "Tablet"])}
-          />
+          <Donut data={slices(data.devices, ["Desktop", "Mobile", "Tablet"])} />
         </Card>
-        <Card title="Browsers">
-          <Donut
-            data={slices(data.browsers, ["Chrome", "Edge", "Safari", "Firefox", "Samsung Internet"])}
-          />
-        </Card>
-        <Card title="Operating systems">
-          <Donut data={slices(data.systems, ["Windows", "Android", "iOS", "macOS", "Linux"])} />
-        </Card>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-3">
-        <Card title="Every action" subtitle="Each kind of event, most frequent first">
-          {data.actions.length ? (
-            <>
-              <BarList
-                rows={data.actions.slice(0, TOP_ACTIONS).map((a) => ({
-                  key: a.action,
-                  label: actionLabel(a.action),
-                  value: a.count,
-                }))}
-              />
-              {data.actions.length > TOP_ACTIONS && (
-                <p className="mt-3 text-xs text-muted">
-                  {(() => {
-                    const rest = data.actions.slice(TOP_ACTIONS);
-                    const count = rest.reduce((n, a) => n + a.count, 0);
-                    return `+ ${rest.length} rarer kinds, ${num(count)} events between them`;
-                  })()}
-                </p>
-              )}
-            </>
-          ) : (
-            <Empty>No events in this period.</Empty>
-          )}
-        </Card>
-        <Card title="By department" subtitle="Events, and how many people behind them">
-          {data.departments.length ? (
-            <BarList
-              rows={data.departments.map((d) => ({
-                key: d.role ?? "none",
-                label: d.role ? roleLabel(d.role) : "No role recorded",
-                value: d.count,
-                note: `${d.users} ${d.users === 1 ? "user" : "users"}`,
-              }))}
-            />
-          ) : (
-            <Empty>No activity in this period.</Empty>
-          )}
-        </Card>
-        <Card title="Most-worked orders" subtitle="SOs with the most events">
-          {data.topOrders.length ? (
-            <BarList
-              rows={data.topOrders.map((o) => ({
-                key: o.so_no,
-                label: o.order_id ? (
-                  <Link
-                    href={`/risansi/orders/${o.order_id}`}
-                    className="font-medium text-primary hover:text-primary-hover"
-                  >
-                    {o.so_no}
-                  </Link>
-                ) : (
-                  <span className="font-medium">{o.so_no}</span>
-                ),
-                value: o.count,
-                note: `${o.users} ${o.users === 1 ? "user" : "users"}`,
-              }))}
-            />
-          ) : (
-            <Empty>No order was touched in this period.</Empty>
-          )}
+        <Card title="Browser & OS" subtitle="Which browser, on which system">
+          <Donut data={slices(data.platforms, PLATFORM_ORDER)} />
         </Card>
       </div>
 

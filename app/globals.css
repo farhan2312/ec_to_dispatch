@@ -47,7 +47,7 @@
   --viz-axis: #d4dce6;
   --viz-seq-lo: #eef3fa;
   --viz-seq-hi: #104281;
-  /* ink for a number sitting on the darker half of that ramp */
+  /* ink for a number sitting on the darker half of the ramp */
   --viz-seq-ink: #ffffff;
 }
 

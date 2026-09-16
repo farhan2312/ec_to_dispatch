@@ -65,8 +65,12 @@ export async function insertBugReport(input: NewBugReport): Promise<string> {
   return result.rows[0].id;
 }
 
-/** List bug reports for the admin viewer (metadata only, no screenshot bytes). */
-export async function listBugReports(limit = 200): Promise<BugReportRow[]> {
+/**
+ * List bug reports for the admin viewer (metadata only, no screenshot bytes).
+ * The board counts its columns from this list, so the cap sits well above
+ * the number of reports the tracker holds.
+ */
+export async function listBugReports(limit = 1000): Promise<BugReportRow[]> {
   const result = await query<BugReportRow>(
     `SELECT id, user_email, user_role, kind, severity, title, description,
             page_path, screenshot_name, screenshot_size, status,

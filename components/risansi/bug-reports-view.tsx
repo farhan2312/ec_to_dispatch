@@ -1,14 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   Bug,
   ChevronDown,
+  Columns3,
   ExternalLink,
   Image as ImageIcon,
   Lightbulb,
+  List,
   Loader2,
+  Search,
+  X,
 } from "lucide-react";
 import type { BugReportRow, BugStatus } from "@/lib/bug-reports";
 import { updateBugReportStatusAction } from "@/app/risansi/bug-reports/actions";
@@ -21,6 +25,9 @@ const STATUS_OPTIONS: { value: BugStatus; label: string; tone: string }[] = [
   { value: "wont_fix", label: "Closed", tone: "bg-slate-100 text-slate-600" },
 ];
 
+const statusMeta = (s: BugStatus) =>
+  STATUS_OPTIONS.find((o) => o.value === s) ?? STATUS_OPTIONS[0];
+
 type StatusFilter = "all" | BugStatus;
 const FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All" },
@@ -30,11 +37,19 @@ const FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "wont_fix", label: "Closed" },
 ];
 
+const SEVERITIES = ["Critical", "High", "Medium", "Low"] as const;
+
 const SEVERITY_TONES: Record<string, string> = {
   Low: "bg-slate-100 text-slate-600",
   Medium: "bg-blue-50 text-blue-700",
   High: "bg-amber-50 text-amber-700",
   Critical: "bg-rose-50 text-rose-700",
+};
+
+/** Critical first; a report with no severity goes after Low. */
+const severityRank = (s: string | null) => {
+  const i = SEVERITIES.indexOf((s ?? "") as (typeof SEVERITIES)[number]);
+  return i < 0 ? SEVERITIES.length : i;
 };
 
 function timeAgo(iso: string): string {
@@ -54,10 +69,413 @@ function timeAgo(iso: string): string {
   });
 }
 
-export function BugReportsView({ rows }: { rows: BugReportRow[] }) {
-  const router = useRouter();
+function KindIcon({ kind, size = "md" }: { kind: BugReportRow["kind"]; size?: "sm" | "md" }) {
+  const isFeature = kind === "feature";
+  const box = size === "sm" ? "h-6 w-6 rounded-md" : "h-8 w-8 rounded-lg";
+  const icon = size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4";
+  return (
+    <span
+      className={`flex shrink-0 items-center justify-center ${box} ${
+        isFeature ? "bg-amber-50 text-amber-600" : "bg-rose-50 text-rose-600"
+      }`}
+      title={isFeature ? "Feature request" : "Bug"}
+    >
+      {isFeature ? <Lightbulb className={icon} /> : <Bug className={icon} />}
+    </span>
+  );
+}
+
+function SeverityChip({ severity }: { severity: string | null }) {
+  if (!severity) return null;
+  return (
+    <span
+      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+        SEVERITY_TONES[severity] ?? "bg-slate-100 text-slate-600"
+      }`}
+    >
+      {severity}
+    </span>
+  );
+}
+
+function StatusButtons({
+  row,
+  saving,
+  onChange,
+}: {
+  row: BugReportRow;
+  saving: boolean;
+  onChange: (status: BugStatus) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Status
+      </span>
+      {STATUS_OPTIONS.map((s) => (
+        <button
+          key={s.value}
+          type="button"
+          onClick={() => onChange(s.value)}
+          disabled={saving || s.value === row.status}
+          className={`inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition-colors disabled:cursor-default disabled:opacity-60 ${
+            s.value === row.status
+              ? s.tone
+              : "border border-input-border text-foreground hover:bg-background"
+          }`}
+        >
+          {saving && s.value !== row.status && <Loader2 className="h-3 w-3 animate-spin" />}
+          {s.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Details({ row }: { row: BugReportRow }) {
+  return (
+    <>
+      {row.description ? (
+        <p className="whitespace-pre-wrap text-sm text-foreground">{row.description}</p>
+      ) : (
+        <p className="text-sm text-muted">No description provided.</p>
+      )}
+      {row.screenshot_name && (
+        <a
+          href={`/api/bug-reports/${row.id}/screenshot`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-input-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+        >
+          <ImageIcon className="h-3.5 w-3.5" />
+          {row.screenshot_name}
+          <ExternalLink className="h-3 w-3" />
+        </a>
+      )}
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Board
+// ---------------------------------------------------------------------------
+
+/**
+ * The board's three columns. Resolved and Closed share the last one: both
+ * mean nobody has anything left to do, and apart they would be two columns
+ * that only ever grow.
+ */
+const COLUMNS: {
+  key: "open" | "in_progress" | "done";
+  label: string;
+  statuses: BugStatus[];
+  /** What a card dropped here becomes. */
+  dropAs: BugStatus;
+  /** The header dot, in the same hue as the status chips. */
+  dot: string;
+}[] = [
+  { key: "open", label: "Open", statuses: ["open"], dropAs: "open", dot: "bg-rose-500" },
+  {
+    key: "in_progress",
+    label: "In progress",
+    statuses: ["in_progress"],
+    dropAs: "in_progress",
+    dot: "bg-blue-500",
+  },
+  {
+    key: "done",
+    label: "Done",
+    statuses: ["resolved", "wont_fix"],
+    dropAs: "resolved",
+    dot: "bg-emerald-500",
+  },
+];
+
+/**
+ * Three steps of ground, so page, column and card never merge: the page; the
+ * column, the page with a little of the text colour mixed in (a step darker in
+ * light mode, a step lighter in dark); and the card — white in light mode, and
+ * in dark a further step lighter than its column.
+ */
+const COLUMN_BG =
+  "bg-[color-mix(in_oklab,var(--foreground)_6%,var(--background))] dark:bg-[color-mix(in_oklab,var(--foreground)_8%,var(--background))]";
+const CARD_BG = "bg-surface dark:bg-[color-mix(in_oklab,var(--foreground)_17%,var(--background))]";
+
+/** Cards shown in Done before "Show more" — it is history, not work. */
+const DONE_SHOWN = 15;
+
+function BoardCard({
+  row,
+  saving,
+  onOpen,
+  onChange,
+  onDragStart,
+}: {
+  row: BugReportRow;
+  saving: boolean;
+  onOpen: () => void;
+  onChange: (status: BugStatus) => void;
+  onDragStart: (e: DragEvent) => void;
+}) {
+  const meta = statusMeta(row.status);
+  return (
+    <li
+      draggable={!saving}
+      onDragStart={onDragStart}
+      className={`group rounded-lg border border-card-border ${CARD_BG} p-3 shadow-sm transition-shadow hover:shadow-md ${
+        saving ? "opacity-60" : "cursor-grab active:cursor-grabbing"
+      }`}
+    >
+      <button type="button" onClick={onOpen} className="block w-full text-left">
+        <div className="flex items-start gap-2">
+          <KindIcon kind={row.kind} size="sm" />
+          <p className="line-clamp-2 min-w-0 flex-1 text-sm font-medium text-foreground">
+            {row.title}
+          </p>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-muted">
+          <SeverityChip severity={row.severity} />
+          {/* Done holds two outcomes; the chip says which. */}
+          {(row.status === "resolved" || row.status === "wont_fix") && (
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${meta.tone}`}>
+              {meta.label}
+            </span>
+          )}
+          {row.screenshot_name && (
+            <ImageIcon className="h-3.5 w-3.5" aria-label="Has a screenshot" />
+          )}
+          <span className="ml-auto whitespace-nowrap">{timeAgo(row.created_at)}</span>
+        </div>
+        {(row.user_email || row.page_path) && (
+          <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted">
+            {row.user_email && <span className="truncate">{row.user_email}</span>}
+            {row.page_path && (
+              <span className="max-w-full truncate rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600">
+                {row.page_path}
+              </span>
+            )}
+          </div>
+        )}
+      </button>
+
+      {/* Dragging needs a mouse; this does the same on a phone or keyboard. */}
+      <div className="mt-2 flex items-center justify-end border-t border-card-border pt-2">
+        {saving ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" />
+        ) : (
+          <label className="inline-flex items-center gap-1 text-[11px] text-muted">
+            <span className="sr-only">Move to</span>
+            <select
+              value={row.status}
+              onChange={(e) => onChange(e.target.value as BugStatus)}
+              className="h-6 rounded-md border border-input-border bg-surface px-1.5 text-[11px] text-foreground"
+            >
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s.value} value={s.value}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function Board({
+  rows,
+  savingId,
+  onChange,
+  onOpen,
+}: {
+  rows: BugReportRow[];
+  savingId: string | null;
+  onChange: (id: string, status: BugStatus) => void;
+  onOpen: (id: string) => void;
+}) {
+  const [over, setOver] = useState<string | null>(null);
+  const [showAllDone, setShowAllDone] = useState(false);
+
+  return (
+    <div className="grid gap-4 md:grid-cols-3">
+      {COLUMNS.map((col) => {
+        const cards = rows
+          .filter((r) => col.statuses.includes(r.status))
+          .sort((a, b) =>
+            col.key === "done"
+              ? // History: the latest first.
+                b.created_at.localeCompare(a.created_at)
+              : // Work: the worst first, then whatever has waited longest.
+                severityRank(a.severity) - severityRank(b.severity) ||
+                a.created_at.localeCompare(b.created_at)
+          );
+        const shown =
+          col.key === "done" && !showAllDone ? cards.slice(0, DONE_SHOWN) : cards;
+
+        return (
+          <section
+            key={col.key}
+            aria-label={col.label}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              setOver(col.key);
+            }}
+            onDragLeave={(e) => {
+              // Leaving for one of its own cards is not leaving the column.
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(null);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setOver(null);
+              const id = e.dataTransfer.getData("text/plain");
+              const row = rows.find((r) => r.id === id);
+              // Already in this column (Resolved and Closed both live in Done):
+              // nothing to change.
+              if (!row || col.statuses.includes(row.status)) return;
+              onChange(id, col.dropAs);
+            }}
+            className={`flex min-h-48 flex-col rounded-xl border p-3 transition-colors ${
+              over === col.key
+                ? "border-primary bg-primary/10"
+                : `border-card-border ${COLUMN_BG}`
+            }`}
+          >
+            <header className="mb-3 flex items-center justify-between px-1">
+              <h2 className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+                <span className={`h-2 w-2 rounded-full ${col.dot}`} aria-hidden />
+                {col.label}
+              </h2>
+              <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-muted">
+                {cards.length}
+              </span>
+            </header>
+            {cards.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-input-border px-3 py-8 text-center text-xs text-muted">
+                {col.key === "done" ? "Nothing finished yet." : "Nothing here."}
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {shown.map((r) => (
+                  <BoardCard
+                    key={r.id}
+                    row={r}
+                    saving={savingId === r.id}
+                    onOpen={() => onOpen(r.id)}
+                    onChange={(s) => onChange(r.id, s)}
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData("text/plain", r.id);
+                      e.dataTransfer.effectAllowed = "move";
+                    }}
+                  />
+                ))}
+              </ul>
+            )}
+            {col.key === "done" && cards.length > DONE_SHOWN && (
+              <button
+                type="button"
+                onClick={() => setShowAllDone((v) => !v)}
+                className="mt-2 rounded-lg px-2 py-1.5 text-xs font-medium text-primary hover:bg-surface"
+              >
+                {showAllDone ? "Show fewer" : `Show ${cards.length - DONE_SHOWN} older`}
+              </button>
+            )}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReportModal({
+  row,
+  saving,
+  onChange,
+  onClose,
+}: {
+  row: BugReportRow;
+  saving: boolean;
+  onChange: (status: BugStatus) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={row.title}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-6"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-surface shadow-xl sm:rounded-2xl"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-card-border px-5 py-4">
+          <div className="flex min-w-0 items-start gap-3">
+            <KindIcon kind={row.kind} />
+            <div className="min-w-0">
+              <p className="font-display text-base font-semibold text-foreground">{row.title}</p>
+              <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                <span>{timeAgo(row.created_at)}</span>
+                {row.user_email && (
+                  <>
+                    <span>·</span>
+                    <span>{row.user_email}</span>
+                  </>
+                )}
+                {row.page_path && (
+                  <>
+                    <span>·</span>
+                    <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600">
+                      {row.page_path}
+                    </span>
+                  </>
+                )}
+                <SeverityChip severity={row.severity} />
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="shrink-0 rounded-lg p-1.5 text-muted transition-colors hover:bg-background hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 space-y-4 overflow-auto px-5 py-4">
+          <Details row={row} />
+        </div>
+        <div className="border-t border-card-border px-5 py-3">
+          <StatusButtons row={row} saving={saving} onChange={onChange} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// List — the earlier view, kept for history and looking things up
+// ---------------------------------------------------------------------------
+
+function ReportList({
+  rows,
+  savingId,
+  onChange,
+}: {
+  rows: BugReportRow[];
+  savingId: string | null;
+  onChange: (id: string, status: BugStatus) => void;
+}) {
   const [open, setOpen] = useState<Set<string>>(new Set());
-  const [savingId, setSavingId] = useState<string | null>(null);
   const [filter, setFilter] = useState<StatusFilter>("all");
 
   function toggle(id: string) {
@@ -69,15 +487,6 @@ export function BugReportsView({ rows }: { rows: BugReportRow[] }) {
     });
   }
 
-  async function setStatus(id: string, status: BugStatus) {
-    setSavingId(id);
-    const res = await updateBugReportStatusAction(id, status);
-    setSavingId(null);
-    if (!res.ok) alert(res.error);
-    else router.refresh();
-  }
-
-  // Counts per filter for the pill badges.
   const counts: Record<StatusFilter, number> = {
     all: rows.length,
     open: rows.filter((r) => r.status === "open").length,
@@ -85,199 +494,328 @@ export function BugReportsView({ rows }: { rows: BugReportRow[] }) {
     resolved: rows.filter((r) => r.status === "resolved").length,
     wont_fix: rows.filter((r) => r.status === "wont_fix").length,
   };
+  const visible = filter === "all" ? rows : rows.filter((r) => r.status === filter);
 
-  const visible =
-    filter === "all" ? rows : rows.filter((r) => r.status === filter);
-
-  const pills = (
-    <div className="mb-4 inline-flex flex-wrap gap-1 rounded-full bg-background p-1">
-      {FILTERS.map((f) => {
-        const active = f.value === filter;
-        return (
-          <button
-            key={f.value}
-            type="button"
-            onClick={() => setFilter(f.value)}
-            className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
-              active
-                ? "bg-primary text-primary-foreground shadow-sm"
-                : "text-muted hover:text-foreground"
-            }`}
-            aria-pressed={active}
-          >
-            {f.label}
-            <span
-              className={`inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold ${
+  return (
+    <>
+      <div className="mb-4 inline-flex flex-wrap gap-1 rounded-full bg-background p-1">
+        {FILTERS.map((f) => {
+          const active = f.value === filter;
+          return (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => setFilter(f.value)}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
                 active
-                  ? "bg-white/25 text-primary-foreground"
-                  : "bg-card-border text-muted-foreground"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted hover:text-foreground"
               }`}
+              aria-pressed={active}
             >
-              {counts[f.value]}
-            </span>
-          </button>
-        );
-      })}
-    </div>
+              {f.label}
+              <span
+                className={`inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-semibold ${
+                  active
+                    ? "bg-white/25 text-primary-foreground"
+                    : "bg-card-border text-muted-foreground"
+                }`}
+              >
+                {counts[f.value]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="rounded-xl border border-card-border bg-surface shadow-sm">
+        {visible.length === 0 ? (
+          <div className="px-6 py-14 text-center">
+            <p className="text-sm font-medium text-foreground">Nothing here</p>
+            <p className="mt-1 text-sm text-muted">No reports match this filter.</p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-card-border">
+            {visible.map((r) => {
+              const isOpen = open.has(r.id);
+              const meta = statusMeta(r.status);
+              return (
+                <li key={r.id} className="px-5 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <KindIcon kind={r.kind} />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-foreground">{r.title}</p>
+                        <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+                          <span>{timeAgo(r.created_at)}</span>
+                          {r.user_email && (
+                            <>
+                              <span>·</span>
+                              <span>{r.user_email}</span>
+                            </>
+                          )}
+                          {r.page_path && (
+                            <>
+                              <span>·</span>
+                              <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600">
+                                {r.page_path}
+                              </span>
+                            </>
+                          )}
+                          <SeverityChip severity={r.severity} />
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${meta.tone}`}
+                      >
+                        {meta.label}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => toggle(r.id)}
+                        aria-expanded={isOpen}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-input-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                      >
+                        Details
+                        <ChevronDown
+                          className={`h-3.5 w-3.5 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {isOpen && (
+                    <div className="mt-4 space-y-4 rounded-lg bg-background/40 p-4">
+                      <Details row={r} />
+                      <div className="pt-1">
+                        <StatusButtons
+                          row={r}
+                          saving={savingId === r.id}
+                          onChange={(s) => onChange(r.id, s)}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </>
   );
+}
+
+// ---------------------------------------------------------------------------
+// The page body: filters shared by both views, and the switch between them
+// ---------------------------------------------------------------------------
+
+type View = "board" | "list";
+const VIEW_KEY = "bug-tracker-view";
+
+export function BugReportsView({ rows }: { rows: BugReportRow[] }) {
+  const router = useRouter();
+  const [view, setView] = useState<View>("board");
+  const [kind, setKind] = useState<"all" | BugReportRow["kind"]>("all");
+  const [severity, setSeverity] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  // A move shows straight away; the server's answer confirms or undoes it.
+  // Each is kept with the status it moved from, and applies only while the
+  // server still reports that — so once the page data catches up (or someone
+  // else moves the card) the server's status wins without clearing anything.
+  const [moved, setMoved] = useState<Record<string, { from: BugStatus; to: BugStatus }>>({});
+
+  // The last view chosen, on this browser. Read after mounting so the server
+  // render and the first client render agree.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time restore of a stored preference
+      if (saved === "list" || saved === "board") setView(saved);
+    } catch {
+      // storage unavailable: keep the board
+    }
+  }, []);
+
+  function chooseView(next: View) {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // not remembered, still switched
+    }
+  }
+
+  const current = useMemo(
+    () =>
+      rows.map((r) =>
+        moved[r.id]?.from === r.status ? { ...r, status: moved[r.id].to } : r
+      ),
+    [rows, moved]
+  );
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return current.filter(
+      (r) =>
+        (kind === "all" || r.kind === kind) &&
+        (severity === "all" || (r.severity ?? "none") === severity) &&
+        (!q ||
+          r.title.toLowerCase().includes(q) ||
+          (r.user_email ?? "").toLowerCase().includes(q) ||
+          (r.page_path ?? "").toLowerCase().includes(q) ||
+          (r.description ?? "").toLowerCase().includes(q))
+    );
+  }, [current, kind, severity, search]);
+
+  async function changeStatus(id: string, status: BugStatus) {
+    const before = current.find((r) => r.id === id)?.status;
+    const serverStatus = rows.find((r) => r.id === id)?.status;
+    if (!before || !serverStatus || before === status) return;
+    setError(null);
+    setMoved((m) => ({ ...m, [id]: { from: serverStatus, to: status } }));
+    setSavingId(id);
+    const res = await updateBugReportStatusAction(id, status);
+    setSavingId(null);
+    if (!res.ok) {
+      setMoved((m) => {
+        const rest = { ...m };
+        delete rest[id];
+        return rest;
+      });
+      setError(res.error);
+      return;
+    }
+    // Also refreshes the open-report count in the top bar.
+    router.refresh();
+  }
+
+  const openRow = openId ? current.find((r) => r.id === openId) ?? null : null;
+  const filtering = kind !== "all" || severity !== "all" || search.trim() !== "";
 
   if (rows.length === 0) {
     return (
-      <>
-        {pills}
-        <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
-          <p className="text-sm font-medium text-foreground">No reports yet</p>
-          <p className="mt-1 text-sm text-muted">
-            Submissions from the &ldquo;Report a Bug&rdquo; button will show here.
-          </p>
-        </div>
-      </>
+      <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
+        <p className="text-sm font-medium text-foreground">No reports yet</p>
+        <p className="mt-1 text-sm text-muted">
+          Submissions from the &ldquo;Report a Bug&rdquo; button will show here.
+        </p>
+      </div>
     );
   }
 
   return (
     <>
-      {pills}
-      <div className="rounded-xl border border-card-border bg-surface shadow-sm">
-        {visible.length === 0 ? (
-          <div className="px-6 py-14 text-center">
-            <p className="text-sm font-medium text-foreground">
-              Nothing here
-            </p>
-            <p className="mt-1 text-sm text-muted">
-              No reports match this filter.
-            </p>
-          </div>
-        ) : (
-          <ul className="divide-y divide-card-border">
-            {visible.map((r) => {
-          const isOpen = open.has(r.id);
-          const statusMeta =
-            STATUS_OPTIONS.find((s) => s.value === r.status) ?? STATUS_OPTIONS[0];
-          const isFeature = r.kind === "feature";
-          return (
-            <li key={r.id} className="px-5 py-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex min-w-0 items-start gap-3">
-                  <span
-                    className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                      isFeature
-                        ? "bg-amber-50 text-amber-600"
-                        : "bg-rose-50 text-rose-600"
-                    }`}
-                  >
-                    {isFeature ? (
-                      <Lightbulb className="h-4 w-4" />
-                    ) : (
-                      <Bug className="h-4 w-4" />
-                    )}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-foreground">{r.title}</p>
-                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-                      <span>{timeAgo(r.created_at)}</span>
-                      {r.user_email && (
-                        <>
-                          <span>·</span>
-                          <span>{r.user_email}</span>
-                        </>
-                      )}
-                      {r.page_path && (
-                        <>
-                          <span>·</span>
-                          <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-600">
-                            {r.page_path}
-                          </span>
-                        </>
-                      )}
-                      {r.severity && (
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                            SEVERITY_TONES[r.severity] ?? "bg-slate-100 text-slate-600"
-                          }`}
-                        >
-                          {r.severity}
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <span
-                    className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${statusMeta.tone}`}
-                  >
-                    {statusMeta.label}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => toggle(r.id)}
-                    aria-expanded={isOpen}
-                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-input-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
-                  >
-                    Details
-                    <ChevronDown
-                      className={`h-3.5 w-3.5 transition-transform ${
-                        isOpen ? "rotate-180" : ""
-                      }`}
-                    />
-                  </button>
-                </div>
-              </div>
-
-              {isOpen && (
-                <div className="mt-4 space-y-4 rounded-lg bg-background/40 p-4">
-                  {r.description ? (
-                    <p className="whitespace-pre-wrap text-sm text-foreground">
-                      {r.description}
-                    </p>
-                  ) : (
-                    <p className="text-sm text-muted">No description provided.</p>
-                  )}
-
-                  {r.screenshot_name && (
-                    <a
-                      href={`/api/bug-reports/${r.id}/screenshot`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-input-border bg-surface px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
-                    >
-                      <ImageIcon className="h-3.5 w-3.5" />
-                      {r.screenshot_name}
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
-                  )}
-
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      Status
-                    </span>
-                    {STATUS_OPTIONS.map((s) => (
-                      <button
-                        key={s.value}
-                        type="button"
-                        onClick={() => setStatus(r.id, s.value)}
-                        disabled={savingId === r.id || s.value === r.status}
-                        className={`inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[11px] font-medium transition-colors disabled:cursor-default disabled:opacity-60 ${
-                          s.value === r.status
-                            ? s.tone
-                            : "border border-input-border text-foreground hover:bg-background"
-                        }`}
-                      >
-                        {savingId === r.id && s.value !== r.status && (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        )}
-                        {s.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              </li>
-            );
-          })}
-          </ul>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-52 flex-1 sm:max-w-xs">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search title, reporter, page…"
+            aria-label="Search reports"
+            className="h-9 w-full rounded-lg border border-input-border bg-surface pl-8 pr-3 text-sm text-foreground placeholder:text-muted-foreground"
+          />
+        </div>
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value as typeof kind)}
+          aria-label="Type"
+          className="h-9 rounded-lg border border-input-border bg-surface px-2 text-sm text-foreground"
+        >
+          <option value="all">Bugs & features</option>
+          <option value="bug">Bugs</option>
+          <option value="feature">Feature requests</option>
+        </select>
+        <select
+          value={severity}
+          onChange={(e) => setSeverity(e.target.value)}
+          aria-label="Severity"
+          className="h-9 rounded-lg border border-input-border bg-surface px-2 text-sm text-foreground"
+        >
+          <option value="all">Any severity</option>
+          {SEVERITIES.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+          <option value="none">No severity</option>
+        </select>
+        {filtering && (
+          <button
+            type="button"
+            onClick={() => {
+              setKind("all");
+              setSeverity("all");
+              setSearch("");
+            }}
+            className="inline-flex h-9 items-center gap-1 rounded-lg px-2 text-xs font-medium text-muted hover:text-foreground"
+          >
+            <X className="h-3.5 w-3.5" />
+            Clear
+          </button>
         )}
+
+        <div
+          role="group"
+          aria-label="View"
+          className="ml-auto inline-flex rounded-lg border border-input-border bg-surface p-0.5"
+        >
+          {(
+            [
+              { key: "board", label: "Board", Icon: Columns3 },
+              { key: "list", label: "List", Icon: List },
+            ] as const
+          ).map(({ key, label, Icon }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => chooseView(key)}
+              aria-pressed={view === key}
+              className={`inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium transition-colors ${
+                view === key
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted hover:text-foreground"
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {error && (
+        <p role="alert" className="mb-3 rounded-lg border border-danger-border bg-danger-bg px-3 py-2 text-sm text-danger">
+          {error}
+        </p>
+      )}
+      {filtering && (
+        <p className="mb-3 text-xs text-muted">
+          {filtered.length} of {rows.length} reports match.
+        </p>
+      )}
+
+      {view === "board" ? (
+        <Board rows={filtered} savingId={savingId} onChange={changeStatus} onOpen={setOpenId} />
+      ) : (
+        <ReportList rows={filtered} savingId={savingId} onChange={changeStatus} />
+      )}
+
+      {openRow && (
+        <ReportModal
+          row={openRow}
+          saving={savingId === openRow.id}
+          onChange={(s) => changeStatus(openRow.id, s)}
+          onClose={() => setOpenId(null)}
+        />
+      )}
     </>
   );
 }

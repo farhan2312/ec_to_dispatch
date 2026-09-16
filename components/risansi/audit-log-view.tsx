@@ -8,7 +8,9 @@ import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { roleLabel } from "@/lib/roles";
 import type { AuditEvent, AuditStats, AuditUserRow } from "@/lib/audit";
 import type { PageResult } from "@/lib/pagination";
-import { AUDIT_RANGES, AUDIT_TABS } from "@/lib/audit-range";
+import { AUDIT_RANGES, AUDIT_TABS, DEFAULT_AUDIT_TAB } from "@/lib/audit-range";
+import type { AuditOverview } from "@/lib/audit-overview";
+import { AuditOverviewPanel } from "./audit-overview";
 import {
   ACTION_META,
   ACTIVE_GAP_MINUTES,
@@ -44,6 +46,34 @@ function ActionChip({ action }: { action: string }) {
     >
       {meta.label}
     </span>
+  );
+}
+
+/**
+ * Where an event came from: the address, and the device and browser beneath
+ * it. Events from before either was recorded say so rather than showing a
+ * blank that could read as "no address".
+ */
+function OriginCell({
+  ip,
+  device,
+  browser,
+  os,
+}: {
+  ip: string | null;
+  device: string | null;
+  browser: string | null;
+  os: string | null;
+}) {
+  if (!ip && !device) {
+    return <span className="text-xs italic text-muted-foreground">not recorded</span>;
+  }
+  const machine = [device, browser, os].filter(Boolean).join(" · ");
+  return (
+    <div className="leading-tight">
+      <div className="font-mono text-xs text-foreground">{ip ?? "—"}</div>
+      {machine && <div className="mt-0.5 text-[11px] text-muted">{machine}</div>}
+    </div>
   );
 }
 
@@ -136,6 +166,7 @@ export function AuditLogView({
   range,
   from,
   to,
+  overview,
   users,
   events,
 }: {
@@ -146,6 +177,7 @@ export function AuditLogView({
   from: string | null;
   to: string | null;
   // Exactly one of these is populated — whichever tab is on screen.
+  overview: AuditOverview | null;
   users: PageResult<AuditUserRow> | null;
   events: PageResult<AuditEvent> | null;
 }) {
@@ -162,6 +194,7 @@ export function AuditLogView({
   const shownTab = pending && wantTab ? wantTab : tab;
   const shownRange = pending && wantRange ? wantRange : custom ? null : range;
 
+  const isOverview = tab === "overview";
   const isByUser = tab === "by_user";
   // Sign-ins and ownership changes are about people, not orders.
   const showSubject = tab === "activity";
@@ -224,7 +257,8 @@ export function AuditLogView({
             type="button"
             onClick={() => {
               setWantTab(t.key);
-              setParams({ tab: t.key === "by_user" ? null : t.key });
+              // Search and paging belong to the tab being left.
+              setParams({ tab: t.key === DEFAULT_AUDIT_TAB ? null : t.key, q: null, page: null });
             }}
             className={`-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
               shownTab === t.key
@@ -302,24 +336,33 @@ export function AuditLogView({
           )}
         </div>
         {/* The 'By user' tab has no event columns — its rows are just user
-            identity + role, so the placeholder shifts to match. */}
+            identity + role, so the placeholder shifts to match. The overview
+            summarises the whole period, so it has nothing to search. */}
+        {!isOverview && (
         <UrlSearchInput
           placeholder={
             isByUser
-              ? "Search name, email, role…"
+              ? "Search name, email, role, IP…"
               : showSubject
                 ? "Search SO, EC, user, details…"
-                : "Search user, details…"
+                : "Search user, details, IP…"
           }
         />
+        )}
       </div>
 
+      {isOverview && overview ? (
+        <div className={pending ? "opacity-60 transition-opacity" : ""}>
+          <AuditOverviewPanel data={overview} />
+        </div>
+      ) : (
+      <>
       <p className="mb-3 text-sm text-muted">{summary}</p>
 
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">
         <div className="overflow-x-auto">
           {isByUser ? (
-            <table className="w-full min-w-[820px] text-sm">
+            <table className="w-full min-w-[960px] text-sm">
               <thead>
                 <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
                   <th className="px-4 py-3">User</th>
@@ -333,12 +376,13 @@ export function AuditLogView({
                     Active Time
                   </th>
                   <th className="px-4 py-3">Last Active</th>
+                  <th className="px-4 py-3">Last IP / Device</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-card-border">
                 {pageRows.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted">
+                    <td colSpan={7} className="px-4 py-10 text-center text-sm text-muted">
                       No activity in this range.
                     </td>
                   </tr>
@@ -360,12 +404,34 @@ export function AuditLogView({
                     <td className="px-4 py-3 whitespace-nowrap text-muted">
                       {fmt(u.lastActive)}
                     </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {u.lastIp || u.lastDevice ? (
+                        <div className="leading-tight">
+                          <div className="font-mono text-xs text-foreground">
+                            {u.lastIp ?? "—"}
+                            {u.ipCount > 1 && (
+                              <span
+                                className="ml-1.5 font-sans text-[11px] text-muted"
+                                title={`Seen from ${u.ipCount} addresses in this period`}
+                              >
+                                +{u.ipCount - 1} more
+                              </span>
+                            )}
+                          </div>
+                          {u.lastDevice && (
+                            <div className="mt-0.5 text-[11px] text-muted">{u.lastDevice}</div>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs italic text-muted-foreground">not recorded</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           ) : (
-            <table className="w-full min-w-[960px] text-sm">
+            <table className="w-full min-w-[1120px] text-sm">
               <thead>
                 <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
                   <th className="px-4 py-3">Time</th>
@@ -373,13 +439,14 @@ export function AuditLogView({
                   <th className="px-4 py-3">Event</th>
                   {showSubject && <th className="px-4 py-3">SO / EC</th>}
                   <th className="px-4 py-3">Details</th>
+                  <th className="px-4 py-3">IP / Device</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-card-border">
                 {pageRows.length === 0 && (
                   <tr>
                     <td
-                      colSpan={showSubject ? 5 : 4}
+                      colSpan={showSubject ? 6 : 5}
                       className="px-4 py-10 text-center text-sm text-muted"
                     >
                       No events in this range.
@@ -408,6 +475,14 @@ export function AuditLogView({
                     <td className="px-4 py-3 text-muted">
                       <DetailsCell text={e.details} />
                     </td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <OriginCell
+                        ip={e.ip_address}
+                        device={e.device_type}
+                        browser={e.browser}
+                        os={e.os}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -422,6 +497,8 @@ export function AuditLogView({
           total={result.total}
         />
       </div>
+      </>
+      )}
     </div>
   );
 }

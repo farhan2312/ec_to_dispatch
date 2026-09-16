@@ -8,6 +8,7 @@ import {
   AUDIT_RANGES,
   AUDIT_TABS,
   auditWindow,
+  DEFAULT_AUDIT_TAB,
   parseAuditDate,
 } from "@/lib/audit-range";
 
@@ -46,7 +47,9 @@ export async function GET(req: NextRequest) {
   if (user.role !== "admin") return new NextResponse("Not authorized", { status: 403 });
 
   const p = req.nextUrl.searchParams;
-  const tab = p.get("tab") ?? "by_user";
+  // Overview, like Usage by User, summarises every event in the period.
+  const requested = p.get("tab") ?? DEFAULT_AUDIT_TAB;
+  const tab = requested === "overview" ? "by_user" : requested;
   const range = p.get("range") ?? "7d";
   const from = parseAuditDate(p.get("from") ?? undefined);
   const to = parseAuditDate(p.get("to") ?? undefined);

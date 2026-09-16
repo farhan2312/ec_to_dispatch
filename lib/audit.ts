@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { ACTIVE_GAP_MINUTES } from "@/lib/audit-labels";
+import { currentRequestMeta } from "@/lib/request-meta";
 import {
   PAGE_SIZE,
   likePattern,
@@ -41,11 +42,16 @@ export async function logAudit(entry: {
 }): Promise<void> {
   const s = entry.subject ?? {};
   try {
+    // Every event carries where it came from, read off the request being
+    // served, so no caller has to remember to pass it.
+    const origin = await currentRequestMeta();
     await query(
       `INSERT INTO audit_log
          (user_id, user_email, user_role, action, category, target, details,
-          order_id, item_id, so_no, ec_no)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          order_id, item_id, so_no, ec_no,
+          ip_address, user_agent, device_type, browser, os)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+               $12, $13, $14, $15, $16)`,
       [
         entry.actor?.id ?? null,
         entry.actor?.email ?? null,
@@ -58,6 +64,11 @@ export async function logAudit(entry: {
         s.itemId ?? null,
         s.soNo ?? null,
         s.ecNo ?? null,
+        origin.ip,
+        origin.userAgent,
+        origin.device,
+        origin.browser,
+        origin.os,
       ]
     );
   } catch (error) {
@@ -113,6 +124,11 @@ export type AuditEvent = {
   item_id: string | null;
   so_no: string | null;
   ec_no: string | null;
+  /** Where the request came from; null on events logged before it was kept. */
+  ip_address: string | null;
+  device_type: string | null;
+  browser: string | null;
+  os: string | null;
   /** Whether the order / EC still exists — a link to a deleted one leads nowhere. */
   order_live: boolean;
   item_live: boolean;
@@ -128,6 +144,11 @@ export type AuditUserRow = {
   /** See ACTIVE_GAP: the short gaps between this user's actions, added up. */
   activeMinutes: number;
   lastActive: string | null;
+  /** The address of their latest event, and how many distinct ones they used. */
+  lastIp: string | null;
+  ipCount: number;
+  /** "Desktop · Chrome" — what their latest event came from. */
+  lastDevice: string | null;
 };
 
 /**
@@ -142,6 +163,7 @@ const EVENT_COLUMNS = `id,
               to_char(created_at AT TIME ZONE 'UTC', ${ISO_FMT}) AS created_at,
               user_email, user_role, action, category, target, details,
               order_id, item_id, so_no, ec_no,
+              ip_address, device_type, browser, os,
               EXISTS (SELECT 1 FROM orders o WHERE o.id = audit_log.order_id) AS order_live,
               EXISTS (SELECT 1 FROM order_items i WHERE i.id = audit_log.item_id) AS item_live`;
 
@@ -163,7 +185,8 @@ const EVENT_WHERE = `WHERE ($1::text IS NULL OR category = $1)
         AND ($3::timestamptz IS NULL OR created_at < $3)
         AND ($4::text IS NULL OR user_email ILIKE $4 OR details ILIKE $4
                               OR target ILIKE $4 OR action ILIKE $4
-                              OR so_no ILIKE $4 OR ec_no ILIKE $4)`;
+                              OR so_no ILIKE $4 OR ec_no ILIKE $4
+                              OR ip_address ILIKE $4)`;
 
 /**
  * One page of audit events, filtered in SQL.
@@ -207,7 +230,7 @@ export async function listAuditEventsPage(opts: {
 const USERS_SQL = `
   WITH base AS (
     SELECT lower(user_email) AS key, user_email, user_role, action, category,
-           created_at
+           created_at, ip_address, device_type, browser
       FROM audit_log
      WHERE user_email IS NOT NULL
        AND ($1::timestamptz IS NULL OR created_at >= $1)
@@ -234,7 +257,12 @@ const USERS_SQL = `
               FILTER (WHERE user_role IS NOT NULL))[1] AS role,
            count(*) FILTER (WHERE category = 'activity')::int AS actions,
            count(*) FILTER (WHERE action = 'login')::int AS sessions,
-           max(created_at) AS last_event
+           max(created_at) AS last_event,
+           (array_agg(ip_address ORDER BY created_at DESC)
+              FILTER (WHERE ip_address IS NOT NULL))[1] AS last_ip,
+           count(DISTINCT ip_address)::int AS ip_count,
+           (array_agg(device_type || coalesce(' · ' || browser, '') ORDER BY created_at DESC)
+              FILTER (WHERE device_type IS NOT NULL))[1] AS last_device
       FROM base
      GROUP BY key
   ),
@@ -243,14 +271,16 @@ const USERS_SQL = `
            (SELECT u.full_name FROM users u WHERE lower(u.email) = ev.key LIMIT 1) AS name,
            ev.role, ev.actions, ev.sessions,
            round(COALESCE(active.seconds, 0) / 60.0)::int AS active_minutes,
-           ev.last_event
+           ev.last_event, ev.last_ip, ev.ip_count, ev.last_device
       FROM ev LEFT JOIN active ON active.key = ev.key
   )
   SELECT email, name, role, actions, sessions,
          active_minutes AS "activeMinutes",
-         to_char(last_event AT TIME ZONE 'UTC', ${ISO_FMT}) AS "lastActive"
+         to_char(last_event AT TIME ZONE 'UTC', ${ISO_FMT}) AS "lastActive",
+         last_ip AS "lastIp", ip_count AS "ipCount", last_device AS "lastDevice"
     FROM merged
-   WHERE ($3::text IS NULL OR email ILIKE $3 OR role ILIKE $3 OR name ILIKE $3)`;
+   WHERE ($3::text IS NULL OR email ILIKE $3 OR role ILIKE $3 OR name ILIKE $3
+          OR last_ip ILIKE $3)`;
 
 /**
  * One page of the per-user aggregate. Grouping happens in SQL so the totals

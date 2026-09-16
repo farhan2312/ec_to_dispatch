@@ -5,7 +5,10 @@
  */
 
 export type AuditRange = "today" | "7d" | "30d" | "all";
-export type AuditTab = "by_user" | "activity" | "logins" | "ownership";
+export type AuditTab = "overview" | "by_user" | "activity" | "logins" | "ownership";
+
+/** The tab the page opens on, which the URL leaves out. */
+export const DEFAULT_AUDIT_TAB: AuditTab = "overview";
 
 export const AUDIT_RANGES: { key: AuditRange; label: string }[] = [
   { key: "today", label: "Today" },
@@ -15,6 +18,7 @@ export const AUDIT_RANGES: { key: AuditRange; label: string }[] = [
 ];
 
 export const AUDIT_TABS: { key: AuditTab; label: string }[] = [
+  { key: "overview", label: "Overview" },
   { key: "by_user", label: "Usage by User" },
   { key: "activity", label: "Activity" },
   { key: "logins", label: "Logins & Sessions" },
@@ -23,6 +27,7 @@ export const AUDIT_TABS: { key: AuditTab; label: string }[] = [
 
 /** Which `audit_log.category` each event tab shows. */
 export const AUDIT_CATEGORY_BY_TAB: Record<string, string | null> = {
+  overview: null,
   by_user: null,
   activity: "activity",
   logins: "auth",
@@ -43,7 +48,7 @@ function todayStartIst(): Date {
   return new Date(`${isoDate}T00:00:00+05:30`);
 }
 
-const ISO_DATE = /^d{4}-d{2}-d{2}$/;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 /** A YYYY-MM-DD that is a real calendar date, or null. */
 export function parseAuditDate(value: string | undefined): string | null {

@@ -2095,3 +2095,22 @@ DROP TRIGGER IF EXISTS order_payment_terms_set_updated_at ON order_payment_terms
 CREATE TRIGGER order_payment_terms_set_updated_at
     BEFORE UPDATE ON order_payment_terms
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+
+-- ===========================================================================
+-- audit_log: where an event came from
+-- ===========================================================================
+-- The client address and browser of the request that caused the event. The
+-- address is read from the proxy's forwarding header (see lib/request-meta.ts);
+-- device, browser and OS are derived from the user agent once, at write time,
+-- so the overview can group on them in SQL. Rows from before this read NULL
+-- and show as "Unknown".
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS ip_address  TEXT;
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS user_agent  TEXT;
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS device_type TEXT;
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS browser     TEXT;
+ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS os          TEXT;
+-- Sign-in history per address: failed attempts from one place, and who has
+-- signed in from where.
+CREATE INDEX IF NOT EXISTS audit_log_ip_created_idx
+    ON audit_log (ip_address, created_at DESC)
+    WHERE ip_address IS NOT NULL;

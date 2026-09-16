@@ -806,13 +806,53 @@ function RoleBars({ rows }: { rows: AuditOverview["roles"] }) {
   );
 }
 
+/**
+ * The charts' colours, for light and dark: categorical slots in a fixed order
+ * (validated for colour-vision deficiency against these surfaces), a gray for
+ * Other/Unknown, hairline grid and axis, and the two ends of the one-hue ramp
+ * the heatmaps use.
+ *
+ * They ship with the component rather than in globals.css, scoped to the
+ * panel: nothing else uses them, and a component's own code is picked up
+ * reliably on every change, where the dev server has twice kept serving a
+ * stale global stylesheet — leaving these charts without colour.
+ */
+const VIZ_TOKENS = `
+.audit-viz {
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-other: #b8bec8;
+  --viz-grid: #eceff3;
+  --viz-axis: #d4dce6;
+  --viz-seq-lo: #eef3fa;
+  --viz-seq-hi: #104281;
+  --viz-seq-ink: #ffffff;
+}
+.dark .audit-viz {
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-other: #4b5a73;
+  --viz-grid: #1a2740;
+  --viz-axis: #2a3a57;
+  --viz-seq-lo: #16233b;
+  --viz-seq-hi: #86b6ef;
+  --viz-seq-ink: #0b1220;
+}`;
+
 export function AuditOverviewPanel({ data }: { data: AuditOverview }) {
   const days = data.daily.map((d) => d.day);
   const originMissing = data.withoutOrigin > 0;
   const noOriginAtAll = data.kpis.events > 0 && data.withoutOrigin >= data.kpis.events;
 
   return (
-    <div className="space-y-4">
+    <div className="audit-viz space-y-4">
+      <style>{VIZ_TOKENS}</style>
       <KpiRow data={data} />
       {data.previous && (
         <p className="-mt-1 text-xs text-muted">

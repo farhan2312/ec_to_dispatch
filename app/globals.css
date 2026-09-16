@@ -33,6 +33,22 @@
   --brand-navy-1: #0a2a5e;
   --brand-navy-2: #123a7d;
   --brand-navy-3: #0d4a8f;
+
+  /* charts — categorical slots in fixed order (validated for colour-vision
+     deficiency against this surface), a gray for Other/Unknown, and the two
+     ends of the one-hue magnitude ramp used by heatmaps */
+  --viz-1: #2a78d6;
+  --viz-2: #eb6834;
+  --viz-3: #1baf7a;
+  --viz-4: #eda100;
+  --viz-5: #e87ba4;
+  --viz-other: #b8bec8;
+  --viz-grid: #eceff3;
+  --viz-axis: #d4dce6;
+  --viz-seq-lo: #eef3fa;
+  --viz-seq-hi: #104281;
+  /* ink for a number sitting on the darker half of the ramp */
+  --viz-seq-ink: #ffffff;
 }
 
 .dark {
@@ -60,6 +76,18 @@
   --sidebar-border: rgba(255, 255, 255, 0.07);
 
   --brand-label: #cbd5e1;
+
+  --viz-1: #3987e5;
+  --viz-2: #d95926;
+  --viz-3: #199e70;
+  --viz-4: #c98500;
+  --viz-5: #d55181;
+  --viz-other: #4b5a73;
+  --viz-grid: #1a2740;
+  --viz-axis: #2a3a57;
+  --viz-seq-lo: #16233b;
+  --viz-seq-hi: #86b6ef;
+  --viz-seq-ink: #0b1220;
 }
 
 @theme inline {

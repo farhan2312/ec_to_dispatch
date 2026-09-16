@@ -459,19 +459,27 @@ export async function buildAuditReportPdf(
     // leave a dash that reads like "no order involved".
     return e.action.startsWith("order.") ? "not recorded" : "—";
   };
+  // The address, with the device beneath it; old events say they predate it.
+  const origin = (e: AuditReport["events"][number]): Cell => {
+    if (!e.ip_address && !e.device_type) return "not recorded";
+    const machine = [e.device_type, e.browser].filter(Boolean).join(" · ");
+    return machine ? [e.ip_address ?? "—", machine] : (e.ip_address ?? "—");
+  };
   const columns: Column[] = meta.showSubject
     ? [
-        { label: "Time (IST)", width: 92 },
-        { label: "User", width: 150 },
-        { label: "Event", width: 86 },
-        { label: "SO / EC", width: 118 },
-        { label: "Details", width: 324 },
+        { label: "Time (IST)", width: 88 },
+        { label: "User", width: 140 },
+        { label: "Event", width: 80 },
+        { label: "SO / EC", width: 104 },
+        { label: "Details", width: 256 },
+        { label: "IP / Device", width: 102 },
       ]
     : [
         { label: "Time (IST)", width: 92 },
-        { label: "User", width: 170 },
-        { label: "Event", width: 110 },
-        { label: "Details", width: 398 },
+        { label: "User", width: 160 },
+        { label: "Event", width: 104 },
+        { label: "Details", width: 310 },
+        { label: "IP / Device", width: 104 },
       ];
   L.table(
     columns,
@@ -480,10 +488,10 @@ export async function buildAuditReportPdf(
         ? [e.user_email ?? "—", roleLabel(e.user_role)]
         : (e.user_email ?? "—");
       return meta.showSubject
-        ? [istStamp(e.created_at), who, actionLabel(e.action), subject(e), detailLines(e.details)]
-        : [istStamp(e.created_at), who, actionLabel(e.action), detailLines(e.details)];
+        ? [istStamp(e.created_at), who, actionLabel(e.action), subject(e), detailLines(e.details), origin(e)]
+        : [istStamp(e.created_at), who, actionLabel(e.action), detailLines(e.details), origin(e)];
     }),
-    { empty: "No events in this period.", muted: [0] }
+    { empty: "No events in this period.", muted: [0, meta.showSubject ? 5 : 4] }
   );
 
   // --- footer on every page, now that the page count is known ----------------

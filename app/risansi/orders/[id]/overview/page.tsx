@@ -37,7 +37,14 @@ export default async function OrderOverviewPage({
   if (!detail) notFound();
   // A department that has nothing to do with this order cannot reach it by
   // URL either — the same rule that keeps it off their queue and dashboard.
-  if (!roleSeesOrder(user.role, detail.order)) notFound();
+  if (
+    !roleSeesOrder(user.role, {
+      ...detail.order,
+      ec_types: detail.items.map((i) => i.item_type),
+    })
+  ) {
+    notFound();
+  }
 
   return (
     <OrderOverview

@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { spareEcSql } from "@/lib/dept-view";
 import { isCentral, reminderDeptForRole, type ReminderDept } from "@/lib/roles";
 
 // The DB session runs in UTC, but the business operates on IST days. Deadlines
@@ -45,6 +46,8 @@ const REMINDERS_SQL = `
      AND EXISTS (
        SELECT 1 FROM order_items it
         WHERE it.order_id = o.id
+          -- Spares need no drawing.
+          AND NOT (${spareEcSql("it", "o")})
           AND NOT EXISTS (
             SELECT 1 FROM order_drawing_revisions rv
              WHERE rv.item_id = it.id

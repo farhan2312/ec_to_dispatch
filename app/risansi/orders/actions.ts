@@ -25,6 +25,7 @@ import {
   addTargetRevision,
   completeDept,
   deleteLatestTargetRevision,
+  deptInvolvedInOrder,
   listTargetRevisions,
   uncompleteDept,
   updateChildRow,
@@ -1030,6 +1031,23 @@ async function drawingHandoffs(id: string): Promise<DrawingHandoffs | null> {
   return result.rows[0] ?? null;
 }
 
+/**
+ * Who hears about a target date on this order: the department that works to
+ * it, unless the order carries no work for it — a Drawing target on an order
+ * of Spares only tells nobody.
+ */
+async function targetRecipientsFor(
+  column: string,
+  orderId: string
+): Promise<{ label: string; roles: string[] } | null> {
+  const recipients = targetDateRecipients(column);
+  if (!recipients) return null;
+  if (column === "drg_target_date" && !(await deptInvolvedInOrder("drawing", orderId))) {
+    return null;
+  }
+  return recipients;
+}
+
 /** Notify Accounts (and Central for oversight) when Billing files a new PI. */
 async function notifyPiCreated(
   orderId: string,
@@ -1443,7 +1461,7 @@ export async function addTargetRevisionAction(
     // the 19th" is far less useful than knowing why.
     // Target dates used to notify through notifySectionSaved; they are no
     // longer written by a section save, so the emit happens here instead.
-    const recipients = targetDateRecipients(target.column);
+    const recipients = await targetRecipientsFor(target.column, orderId);
     if (recipients) {
       const when = formatTargetDate(date);
       const why = trimmedReason ? ` · ${trimmedReason}` : "";
@@ -1504,7 +1522,7 @@ export async function deleteTargetRevisionAction(
 
     // Same reasoning as setting one: the department is working to this date,
     // so being told it was withdrawn matters as much as being told it moved.
-    const recipients = targetDateRecipients(target.column);
+    const recipients = await targetRecipientsFor(target.column, orderId);
     if (recipients) {
       await emitNotification({
         roles: recipients.roles,

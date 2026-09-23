@@ -48,7 +48,7 @@ const values = (list: { value: string }[]) => list.map((o) => o.value);
 const DEPT_STATUSES: Record<DeptFilterKey, string[]> = {
   // The furthest hand-off wins: a drawing that came back approved reads as
   // Approved even though it was issued to Operations and the client first.
-  drawing: ["Approved", "Issued to Client", "Issued to Operations", PENDING],
+  drawing: ["Approved", "Issued to Client", "Issued to Operations", PENDING, NOT_APPLICABLE],
   // Bought out and every line receipted.
   purchase: ["Received", PENDING, NOT_APPLICABLE],
   quality: ["Submitted", PENDING, NOT_APPLICABLE],

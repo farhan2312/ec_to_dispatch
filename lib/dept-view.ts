@@ -63,6 +63,38 @@ export function dispatchTarget(row: OrderOverviewRow): string | null {
 const never = () => false;
 
 /**
+ * A Spare EC needs no drawing: it is a part supplied as it is, not something
+ * drawn for the client. Read off the EC's own type, else the SO's — an Add-On
+ * Spare under a Pump order is still a spare.
+ */
+export function isSpareEc(r: {
+  item_type?: string | null;
+  order_type?: string | null;
+}): boolean {
+  const own = text(r.item_type);
+  return (own || text(r.order_type)).toLowerCase() === "spare";
+}
+
+/**
+ * The SQL twin of isSpareEc, over an EC alias and its order's alias. An order
+ * with no EC row (a LEFT JOIN miss) reads the SO's type.
+ */
+export function spareEcSql(item = "it", order = "o"): string {
+  return `lower(btrim(COALESCE(NULLIF(btrim(${item}.item_type), ''), ${order}.order_type, ''))) = 'spare'`;
+}
+
+/**
+ * The order has drawing work: an EC that is not a Spare, or — before any EC
+ * exists — an SO that is not of type Spare.
+ */
+function drawingInvolvedSql(order: string): string {
+  return `(EXISTS (SELECT 1 FROM order_items s
+                   WHERE s.order_id = ${order}.id AND NOT (${spareEcSql("s", order)}))
+          OR (NOT EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = ${order}.id)
+              AND lower(btrim(COALESCE(${order}.order_type, ''))) <> 'spare'))`;
+}
+
+/**
  * Paid only once the client has the material: no PI to raise and no receipt
  * to chase. Read from the order's payment terms — every line counted from
  * receipt — rather than from prose or a second answer to the same question.
@@ -78,16 +110,19 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     // The column carries the raw wording ("Drg approved"); the filter and
     // the popup say "Approved". One vocabulary, so say theirs.
     status: (r) =>
-      same(r.drg_status, "drg approved")
+      isSpareEc(r)
+        ? NOT_APPLICABLE
+        : same(r.drg_status, "drg approved")
         ? "Approved"
         : same(r.drg_status, "drg. issued to client")
           ? "Issued to Client"
           : same(r.drg_status, "drg. issued to operations")
             ? "Issued to Operations"
             : PENDING,
-    done: (r) => same(r.drg_status, "drg approved"),
-    na: never,
-    hidden: never,
+    done: (r) => !isSpareEc(r) && same(r.drg_status, "drg approved"),
+    // A Spare is supplied as it is: nothing for Drawing to draw.
+    na: isSpareEc,
+    hidden: isSpareEc,
     target: (r) => r.drg_target_date,
     hasTarget: true,
   },
@@ -228,11 +263,14 @@ export { isPerEcDept };
  * the department has no business seeing.
  *
  * A department that has nothing to do with an order does not see the order:
- * Purchase only works orders with BOI, Quality only those needing QC docs,
- * Accounts only those carrying a receivable. The rest work every order.
+ * Drawing only orders with an EC that is not a Spare, Purchase only orders
+ * with BOI, Quality only those needing QC docs, Accounts only those carrying a
+ * receivable. The rest work every order.
  */
 export function deptInvolvementSql(dept: DeptKey, alias = "o"): string {
   switch (dept) {
+    case "drawing":
+      return drawingInvolvedSql(alias);
     case "purchase":
       return `lower(coalesce(${alias}.boi, '')) = 'yes'`;
     case "quality":
@@ -252,10 +290,28 @@ export function deptInvolvementSql(dept: DeptKey, alias = "o"): string {
  */
 export function roleSeesOrder(
   role: string,
-  order: { boi?: unknown; qc_required?: unknown; bill_type?: unknown }
+  order: {
+    boi?: unknown;
+    qc_required?: unknown;
+    bill_type?: unknown;
+    order_type?: unknown;
+    /**
+     * The types of the ECs in view — every EC on an SO page, the one EC on an
+     * EC page. Drawing reaches the page while any of them is not a Spare.
+     */
+    ec_types?: unknown[];
+  }
 ): boolean {
   const view = deptViewForRole(role);
   if (!view) return true;
+  if (view.key === "drawing") {
+    const orderType = order.order_type == null ? null : String(order.order_type);
+    const types = order.ec_types ?? [];
+    if (types.length === 0) return !isSpareEc({ order_type: orderType });
+    return types.some(
+      (t) => !isSpareEc({ item_type: t == null ? null : String(t), order_type: orderType })
+    );
+  }
   return !view.hidden({
     boi: order.boi == null ? null : String(order.boi),
     qc_required: order.qc_required == null ? null : String(order.qc_required),

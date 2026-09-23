@@ -24,7 +24,7 @@ import {
   type DeptCompletion,
   type DeptKey,
 } from "@/lib/dept-completion";
-import { DEPT_VIEWS } from "@/lib/dept-view";
+import { DEPT_VIEWS, isSpareEc } from "@/lib/dept-view";
 import { allDeptsSettled } from "@/lib/dept-status";
 import {
   describeOrderListFilter,
@@ -339,8 +339,7 @@ const done = {
     const p = (r.payment_status ?? "").trim().toLowerCase();
     return p === "payment rcvd" || p === "after receipt";
   },
-  drawing: (r: OrderOverviewRow) =>
-    (r.drg_status ?? "").trim().toLowerCase() === "drg approved",
+  drawing: (r: OrderOverviewRow) => DEPT_VIEWS.drawing.done(r),
   // BOI items all received (or the SO doesn't need BOI).
   purchase: (r: OrderOverviewRow) => r.purchase_done,
   qc: (r: OrderOverviewRow) => r.qc_submitted,
@@ -415,7 +414,7 @@ const EC_DEPTS: {
     label: "Drawing",
     target: (r) => r.drg_target_date,
     done: done.drawing,
-    chip: (r) => <Chip value={r.drg_status} />,
+    chip: (r) => <Chip value={isSpareEc(r) ? "N/A (Spare)" : r.drg_status} />,
   },
   {
     key: "purchase",

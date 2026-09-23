@@ -11,7 +11,7 @@ import {
   type DeptCompletion,
   type DeptKey,
 } from "@/lib/dept-completion";
-import { deptInvolvementSql } from "@/lib/dept-view";
+import { deptInvolvementSql, spareEcSql } from "@/lib/dept-view";
 import type { LockFacts } from "@/lib/order-lock";
 import {
   isPerEcDept,
@@ -1343,7 +1343,14 @@ export async function listOrdersOverview(
   const result = await query<OrderOverviewRow>(
     `SELECT ${overviewColumns()}
        ${OVERVIEW_FROM}
-      WHERE ${dept ? deptInvolvementSql(dept) : "TRUE"}
+      WHERE ${
+        // Drawing's rows are ECs: a Spare EC is out, whatever the SO around it.
+        dept === "drawing"
+          ? `NOT (${spareEcSql("it", "o")})`
+          : dept
+            ? deptInvolvementSql(dept)
+            : "TRUE"
+      }
       ORDER BY o.sl_no ASC, it.seq ASC NULLS FIRST`
   );
   return result.rows;
@@ -1516,10 +1523,14 @@ export async function listItemsForSection(
     .map(([t, a]) => `LEFT JOIN ${t} ${a} ON ${a}.item_id = it.id`)
     .join("\n       ");
 
-  // QC isn't involved when the SO is flagged QC Needed = No.
+  // QC isn't involved when the SO is flagged QC Needed = No, nor Drawing on a
+  // Spare EC.
   const clauses: string[] = [];
   if (table === "order_qc") {
     clauses.push(`(o.qc_required IS NULL OR o.qc_required <> 'No')`);
+  }
+  if (deptForTable(table) === "drawing") {
+    clauses.push(`NOT (${spareEcSql("it", "o")})`);
   }
   if (orderIds) clauses.push(`it.order_id = ANY($1)`);
   const whereSql = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
@@ -1803,6 +1814,8 @@ const PLANNING_ANY = `EXISTS (SELECT 1 FROM order_planning pl
 
 const NO_BOI = `COALESCE(o.boi, '') <> 'Yes'`;
 const NO_QC = `COALESCE(o.qc_required, '') = 'No'`;
+// A Spare EC is supplied as it is: Drawing has nothing to draw.
+const NO_DRG = spareEcSql("it", "o");
 // Paid only on receipt: no PI is due and Accounts has nothing to confirm, so
 // both departments read N/A on these orders. Read from the order's payment
 // terms — every line counted from receipt, and at least one line — which is
@@ -1822,19 +1835,36 @@ const PAYMENT_SET = `EXISTS (SELECT 1 FROM order_accounts a
                              WHERE a.order_id = o.id
                                AND COALESCE(a.payment_status, '') <> '')`;
 
+/**
+ * Whether a department has any work on this order — the same rule its queue
+ * uses. Lets a notice skip a department with nothing to do: a Drawing target
+ * on an order of Spares only, say.
+ */
+export async function deptInvolvedInOrder(dept: DeptKey, orderId: string): Promise<boolean> {
+  if (!UUID_RE.test(orderId)) return false;
+  const r = await query<{ involved: boolean }>(
+    `SELECT (${deptInvolvementSql(dept, "o")}) AS involved FROM orders o WHERE o.id = $1`,
+    [orderId]
+  );
+  return r.rows[0]?.involved === true;
+}
+
 /** The state of one EC (`it`) for a per-EC department. */
 function ecState(dept: DeptFilterKey, status: string): string {
   switch (dept) {
-    case "drawing":
+    case "drawing": {
+      if (status === NOT_APPLICABLE) return NO_DRG;
       // Approval outranks issue, matching the popup's precedence.
-      if (status === "Approved") return DRG_APPROVED;
+      const applies = `NOT (${NO_DRG})`;
+      if (status === "Approved") return `${applies} AND ${DRG_APPROVED}`;
       if (status === "Issued to Client") {
-        return `${DRG_ISSUED} AND NOT ${DRG_APPROVED}`;
+        return `${applies} AND ${DRG_ISSUED} AND NOT ${DRG_APPROVED}`;
       }
       if (status === "Issued to Operations") {
-        return `${DRG_TO_OPS} AND NOT ${DRG_ISSUED} AND NOT ${DRG_APPROVED}`;
+        return `${applies} AND ${DRG_TO_OPS} AND NOT ${DRG_ISSUED} AND NOT ${DRG_APPROVED}`;
       }
-      return `NOT ${DRG_APPROVED} AND NOT ${DRG_ISSUED} AND NOT ${DRG_TO_OPS}`;
+      return `${applies} AND NOT ${DRG_APPROVED} AND NOT ${DRG_ISSUED} AND NOT ${DRG_TO_OPS}`;
+    }
     case "purchase":
       if (status === NOT_APPLICABLE) return NO_BOI;
       if (status === "Received") return `NOT (${NO_BOI}) AND (${BOI_RECEIVED})`;
@@ -1898,7 +1928,7 @@ const DEPT_TARGET_COLUMN: Partial<Record<DeptFilterKey, string>> = {
 function ecDonePredicate(dept: DeptFilterKey): string {
   switch (dept) {
     case "drawing":
-      return DRG_APPROVED;
+      return `((${NO_DRG}) OR ${DRG_APPROVED})`;
     case "purchase":
       return `((${NO_BOI}) OR (${BOI_RECEIVED}))`;
     case "quality":
@@ -2456,6 +2486,7 @@ export async function getOrderDeptStatus(
     ec_no: string | null;
     item_type: string | null;
     boi: string | null;
+    spare: boolean;
     drg: string | null;
     purchase: string;
     qc_required: string | null;
@@ -2465,6 +2496,7 @@ export async function getOrderDeptStatus(
     packing_date: string | null;
   }>(
     `SELECT it.id, it.ec_no, it.item_type, o.boi,
+            (${spareEcSql("it", "o")}) AS spare,
             (SELECT CASE
                       WHEN bool_or(lower(coalesce(rv.approved,'')) = 'yes')
                         THEN 'Approved'
@@ -2500,7 +2532,7 @@ export async function getOrderDeptStatus(
     id: r.id,
     ec_no: r.ec_no,
     item_type: r.item_type,
-    drawing: r.drg ? done(r.drg) : pending(),
+    drawing: r.spare ? NA : r.drg ? done(r.drg) : pending(),
     purchase:
       r.purchase === "na"
         ? NA

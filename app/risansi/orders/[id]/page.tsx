@@ -22,7 +22,14 @@ export default async function OrderDetailPage({
 
   const detail = await getOrderDetail(id);
   if (!detail) notFound();
-  if (!roleSeesOrder(user.role, detail.order)) notFound();
+  if (
+    !roleSeesOrder(user.role, {
+      ...detail.order,
+      ec_types: detail.items.map((i) => i.item_type),
+    })
+  ) {
+    notFound();
+  }
 
   // Target dates keep their full history; the panel shows the current value
   // with every earlier one behind it.

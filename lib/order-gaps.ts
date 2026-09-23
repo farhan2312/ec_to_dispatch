@@ -11,6 +11,7 @@
 
 import { query } from "@/lib/db";
 import { SECTION_BY_TABLE, type OrderField } from "@/lib/order-schema";
+import { deptInvolvementSql } from "@/lib/dept-view";
 
 export type OrderGapRow = {
   id: string;
@@ -51,6 +52,9 @@ function filledSql(f: OrderField): string {
 
 /** "This field applies to this order" — the dependsOn gate, in SQL. */
 function appliesSql(f: OrderField): string {
+  // Drawing's target is owed only where there is something to draw: an order
+  // of Spares only has none.
+  if (f.column === "drg_target_date") return deptInvolvementSql("drawing", "o");
   if (!f.dependsOn) return "TRUE";
   return f.dependsOn
     .map((d) => {

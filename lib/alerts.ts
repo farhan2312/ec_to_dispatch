@@ -1,4 +1,5 @@
 import { query } from "@/lib/db";
+import { spareEcSql } from "@/lib/dept-view";
 import {
   offsetFor,
   pageResult,
@@ -38,6 +39,8 @@ const ALERTS_SQL = `
          (${TODAY_IST} - o.drg_target_date)::int AS days_overdue
     FROM orders o JOIN order_items it ON it.order_id = o.id
    WHERE o.drg_target_date < ${TODAY_IST}
+     -- A Spare EC needs no drawing, so it is never late for one.
+     AND NOT (${spareEcSql("it", "o")})
      AND NOT EXISTS (
        SELECT 1 FROM order_drawing_revisions rv
         WHERE rv.item_id = it.id

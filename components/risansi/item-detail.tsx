@@ -17,6 +17,7 @@ import { EditableSection, type DocumentsConfig } from "./editable-section";
 import { OrderChildList } from "./order-children";
 import { RevisionDocsButton } from "./drawing-docs";
 import { OrderCopyCell } from "./order-copy-cell";
+import { isSpareEc } from "@/lib/dept-view";
 
 type Row = Record<string, unknown>;
 
@@ -44,9 +45,16 @@ export function ItemDetail({
   // Item + department sections the role can see (QC section hidden when the SO
   // is flagged QC Needed = No).
   const qcNeeded = str(order.qc_required).trim().toLowerCase() !== "no";
+  // A Spare is supplied as it is: no drawing to track on it.
+  const drawingNeeded = !isSpareEc({
+    item_type: str(item.item_type),
+    order_type: str(order.order_type),
+  });
   const visibleSections = ITEM_SECTIONS.filter(
     (s) =>
-      canAccessDepartment(role, s.table) && (s.table !== "order_qc" || qcNeeded)
+      canAccessDepartment(role, s.table) &&
+      (s.table !== "order_qc" || qcNeeded) &&
+      (s.table !== "order_drawing" || drawingNeeded)
   );
 
   return (

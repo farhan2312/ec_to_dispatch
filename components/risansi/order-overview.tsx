@@ -37,6 +37,7 @@ import {
   formatDate,
   orderComplete,
 } from "./dept-status-board";
+import { isSpareEc } from "@/lib/dept-view";
 
 type Row = Record<string, unknown>;
 
@@ -517,7 +518,17 @@ export function OrderOverview({
 
                 {isOpen && (
                   <div className="space-y-5 border-t border-card-border bg-background/40 px-4 py-4">
-                    {itemSections.map((section) => {
+                    {itemSections
+                      // A Spare EC has no drawing to track.
+                      .filter(
+                        (section) =>
+                          section.table !== "order_drawing" ||
+                          !isSpareEc({
+                            item_type: str(item.item_type),
+                            order_type: str(order.order_type),
+                          })
+                      )
+                      .map((section) => {
                       const row =
                         section.table === "order_items"
                           ? item

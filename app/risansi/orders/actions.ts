@@ -1343,10 +1343,18 @@ export async function importPiExcelAction(
     if (good.length === 0) {
       return { ok: false, error: "No valid PI rows found in that sheet." };
     }
-    const inserted = await insertBillingDocs(
+    const created = await insertBillingDocs(
       orderId,
       good.map((r) => ({ pi_no: r.pi_no, pi_date: r.pi_date, pi_value: r.pi_value }))
     );
+    const inserted = created.length;
+    // Each imported PI tells Accounts, exactly as one typed in by hand does —
+    // one notification per PI, so each carries its own number and amount.
+    for (const pi of created) {
+      if ((pi.pi_no ?? "").trim()) {
+        await notifyPiCreated(orderId, pi.id, pi.pi_no.trim(), user.role);
+      }
+    }
     await logAudit({
       actor: { id: user.id, email: user.email, role: user.role },
       action: "order.update",

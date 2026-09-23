@@ -26,6 +26,7 @@ import {
   completeDept,
   deleteLatestTargetRevision,
   deptInvolvedInOrder,
+  fillFirstTargets,
   listTargetRevisions,
   uncompleteDept,
   updateChildRow,
@@ -145,6 +146,8 @@ export async function createOrderAction(
       before: null,
       after: input as Record<string, unknown>,
     });
+    // A delivery or hand-over date on the new order gives its first targets.
+    await autoFillTargets(id, user);
 
     revalidatePath("/risansi/orders");
     return { ok: true, slNo: sl_no };
@@ -347,6 +350,9 @@ export async function createItemAction(
     // No target-date notifications here: target dates are SO-level and fire
     // on order create/update, not on adding an EC.
 
+    // A new EC can settle Drawing's target: its quantity may be the one the
+    // SO did not state, and it may be the first EC that is not a Spare.
+    await autoFillTargets(orderId, user);
     revalidatePath("/risansi/orders");
     revalidatePath(`/risansi/orders/${orderId}`);
     return { ok: true, itemId };
@@ -647,6 +653,8 @@ export async function updateOrderSectionAction(
           after: pick(after),
         });
       }
+      // Order details carry the dates the first targets are counted from.
+      if (tbl === "orders") await autoFillTargets(id, user);
       revalidatePath(`/risansi/orders/${id}`);
     } else {
       // Item-scope: id is the item_id.
@@ -1029,6 +1037,44 @@ async function drawingHandoffs(id: string): Promise<DrawingHandoffs | null> {
     [id]
   );
   return result.rows[0] ?? null;
+}
+
+/**
+ * Fill the SO's first target dates from its own dates, where none has been
+ * set (lib/target-rules.ts), and tell each department its date as if someone
+ * had set it by hand. Never throws: a target that could not be filled is
+ * still there to set by hand, and must not fail the save that prompted it.
+ */
+async function autoFillTargets(
+  orderId: string,
+  user: { id: string; email: string; role: string }
+): Promise<void> {
+  try {
+    const filled = await fillFirstTargets(orderId, user);
+    if (filled.length === 0) return;
+    const label = (await getOrderLabel(orderId)) ?? orderId;
+    for (const { target, date, reason } of filled) {
+      await logAudit({
+        actor: { id: user.id, email: user.email, role: user.role },
+        action: "order.target_date",
+        category: "activity",
+        target: label,
+        details: `Set ${target.label} to ${formatTargetDate(date)} — ${reason}`,
+        subject: { orderId, soNo: label },
+      });
+      const recipients = await targetRecipientsFor(target.column, orderId);
+      if (recipients) {
+        await emitNotification({
+          roles: recipients.roles,
+          orderId,
+          type: "target_date",
+          message: `${recipients.label} set for ${label} — ${formatTargetDate(date)} · ${reason}`,
+        });
+      }
+    }
+  } catch (error) {
+    console.error("autoFillTargets failed:", error);
+  }
 }
 
 /**

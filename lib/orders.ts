@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import {
   TARGET_BY_KEY,
   type TargetDate,
+  type TargetKey,
   type TargetRevision,
 } from "@/lib/target-dates";
 import {
@@ -12,6 +13,7 @@ import {
   type DeptKey,
 } from "@/lib/dept-completion";
 import { deptInvolvementSql, spareEcSql } from "@/lib/dept-view";
+import { autoTargets } from "@/lib/target-rules";
 import type { LockFacts } from "@/lib/order-lock";
 import {
   isPerEcDept,
@@ -127,6 +129,7 @@ export type NewOrderInput = {
   freight_terms?: string;
   packing_requirement?: string;
   delivery_date_as_per_so?: string;
+  so_handover_date?: string;
   payment_terms?: string;
   ld?: string;
   ld_date?: string;
@@ -223,12 +226,12 @@ export async function createOrder(
           order_type, bill_type, boi,
           total_quantity, drg_target_date, dispatch_target_date,
           dispatch_target_revised_date, qc_doc_target_date, purchase_target_date,
-          packing_details_required, dispatch_team_target_date
+          packing_details_required, dispatch_team_target_date, so_handover_date
        ) VALUES (
           -- The next free number, under the lock above.
           (SELECT COALESCE(max(sl_no), 0) + 1 FROM orders),
           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
-          $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
+          $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33
        )
        RETURNING id, sl_no::int AS sl_no`,
       [
@@ -264,6 +267,7 @@ export async function createOrder(
         nullify(input.purchase_target_date),
         nullify(input.packing_details_required),
         nullify(input.dispatch_team_target_date),
+        nullify(input.so_handover_date),
       ]
     );
     return result.rows[0];
@@ -2750,6 +2754,83 @@ export async function addTargetRevision(input: {
     await syncTargetColumns(client, input.orderId, input.target);
     return { seq };
   });
+}
+
+/**
+ * Fill every first target the SO's own dates give (lib/target-rules.ts) that
+ * has never been set — no current value and no history. A target someone has
+ * set, even once, is theirs: it is revised by hand, never recomputed. Returns
+ * what was filled, so the caller can tell the departments.
+ */
+export async function fillFirstTargets(
+  orderId: string,
+  actor: { id: string; role: string }
+): Promise<{ target: TargetDate; date: string; reason: string }[]> {
+  if (!UUID_RE.test(orderId)) return [];
+  const r = await query<{
+    delivery: string | null;
+    handover: string | null;
+    qty: string | null;
+    qc_required: string | null;
+    drawing_involved: boolean;
+    set_keys: string[];
+    drg: boolean;
+    purchase: boolean;
+    quality: boolean;
+    packing: boolean;
+    dispatch: boolean;
+  }>(
+    `SELECT to_char(o.delivery_date_as_per_so, 'YYYY-MM-DD') AS delivery,
+            to_char(o.so_handover_date, 'YYYY-MM-DD') AS handover,
+            -- The SO's quantity, else what its ECs add up to.
+            COALESCE(o.total_quantity,
+                     (SELECT sum(it.quantity) FROM order_items it WHERE it.order_id = o.id))::text AS qty,
+            o.qc_required,
+            (${deptInvolvementSql("drawing", "o")}) AS drawing_involved,
+            ARRAY(SELECT DISTINCT r.target_key FROM order_target_revisions r
+                   WHERE r.order_id = o.id) AS set_keys,
+            o.drg_target_date IS NOT NULL AS drg,
+            o.purchase_target_date IS NOT NULL AS purchase,
+            o.qc_doc_target_date IS NOT NULL AS quality,
+            o.dispatch_team_target_date IS NOT NULL AS packing,
+            (o.dispatch_target_date IS NOT NULL
+             OR o.dispatch_target_revised_date IS NOT NULL) AS dispatch
+       FROM orders o WHERE o.id = $1`,
+    [orderId]
+  );
+  const o = r.rows[0];
+  if (!o) return [];
+  const already = new Set<string>(o.set_keys);
+  const columnSet: Record<TargetKey, boolean> = {
+    drawing: o.drg,
+    purchase: o.purchase,
+    quality: o.quality,
+    packing: o.packing,
+    dispatch: o.dispatch,
+  };
+
+  const filled: { target: TargetDate; date: string; reason: string }[] = [];
+  for (const auto of autoTargets({
+    delivery_date_as_per_so: o.delivery,
+    so_handover_date: o.handover,
+    total_quantity: o.qty,
+    qc_required: o.qc_required,
+    drawing_involved: o.drawing_involved,
+  })) {
+    if (already.has(auto.key) || columnSet[auto.key]) continue;
+    const target = TARGET_BY_KEY.get(auto.key);
+    if (!target) continue;
+    await addTargetRevision({
+      orderId,
+      target,
+      date: auto.date,
+      reason: auto.reason,
+      actorId: actor.id,
+      actorRole: actor.role,
+    });
+    filled.push({ target, date: auto.date, reason: auto.reason });
+  }
+  return filled;
 }
 
 // ---------------------------------------------------------------------------

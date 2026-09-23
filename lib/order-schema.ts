@@ -254,6 +254,14 @@ export const ORDER_SECTIONS: OrderSection[] = [
         type: "date",
         group: "Terms & Conditions",
       },
+      // When the SO reaches Operations. Drawing's first target is counted from
+      // it — see lib/target-rules.ts.
+      {
+        column: "so_handover_date",
+        label: "SO Hand Over Date",
+        type: "date",
+        group: "Terms & Conditions",
+      },
       // The prose the PO used, kept as written. The terms the workflow acts on
       // are the lines beneath it (PaymentTermsControl), so this is never typed
       // into the section form — the same arrangement target dates have, where

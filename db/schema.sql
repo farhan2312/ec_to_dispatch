@@ -2134,3 +2134,10 @@ UPDATE notifications n
    AND nullif(btrim(b.pi_no), '') IS NOT NULL
    AND left(n.message, length('PI ' || b.pi_no || ' created for '))
        = 'PI ' || b.pi_no || ' created for ';
+
+-- ===========================================================================
+-- orders.so_handover_date — when the SO reached Operations
+-- ===========================================================================
+-- Drawing's first target is counted from it (lib/target-rules.ts), as the
+-- other first targets are counted back from the delivery date.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS so_handover_date DATE;

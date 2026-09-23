@@ -118,6 +118,7 @@ const SECTIONS: Section[] = [
         label: "Delivery date As per SO",
         type: "date",
       },
+      { name: "so_handover_date", label: "SO Hand Over Date", type: "date" },
       { name: "payment_terms", label: "Payment Terms", type: "text" },
       { name: "ld", label: "LD", type: "select", options: YES_NO_OPTIONS },
       {

@@ -2114,3 +2114,23 @@ ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS os          TEXT;
 CREATE INDEX IF NOT EXISTS audit_log_ip_created_idx
     ON audit_log (ip_address, created_at DESC)
     WHERE ip_address IS NOT NULL;
+
+-- ===========================================================================
+-- notifications.billing_doc_id — the PI a notification is about
+-- ===========================================================================
+-- Set on "PI created" notifications so the feed can show that PI's number and
+-- amount as they read now (a value filled in after the PI number still
+-- shows). A deleted PI leaves the notification standing without it.
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS billing_doc_id UUID
+    REFERENCES order_billing_docs(id) ON DELETE SET NULL;
+-- Link the "PI … created for …" notifications written before the column, by
+-- the order and the PI number in their message. Idempotent: only rows still
+-- unlinked are touched.
+UPDATE notifications n
+   SET billing_doc_id = b.id
+  FROM order_billing_docs b
+ WHERE n.billing_doc_id IS NULL
+   AND n.order_id = b.order_id
+   AND nullif(btrim(b.pi_no), '') IS NOT NULL
+   AND left(n.message, length('PI ' || b.pi_no || ' created for '))
+       = 'PI ' || b.pi_no || ' created for ';

@@ -780,19 +780,24 @@ export async function addChildRow(
  * the PI Excel upload. Each row is a { pi_no, pi_date, pi_value }; blank dates
  * and values become NULL. Returns how many were inserted.
  */
+/**
+ * Insert PIs under an order, returning each new row's id and PI No. so the
+ * caller can notify about them one by one.
+ */
 export async function insertBillingDocs(
   orderId: string,
   rows: { pi_no: string; pi_date: string | null; pi_value: string | null }[]
-): Promise<number> {
-  if (!UUID_RE.test(orderId) || rows.length === 0) return 0;
-  let inserted = 0;
+): Promise<{ id: string; pi_no: string }[]> {
+  if (!UUID_RE.test(orderId) || rows.length === 0) return [];
+  const inserted: { id: string; pi_no: string }[] = [];
   for (const r of rows) {
-    await query(
+    const res = await query<{ id: string; pi_no: string }>(
       `INSERT INTO order_billing_docs (order_id, pi_no, pi_date, pi_value)
-       VALUES ($1, $2, $3::date, $4::numeric)`,
+       VALUES ($1, $2, $3::date, $4::numeric)
+       RETURNING id, pi_no`,
       [orderId, r.pi_no, r.pi_date, r.pi_value]
     );
-    inserted += 1;
+    if (res.rows[0]) inserted.push(res.rows[0]);
   }
   return inserted;
 }

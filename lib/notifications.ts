@@ -24,6 +24,21 @@ export type NotificationRow = {
   type: NotificationType;
   message: string;
   created_at: string;
+  /**
+   * The order and money behind the notification, read when the feed is
+   * loaded — so a value corrected or filled in later shows as it is now.
+   */
+  so_no: string | null;
+  client_name: string | null;
+  order_value: string | null;
+  order_currency: string | null;
+  /** The PI this notification is about, when it is about one. */
+  pi_no: string | null;
+  pi_value: string | null;
+  /** Otherwise, the order's PIs so far: their numbers and their total. */
+  order_pi_nos: string | null;
+  order_pi_total: string | null;
+  order_pi_count: number;
 };
 
 // ---------------------------------------------------------------------------
@@ -60,12 +75,27 @@ export async function listNotificationsPage(
     page,
     (p) =>
       query<NotificationRow & { total_count: string }>(
-        `SELECT id, order_id, item_id, type, message,
-                to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+        `SELECT n.id, n.order_id, n.item_id, n.type, n.message,
+                to_char(n.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at,
+                o.so_no, o.client_name,
+                o.order_value::text AS order_value, o.order_currency,
+                b.pi_no, b.pi_value::text AS pi_value,
+                pis.nos AS order_pi_nos, pis.total::text AS order_pi_total,
+                COALESCE(pis.count, 0)::int AS order_pi_count,
                 count(*) OVER ()::text AS total_count
-           FROM notifications
-          WHERE recipient_role = ANY($1)
-          ORDER BY created_at DESC
+           FROM notifications n
+           LEFT JOIN orders o ON o.id = n.order_id
+           LEFT JOIN order_billing_docs b ON b.id = n.billing_doc_id
+           LEFT JOIN LATERAL (
+             SELECT string_agg(d.pi_no, ', ' ORDER BY d.seq) AS nos,
+                    sum(d.pi_value) AS total,
+                    count(*) AS count
+               FROM order_billing_docs d
+              WHERE d.order_id = n.order_id
+                AND nullif(btrim(d.pi_no), '') IS NOT NULL
+           ) pis ON n.billing_doc_id IS NULL
+          WHERE n.recipient_role = ANY($1)
+          ORDER BY n.created_at DESC
           LIMIT $2 OFFSET $3`,
         [roles, FEED_PAGE_SIZE, offsetFor(p, FEED_PAGE_SIZE)]
       ),
@@ -107,6 +137,8 @@ export async function emitNotification(input: {
   roles: string[];
   orderId: string;
   itemId?: string | null;
+  /** The PI it is about, so the feed can show that PI's number and amount. */
+  billingDocId?: string | null;
   type: NotificationType;
   message: string;
 }): Promise<void> {
@@ -114,6 +146,7 @@ export async function emitNotification(input: {
     await emit(input.roles, {
       orderId: input.orderId,
       itemId: input.itemId ?? null,
+      billingDocId: input.billingDocId ?? null,
       type: input.type,
       message: input.message,
     });
@@ -135,6 +168,7 @@ async function emit(
   input: {
     orderId: string;
     itemId?: string | null;
+    billingDocId?: string | null;
     type: NotificationType;
     message: string;
   }
@@ -142,14 +176,25 @@ async function emit(
   const unique = [...new Set(roles)];
   if (unique.length === 0) return;
   const n = unique.length;
-  // One INSERT with a row per role; the shared columns are the last 4 params.
+  // One INSERT with a row per role; the shared columns are the last 5 params.
   const values = unique
-    .map((_, i) => `($${i + 1}, $${n + 1}, $${n + 2}, $${n + 3}, $${n + 4})`)
+    .map(
+      (_, i) =>
+        `(${i + 1}, ${n + 1}, ${n + 2}, ${n + 3}, ${n + 4}, ${n + 5})`
+    )
     .join(", ");
   await query(
-    `INSERT INTO notifications (recipient_role, order_id, item_id, type, message)
+    `INSERT INTO notifications
+       (recipient_role, order_id, item_id, billing_doc_id, type, message)
      VALUES ${values}`,
-    [...unique, input.orderId, input.itemId ?? null, input.type, input.message]
+    [
+      ...unique,
+      input.orderId,
+      input.itemId ?? null,
+      input.billingDocId ?? null,
+      input.type,
+      input.message,
+    ]
   );
 }
 

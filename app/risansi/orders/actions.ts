@@ -1033,7 +1033,7 @@ async function drawingHandoffs(id: string): Promise<DrawingHandoffs | null> {
 /** Notify Accounts (and Central for oversight) when Billing files a new PI. */
 async function notifyPiCreated(
   orderId: string,
-  _piId: string,
+  piId: string,
   piNo: string,
   actorRole: string
 ): Promise<void> {
@@ -1048,10 +1048,12 @@ async function notifyPiCreated(
   if (actorRole !== "central_visibility") roles.push("central_visibility");
   // itemId is intentionally null here: notifications.item_id is a FK to
   // order_items(id), and a PI id (order_billing_docs.id) would fail that
-  // constraint. Deep-link is by order_id — Accounts opens the SO detail.
+  // constraint. The PI goes in billingDocId instead, so the feed can show its
+  // number and amount. Deep-link is by order_id — Accounts opens the SO detail.
   await emitNotification({
     roles,
     orderId,
+    billingDocId: piId,
     type: "dept_update",
     message: `PI ${piNo} created for ${soLabel}`,
   });

@@ -57,11 +57,71 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
 }
 
+const amountFmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
+
+/** "12,34,567 INR", or null when there is no amount to show. */
+function money(value: string | null, currency: string | null): string | null {
+  if (value === null || value.trim() === "") return null;
+  const n = Number(value);
+  const text = Number.isFinite(n) ? amountFmt.format(n) : value;
+  return currency ? `${text} ${currency}` : text;
+}
+
+/**
+ * Billing and Accounts work in money: their notifications carry the order's
+ * SO No., client and value, and the PI — the one the notification is about,
+ * or else the order's PIs so far with their total.
+ */
+function CommercialDetails({ n }: { n: NotificationRow }) {
+  if (!n.order_id) return null;
+  // Line one names the order; line two is its money — so every notification
+  // reads the same way, however long the client's name.
+  const order: { label: string; value: string }[] = [
+    { label: "SO No.", value: n.so_no ?? "—" },
+    { label: "Client", value: n.client_name ?? "—" },
+  ];
+  const amounts: { label: string; value: string }[] = [
+    { label: "Order value", value: money(n.order_value, n.order_currency) ?? "—" },
+  ];
+  if (n.pi_no) {
+    amounts.push({ label: "PI No.", value: n.pi_no });
+    amounts.push({ label: "PI amount", value: money(n.pi_value, n.order_currency) ?? "—" });
+  } else if (n.order_pi_count > 0) {
+    const one = n.order_pi_count === 1;
+    amounts.push({ label: one ? "PI No." : "PI Nos.", value: n.order_pi_nos ?? "—" });
+    amounts.push({
+      label: one ? "PI amount" : "PI total",
+      value: money(n.order_pi_total, n.order_currency) ?? "—",
+    });
+  } else {
+    amounts.push({ label: "PI", value: "none yet" });
+  }
+  const line = (items: { label: string; value: string }[]) => (
+    <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+      {items.map((i) => (
+        <div key={i.label} className="flex min-w-0 items-baseline gap-1.5">
+          <dt className="shrink-0 text-muted">{i.label}</dt>
+          <dd className="min-w-0 break-words font-medium text-foreground">{i.value}</dd>
+        </div>
+      ))}
+    </div>
+  );
+  return (
+    <dl className="mt-1.5 space-y-0.5 text-xs">
+      {line(order)}
+      {line(amounts)}
+    </dl>
+  );
+}
+
 function NotificationFeed({
   page,
   hrefFor,
+  commercial,
 }: {
   page: PageResult<NotificationRow>;
+  /** Show order and PI money on each notification (Billing and Accounts). */
+  commercial: boolean;
   // Where "Open" should land — a department's own edit form, or the SO / EC
   // detail for central/admin (see the page component below).
   hrefFor: (n: NotificationRow) => string;
@@ -96,7 +156,8 @@ function NotificationFeed({
                 </span>
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-foreground">{n.message}</p>
-                  <p className="text-xs text-muted">{timeAgo(n.created_at)}</p>
+                  {commercial && <CommercialDetails n={n} />}
+                  <p className="mt-1 text-xs text-muted">{timeAgo(n.created_at)}</p>
                 </div>
               </div>
               {n.order_id && (
@@ -234,6 +295,9 @@ function Escalations({ page }: { page: PageResult<AlertRow> }) {
 
 // ---------- page ----------
 
+/** Billing & Operations and Accounts: the departments that work in money. */
+const COMMERCIAL_ROLES = new Set(["operations", "accounts"]);
+
 export default async function NotificationsPage({
   searchParams,
 }: {
@@ -284,7 +348,11 @@ export default async function NotificationsPage({
         </div>
       </div>
 
-      <NotificationFeed page={notifications} hrefFor={hrefFor} />
+      <NotificationFeed
+        page={notifications}
+        hrefFor={hrefFor}
+        commercial={COMMERCIAL_ROLES.has(user.role)}
+      />
 
       {oversight && (
         <>

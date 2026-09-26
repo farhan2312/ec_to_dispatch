@@ -40,10 +40,11 @@ export default async function PlanningWorkspacePage({
   const filter = parseDeptFilter((key) => params[key], "planning");
   // A notification links to an EC (item id) or an SO; either way the queue
   // must open on the page that holds it.
+  // Which SO a notification link should open on. Without a link this is
+  // immediate; everything else below loads side by side.
   const focusOrderId = await resolveFocusOrderId(thread ?? edit);
-  const filterOptions = await listOrderListOptions();
   const section = SECTION_BY_TABLE.get(TABLE)!;
-  const [queue, reminders] = await Promise.all([
+  const [queue, reminders, filterOptions] = await Promise.all([
     listItemsForSectionPage(
       TABLE,
       PLANNING_CONTEXT_FIELDS.map((f) => ({
@@ -57,6 +58,7 @@ export default async function PlanningWorkspacePage({
       { page: parsePage(page), search: parseQuery(q), focusOrderId, filter }
     ),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
+    listOrderListOptions(),
   ]);
 
   // Unread discussion messages per SO, for the row badge. Rows are ECs in
@@ -64,20 +66,15 @@ export default async function PlanningWorkspacePage({
   // This department's sign-offs for the SOs on this page, for the Complete
   // column. Rows are ECs in the item-scope workspaces and SOs in the others,
   // so the order id comes from whichever the row carries.
-  const completions = await listDeptCompletions([
-    ...new Set(queue.rows.map((o) => String(o.order_id ?? o.id))),
+  // The rows' sign-offs unread messages and drawing documents all hang off the queue's SOs and
+  // not off one another, so they load together.
+  const orderIds = [...new Set(queue.rows.map((o) => String(o.order_id ?? o.id)))];
+  const [completions, unreadThreads, drawingDocCounts] = await Promise.all([
+    listDeptCompletions(orderIds),
+    unreadByOrder(orderIds, user),
+    // Drawing documents shared with Planning, per EC, for the button badge.
+    countEcDocuments(queue.rows.map((o) => String(o.id)), user.role),
   ]);
-
-  const unreadThreads = await unreadByOrder(
-    [...new Set(queue.rows.map((o) => String(o.order_id ?? o.id)))],
-    user
-  );
-
-  // Drawing documents shared with Planning, per EC, for the button badge.
-  const drawingDocCounts = await countEcDocuments(
-    queue.rows.map((o) => String(o.id)),
-    user.role
-  );
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">

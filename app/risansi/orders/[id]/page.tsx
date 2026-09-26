@@ -20,7 +20,13 @@ export default async function OrderDetailPage({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const detail = await getOrderDetail(id);
+  // Target dates keep their full history; the panel shows the current value
+  // with every earlier one behind it. Read alongside the order itself — it is
+  // only shown once the order has passed the checks below.
+  const [detail, targetRevisions] = await Promise.all([
+    getOrderDetail(id),
+    listTargetRevisions(id),
+  ]);
   if (!detail) notFound();
   if (
     !roleSeesOrder(user.role, {
@@ -30,10 +36,6 @@ export default async function OrderDetailPage({
   ) {
     notFound();
   }
-
-  // Target dates keep their full history; the panel shows the current value
-  // with every earlier one behind it.
-  const targetRevisions = await listTargetRevisions(id);
 
   return (
     <OrderDetail

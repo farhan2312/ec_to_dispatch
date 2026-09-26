@@ -48,14 +48,15 @@ export default async function QcWorkspacePage({
   const filter = parseDeptFilter((key) => params[key], "quality");
   // A notification links to an EC (item id) or an SO; either way the queue
   // must open on the page that holds it.
+  // Which SO a notification link should open on. Without a link this is
+  // immediate; everything else below loads side by side.
   const focusOrderId = await resolveFocusOrderId(thread ?? edit);
-  const filterOptions = await listOrderListOptions();
   // QC fills its own submission fields; Required QC Documents / Target Date
   // stay centralOnly (Mitali fills those, read-only to QC — see order-schema.ts).
   const canEdit = canEditSection(user.role, TABLE);
   const canEditCentral = isCentral(user.role);
   const section = SECTION_BY_TABLE.get(TABLE)!;
-  const [queue, docCounts, requirementDocCounts, reminders] = await Promise.all([
+  const [queue, docCounts, requirementDocCounts, reminders, filterOptions] = await Promise.all([
     listItemsForSectionPage(
       TABLE,
       QC_CONTEXT_FIELDS.map((f) => ({
@@ -71,6 +72,7 @@ export default async function QcWorkspacePage({
     listQcDocumentCounts("order_qc_documents"),
     listQcDocumentCounts("order_qc_requirement_documents"),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
+    listOrderListOptions(),
   ]);
 
   // Unread discussion messages per SO, for the row badge. Rows are ECs in
@@ -78,14 +80,13 @@ export default async function QcWorkspacePage({
   // This department's sign-offs for the SOs on this page, for the Complete
   // column. Rows are ECs in the item-scope workspaces and SOs in the others,
   // so the order id comes from whichever the row carries.
-  const completions = await listDeptCompletions([
-    ...new Set(queue.rows.map((o) => String(o.order_id ?? o.id))),
+  // The rows' sign-offs and unread messages both hang off the queue's SOs and
+  // not off each other, so they load together.
+  const orderIds = [...new Set(queue.rows.map((o) => String(o.order_id ?? o.id)))];
+  const [completions, unreadThreads] = await Promise.all([
+    listDeptCompletions(orderIds),
+    unreadByOrder(orderIds, user),
   ]);
-
-  const unreadThreads = await unreadByOrder(
-    [...new Set(queue.rows.map((o) => String(o.order_id ?? o.id)))],
-    user
-  );
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">

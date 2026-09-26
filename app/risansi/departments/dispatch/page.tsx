@@ -36,20 +36,26 @@ export default async function DispatchWorkspacePage({
   // This department's own filter bar, with the department pinned. "Ready to
   // dispatch" is the one it adds: the orders Assembly & Packing has packed.
   const filter = parseDeptFilter((key) => params[key], "dispatch");
+  // Which SO a notification link should open on. Without a link this is
+  // immediate; everything else below loads side by side.
   const focusOrderId = await resolveFocusOrderId(thread ?? edit);
-  const filterOptions = await listOrderListOptions();
   // The same per-SO page Billing reads: it carries each SO's invoice cards,
   // which are this department's work.
-  const queue = await listOrdersForBillingPage({
-    page: parsePage(page),
-    search: parseQuery(q),
-    focusOrderId,
-    filter,
-  });
+  const [queue, filterOptions] = await Promise.all([
+    listOrdersForBillingPage({
+      page: parsePage(page),
+      search: parseQuery(q),
+      focusOrderId,
+      filter,
+    }),
+    listOrderListOptions(),
+  ]);
 
   const ids = [...new Set(queue.rows.map((o) => String(o.id)))];
-  const completions = await listDeptCompletions(ids);
-  const unreadThreads = await unreadByOrder(ids, user);
+  const [completions, unreadThreads] = await Promise.all([
+    listDeptCompletions(ids),
+    unreadByOrder(ids, user),
+  ]);
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">

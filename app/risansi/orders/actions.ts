@@ -311,14 +311,22 @@ export async function createItemAction(
     const soLabel = String(order.order.so_no ?? `#${order.order.sl_no}`);
     const ecLabel = (input.ec_no ?? "").trim();
     const label = ecLabel ? `${soLabel} · ${ecLabel}` : soLabel;
-    await logAudit({
-      actor: { id: user.id, email: user.email, role: user.role },
-      action: "order.update",
-      category: "activity",
-      target: label,
-      details: ecLabel ? `Added EC ${ecLabel} to ${soLabel}` : `Added an EC to ${soLabel}`,
-      subject: { orderId, itemId, soNo: soLabel, ecNo: ecLabel || null },
-    });
+    // Everything after the EC exists — its audit lines, Purchase's notice and
+    // any first targets it settles — is independent, so it runs together.
+    // All of it is awaited before the Add answers; none of it throws.
+    const follow: Promise<unknown>[] = [
+      logAudit({
+        actor: { id: user.id, email: user.email, role: user.role },
+        action: "order.update",
+        category: "activity",
+        target: label,
+        details: ecLabel ? `Added EC ${ecLabel} to ${soLabel}` : `Added an EC to ${soLabel}`,
+        subject: { orderId, itemId, soNo: soLabel, ecNo: ecLabel || null },
+      }),
+      // A new EC can settle Drawing's target: its quantity may be the one the
+      // SO did not state, and it may be the first EC that is not a Spare.
+      autoFillTargets(orderId, user),
+    ];
 
     // Bought-out items listed with the EC are Purchase's work, so they hear
     // about them rather than having to find them.
@@ -326,33 +334,32 @@ export async function createItemAction(
       const named = boiRows.rows
         .map((r) => (r.boi_item === "Others" ? r.boi_item_other || "Others" : r.boi_item))
         .join(", ");
-      await logAudit({
-        actor: { id: user.id, email: user.email, role: user.role },
-        action: "order.update",
-        category: "activity",
-        target: label,
-        details: `Listed ${boiRows.rows.length} bought-out item(s) on ${
-          ecLabel || "the EC"
-        } — ${named}`,
-        subject: { orderId, itemId, soNo: soLabel, ecNo: ecLabel || null },
-      });
       const roles = ["purchase"];
       if (user.role !== "central_visibility") roles.push("central_visibility");
-      await emitNotification({
-        roles,
-        orderId,
-        itemId,
-        type: "dept_update",
-        message: `Bought-out items to purchase — ${label} · ${named}`,
-      });
+      follow.push(
+        logAudit({
+          actor: { id: user.id, email: user.email, role: user.role },
+          action: "order.update",
+          category: "activity",
+          target: label,
+          details: `Listed ${boiRows.rows.length} bought-out item(s) on ${
+            ecLabel || "the EC"
+          } — ${named}`,
+          subject: { orderId, itemId, soNo: soLabel, ecNo: ecLabel || null },
+        }),
+        emitNotification({
+          roles,
+          orderId,
+          itemId,
+          type: "dept_update",
+          message: `Bought-out items to purchase — ${label} · ${named}`,
+        })
+      );
     }
 
     // No target-date notifications here: target dates are SO-level and fire
     // on order create/update, not on adding an EC.
-
-    // A new EC can settle Drawing's target: its quantity may be the one the
-    // SO did not state, and it may be the first EC that is not a Spare.
-    await autoFillTargets(orderId, user);
+    await Promise.all(follow);
     revalidatePath("/risansi/orders");
     revalidatePath(`/risansi/orders/${orderId}`);
     return { ok: true, itemId };
@@ -633,28 +640,33 @@ export async function updateOrderSectionAction(
       const label = current ? String(current.so_no ?? `#${current.sl_no}`) : null;
       const changes =
         before && after ? describeChanges(section.fields, pick(before), pick(after)) : null;
-      await logAudit({
-        actor: { id: user.id, email: user.email, role: user.role },
-        action: "order.update",
-        category: "activity",
-        target: section.title,
-        details: changes
-          ? `Updated ${section.title} — ${changes}`
-          : `Saved ${section.title} (no changes)`,
-        subject: { orderId: id, soNo: label },
-      });
-      if (before && after && label) {
-        await notifySectionSaved({
-          orderId: id,
-          orderLabel: label,
-          table: tbl,
-          actorRole: user.role,
-          before: pick(before),
-          after: pick(after),
-        });
-      }
-      // Order details carry the dates the first targets are counted from.
-      if (tbl === "orders") await autoFillTargets(id, user);
+      // Three independent writes that follow the save — its audit line, the
+      // notices, and any first targets the new dates give. None needs another,
+      // so they run together; the save still waits for all three. None throws.
+      await Promise.all([
+        logAudit({
+          actor: { id: user.id, email: user.email, role: user.role },
+          action: "order.update",
+          category: "activity",
+          target: section.title,
+          details: changes
+            ? `Updated ${section.title} — ${changes}`
+            : `Saved ${section.title} (no changes)`,
+          subject: { orderId: id, soNo: label },
+        }),
+        before && after && label
+          ? notifySectionSaved({
+              orderId: id,
+              orderLabel: label,
+              table: tbl,
+              actorRole: user.role,
+              before: pick(before),
+              after: pick(after),
+            })
+          : null,
+        // Order details carry the dates the first targets are counted from.
+        tbl === "orders" ? autoFillTargets(id, user) : null,
+      ]);
       revalidatePath(`/risansi/orders/${id}`);
     } else {
       // Item-scope: id is the item_id.
@@ -782,26 +794,36 @@ export async function addOrderChildAction(
   if (addLock) return { ok: false, error: addLock };
   try {
     const created = await addChildRow(table as ChildTable, orderId, kind);
-    if (created) {
-      await auditChild(
-        guard.user,
-        table as ChildTable,
-        await subjectForChild(table as ChildTable, created.id),
-        `Added a ${childLabel(table as ChildTable, null)} row`
-      );
-    }
-    // Actual packing slips need an invoice add-on to appear in Billing &
-    // Dispatch the moment Packing clicks Add — don't wait for the first
-    // Save. The invoice's read-only header stays blank until Packing fills
-    // in the slip.
-    if (created && table === "order_packing_slips" && kind === "actual") {
-      await upsertInvoiceFromPackingSlip(created.id);
-      // Refresh the parent SO's detail page too (this action's `orderId` is
-      // the item_id for per-EC children, so the direct revalidate below only
-      // hits the item route).
-      const soId = await getChildOrderId("order_packing_slips", created.id);
-      if (soId) revalidatePath(`/risansi/orders/${soId}`);
-    }
+    // Once the row exists, its audit line and — for an actual packing slip —
+    // its invoice add-on don't depend on each other, so they run together.
+    // Both are awaited before the Add answers.
+    await Promise.all([
+      created
+        ? subjectForChild(table as ChildTable, created.id).then((subject) =>
+            auditChild(
+              guard.user,
+              table as ChildTable,
+              subject,
+              `Added a ${childLabel(table as ChildTable, null)} row`
+            )
+          )
+        : null,
+      // Actual packing slips need an invoice add-on to appear in Billing &
+      // Dispatch the moment Packing clicks Add — don't wait for the first
+      // Save. The invoice's read-only header stays blank until Packing fills
+      // in the slip.
+      created && table === "order_packing_slips" && kind === "actual"
+        ? Promise.all([
+            upsertInvoiceFromPackingSlip(created.id),
+            getChildOrderId("order_packing_slips", created.id),
+          ]).then(([, soId]) => {
+            // Refresh the parent SO's detail page too (this action's `orderId`
+            // is the item_id for per-EC children, so the direct revalidate
+            // below only hits the item route).
+            if (soId) revalidatePath(`/risansi/orders/${soId}`);
+          })
+        : null,
+    ]);
     revalidatePath(`/risansi/orders/${orderId}`);
     return { ok: true, id: created?.id };
   } catch (error) {
@@ -831,54 +853,76 @@ export async function updateOrderChildAction(
   const clean = Object.fromEntries(
     Object.entries(values).filter(([k]) => allowed.has(k))
   );
-  const rowLock = lockReason(tbl, await lockFactsForChild(tbl, id));
-  if (rowLock) return { ok: false, error: rowLock };
+  // For per-EC child tables (BOI items, packing slips) the `orderId` arg is
+  // actually the item_id. The notification's order_id is a FK to orders(id),
+  // so we must resolve the real SO id — otherwise the INSERT hits an FK
+  // violation and the notification is silently dropped.
+  const isPerEc =
+    tbl === "order_boi_items" ||
+    tbl === "order_packing_slips" ||
+    tbl === "order_drawing_revisions";
+
+  // Everything read before the write, read together: none of these depends on
+  // another, and the database is remote, so one wait instead of up to six.
+  // The write itself still waits for all of them.
+  let reads;
   try {
-    // For PIs: capture pre-save pi_no so we can notify Accounts only when it
-    // becomes newly filled (empty → set), not on every subsequent edit.
-    let piNoBefore: string | null = null;
-    if (tbl === "order_billing_docs") {
-      const before = await query<{ pi_no: string | null }>(
-        `SELECT pi_no FROM order_billing_docs WHERE id = $1`,
-        [id]
-      );
-      piNoBefore = before.rows[0]?.pi_no ?? null;
-    }
-
-    // Actual packing slips: capture pre-save kind so we know whether to
-    // upsert a linked invoice row afterwards. Doing it before the update
-    // covers the case where the client changes packing_slip_no on the same
-    // save — we still fire the upsert against the new value.
-    let actualSlipKind: "actual" | "tentative" | null = null;
-    if (tbl === "order_packing_slips") {
-      const meta = await query<{ kind: string | null }>(
-        `SELECT kind FROM order_packing_slips WHERE id = $1`,
-        [id]
-      );
-      const k = (meta.rows[0]?.kind ?? "").toLowerCase();
-      if (k === "actual" || k === "tentative") actualSlipKind = k;
-    }
-
-    // Drawing revisions: capture the three hand-offs before the write so we
-    // notify only on the flip to Yes, not on every re-save of a row that was
-    // already Yes. Applies to every revision row, not just the first issue.
-    let drgBefore: DrawingHandoffs | null = null;
-    if (tbl === "order_drawing_revisions") {
-      drgBefore = await drawingHandoffs(id);
-    }
-
-    // What the row said before, and whose it is — read ahead of the write so
-    // the audit line can say what changed.
-    const [rowBefore, subject] = await Promise.all([
+    reads = await Promise.all([
+      lockFactsForChild(tbl, id),
+      // For PIs: the pre-save pi_no, so Accounts is told only when it becomes
+      // newly filled (empty → set), not on every later edit.
+      tbl === "order_billing_docs"
+        ? query<{ pi_no: string | null }>(
+            `SELECT pi_no FROM order_billing_docs WHERE id = $1`,
+            [id]
+          )
+        : null,
+      // Actual packing slips: the pre-save kind, so we know whether to upsert
+      // a linked invoice row afterwards — read before the update so a
+      // packing_slip_no changed on the same save still gets its upsert.
+      tbl === "order_packing_slips"
+        ? query<{ kind: string | null }>(
+            `SELECT kind FROM order_packing_slips WHERE id = $1`,
+            [id]
+          )
+        : null,
+      // Drawing revisions: the three hand-offs before the write, so we notify
+      // only on the flip to Yes, not on every re-save of a row already Yes.
+      tbl === "order_drawing_revisions" ? drawingHandoffs(id) : null,
+      // What the row said before, and whose it is — so the audit line can say
+      // what changed.
       childValues(tbl, id),
       subjectForChild(tbl, id),
+      // The row's SO does not change on an update, so it can be read now.
+      isPerEc ? getChildOrderId(tbl, id) : Promise.resolve(orderId),
     ]);
+  } catch (error) {
+    console.error("updateOrderChild failed:", error);
+    return { ok: false, error: "Could not save the row." };
+  }
+  const [lockFacts, piBefore, slipMeta, drgBefore, rowBefore, subject, soOrderId] = reads;
+
+  const rowLock = lockReason(tbl, lockFacts);
+  if (rowLock) return { ok: false, error: rowLock };
+  // The audit line, once the row is saved — kept outside the try so a failure
+  // later in the save still waits for it before answering.
+  let audited: Promise<void> | null = null;
+  try {
+    const piNoBefore: string | null = piBefore?.rows[0]?.pi_no ?? null;
+    let actualSlipKind: "actual" | "tentative" | null = null;
+    {
+      const k = (slipMeta?.rows[0]?.kind ?? "").toLowerCase();
+      if (k === "actual" || k === "tentative") actualSlipKind = k;
+    }
 
     await updateChildRow(tbl, id, clean);
 
     const rowAfter = await childValues(tbl, id);
     const changes = describeChanges(CHILD_FIELDS[tbl], rowBefore, rowAfter);
-    await auditChild(
+    // The audit line and the notices below are independent writes: the line
+    // is started here and awaited once the notices are done, so the save waits
+    // for both but not for one after the other. auditChild never throws.
+    audited = auditChild(
       user,
       tbl,
       subject,
@@ -886,18 +930,6 @@ export async function updateOrderChildAction(
         ? `Updated ${childLabel(tbl, rowAfter)} — ${changes}`
         : `Saved ${childLabel(tbl, rowAfter)} (no changes)`
     );
-
-    // For per-EC child tables (BOI items, packing slips) the `orderId` arg is
-    // actually the item_id. The notification's order_id is a FK to orders(id),
-    // so we must resolve the real SO id — otherwise the INSERT hits an FK
-    // violation and the notification is silently dropped.
-    const isPerEc =
-      tbl === "order_boi_items" ||
-      tbl === "order_packing_slips" ||
-      tbl === "order_drawing_revisions";
-    const soOrderId = isPerEc
-      ? (await getChildOrderId(tbl, id)) ?? null
-      : orderId;
     const notifyMuted = user.role === "central_visibility";
 
     if (tbl === "order_billing_docs") {
@@ -1017,10 +1049,13 @@ export async function updateOrderChildAction(
     if (isPerEc && soOrderId) {
       revalidatePath(`/risansi/orders/${soOrderId}`);
     }
+    await audited;
     revalidatePath(`/risansi/orders/${orderId}`);
     return { ok: true };
   } catch (error) {
     console.error("updateOrderChild failed:", error);
+    // The row may already be saved: its audit line still goes in.
+    await audited;
     return { ok: false, error: "Could not save the row." };
   }
 }
@@ -1497,8 +1532,13 @@ export async function addTargetRevisionAction(
       actorRole: user.role,
     });
 
-    const label = (await getOrderLabel(orderId)) ?? orderId;
-    await logAudit({
+    // Two reads the audit line and the notice need; neither needs the other.
+    const [orderLabel, recipients] = await Promise.all([
+      getOrderLabel(orderId),
+      targetRecipientsFor(target.column, orderId),
+    ]);
+    const label = orderLabel ?? orderId;
+    const audited = logAudit({
       actor: { id: user.id, email: user.email, role: user.role },
       action: "order.target_date",
       category: "activity",
@@ -1517,20 +1557,24 @@ export async function addTargetRevisionAction(
     // the 19th" is far less useful than knowing why.
     // Target dates used to notify through notifySectionSaved; they are no
     // longer written by a section save, so the emit happens here instead.
-    const recipients = await targetRecipientsFor(target.column, orderId);
-    if (recipients) {
-      const when = formatTargetDate(date);
-      const why = trimmedReason ? ` · ${trimmedReason}` : "";
-      await emitNotification({
-        roles: recipients.roles,
-        orderId,
-        type: "target_date",
-        message:
-          seq === 1
-            ? `${recipients.label} set for ${label} — ${when}${why}`
-            : `${recipients.label} revised for ${label} — ${when}${why}`,
-      });
-    }
+    // The audit line (started above) and the notice go out together; the
+    // save waits for both. Neither throws.
+    const when = formatTargetDate(date);
+    const why = trimmedReason ? ` · ${trimmedReason}` : "";
+    await Promise.all([
+      audited,
+      recipients
+        ? emitNotification({
+            roles: recipients.roles,
+            orderId,
+            type: "target_date",
+            message:
+              seq === 1
+                ? `${recipients.label} set for ${label} — ${when}${why}`
+                : `${recipients.label} revised for ${label} — ${when}${why}`,
+          })
+        : null,
+    ]);
 
     revalidatePath(`/risansi/orders/${orderId}`);
     return { ok: true };

@@ -39,9 +39,10 @@ export default async function PurchaseWorkspacePage({
   // This department's own filter bar, with the department pinned.
   const filter = parseDeptFilter((key) => params[key], "purchase");
   // A notification links to an EC (item id) or an SO; open the page that holds it.
+  // Which SO a notification link should open on. Without a link this is
+  // immediate; everything else below loads side by side.
   const focusOrderId = await resolveFocusOrderId(thread ?? edit);
-  const filterOptions = await listOrderListOptions();
-  const [queue, reminders] = await Promise.all([
+  const [queue, reminders, filterOptions] = await Promise.all([
     listItemsForPurchasePage({
       page: parsePage(page),
       search: parseQuery(q),
@@ -49,24 +50,19 @@ export default async function PurchaseWorkspacePage({
       filter,
     }),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
+    listOrderListOptions(),
   ]);
 
   // Unread discussion messages per SO, for the row badge.
   // Purchase's sign-offs for the SOs on this page, for the EC cards.
-  const completions = await listDeptCompletions([
-    ...new Set(queue.rows.map((o) => String(o.order_id ?? o.id))),
+  // The rows' sign-offs, unread messages and drawing documents all hang off
+  // the queue and not off one another, so they load together.
+  const [completions, unreadThreads, drawingDocCounts] = await Promise.all([
+    listDeptCompletions([...new Set(queue.rows.map((o) => String(o.order_id ?? o.id)))]),
+    unreadByOrder([...new Set(queue.rows.map((r) => String(r.order_id)))], user),
+    // Drawing documents shared with Purchase, per EC, for the button badge.
+    countEcDocuments(queue.rows.map((r) => String(r.id)), user.role),
   ]);
-
-  const unreadThreads = await unreadByOrder(
-    [...new Set(queue.rows.map((r) => String(r.order_id)))],
-    user
-  );
-
-  // Drawing documents shared with Purchase, per EC, for the button badge.
-  const drawingDocCounts = await countEcDocuments(
-    queue.rows.map((r) => String(r.id)),
-    user.role
-  );
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">

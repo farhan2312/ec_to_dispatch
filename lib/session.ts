@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { SignJWT, jwtVerify } from "jose";
 import { getUserById, type User } from "@/lib/users";
@@ -71,7 +72,16 @@ export const SESSION_MAX_AGE = MAX_AGE_SECONDS;
  * access until its token expired. The same goes for a password reset, which
  * ends any session issued before it.
  */
-export async function getCurrentUser(): Promise<User | null> {
+export const getCurrentUser = cache(readCurrentUser);
+
+/**
+ * The lookup behind getCurrentUser. Wrapped in React's per-request cache, so
+ * the layout and the page it frames share one database read rather than each
+ * making their own — a round trip saved on every page. The cache lasts one
+ * request only; the next request reads the account afresh, so a disabled
+ * account or a reset password still takes effect at once.
+ */
+async function readCurrentUser(): Promise<User | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;

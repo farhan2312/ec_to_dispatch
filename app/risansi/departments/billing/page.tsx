@@ -36,26 +36,29 @@ export default async function BillingWorkspacePage({
   // This department's own filter bar, with the department pinned.
   const filter = parseDeptFilter((key) => params[key], "billing");
   // A notification links to an SO; open the page that holds it.
+  // Which SO a notification link should open on. Without a link this is
+  // immediate; everything else below loads side by side.
   const focusOrderId = await resolveFocusOrderId(thread ?? edit);
-  const filterOptions = await listOrderListOptions();
-  const queue = await listOrdersForBillingPage({
-    page: parsePage(page),
-    search: parseQuery(q),
-    focusOrderId,
-    filter,
-  });
+  const [queue, filterOptions] = await Promise.all([
+    listOrdersForBillingPage({
+      page: parsePage(page),
+      search: parseQuery(q),
+      focusOrderId,
+      filter,
+    }),
+    listOrderListOptions(),
+  ]);
 
   // Unread discussion messages per SO, for the row badge.
   // Billing's sign-offs for the SOs on this page.
   // Billing rows are SOs, so the row id is the order id.
-  const completions = await listDeptCompletions([
-    ...new Set(queue.rows.map((o) => String(o.id))),
+  // The rows' sign-offs and unread messages both hang off the queue's SOs and
+  // not off each other, so they load together.
+  const orderIds = [...new Set(queue.rows.map((o) => String(o.id)))];
+  const [completions, unreadThreads] = await Promise.all([
+    listDeptCompletions(orderIds),
+    unreadByOrder(orderIds, user),
   ]);
-
-  const unreadThreads = await unreadByOrder(
-    [...new Set(queue.rows.map((r) => String(r.id)))],
-    user
-  );
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">

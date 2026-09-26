@@ -40,29 +40,31 @@ export default async function AccountsWorkspacePage({
   const filter = parseDeptFilter((key) => params[key], "accounts");
   // A notification links to an EC (item id) or an SO; either way the queue
   // must open on the page that holds it.
+  // Which SO a notification link should open on. Without a link this is
+  // immediate; everything else below loads side by side.
   const focusOrderId = await resolveFocusOrderId(thread ?? edit);
-  const filterOptions = await listOrderListOptions();
   const section = SECTION_BY_TABLE.get(TABLE)!;
-  const queue = await listOrdersForSectionPage(
-    TABLE,
-    PAYMENT_TERMS_CONTEXT_FIELDS.map((f) => ({ column: f.column, type: f.type }))
-  ,
+  const [queue, filterOptions] = await Promise.all([
+    listOrdersForSectionPage(
+      TABLE,
+      PAYMENT_TERMS_CONTEXT_FIELDS.map((f) => ({ column: f.column, type: f.type })),
       { page: parsePage(page), search: parseQuery(q), focusOrderId, filter }
-    );
+    ),
+    listOrderListOptions(),
+  ]);
 
   // Unread discussion messages per SO, for the row badge. Rows are ECs in
   // the item-scope workspaces (order_id) and SOs in the SO-scope ones (id).
   // This department's sign-offs for the SOs on this page, for the Complete
   // column. Rows are ECs in the item-scope workspaces and SOs in the others,
   // so the order id comes from whichever the row carries.
-  const completions = await listDeptCompletions([
-    ...new Set(queue.rows.map((o) => String(o.order_id ?? o.id))),
+  // The rows' sign-offs and unread messages both hang off the queue's SOs and
+  // not off each other, so they load together.
+  const orderIds = [...new Set(queue.rows.map((o) => String(o.order_id ?? o.id)))];
+  const [completions, unreadThreads] = await Promise.all([
+    listDeptCompletions(orderIds),
+    unreadByOrder(orderIds, user),
   ]);
-
-  const unreadThreads = await unreadByOrder(
-    [...new Set(queue.rows.map((o) => String(o.order_id ?? o.id)))],
-    user
-  );
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">

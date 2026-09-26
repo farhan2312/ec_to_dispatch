@@ -25,7 +25,7 @@ export default async function RisansiLayout({
   // Department roles see a reminder count on their own department nav item;
   // everyone gets an unread-notifications badge on the Notifications nav item.
   // Central/admin's Notifications page also shows live escalations (alertCount).
-  const [alertCount, reminderCount, notifUnread, openBugCount] =
+  const [alertCount, reminderCount, notifUnread, openBugCount, discussionUnread] =
     await Promise.all([
       canSeeEscalations(user.role) ? countAlerts() : Promise.resolve(0),
       countRemindersForRole(user.role),
@@ -37,9 +37,9 @@ export default async function RisansiLayout({
       // The tracker is the admin's to run; everyone else follows their own
       // reports through the bell.
       user.role === "admin" ? countOpenBugReports() : Promise.resolve(0),
+      // Independent of the rest, so it loads alongside rather than after.
+      countDiscussionUnread(user),
     ]);
-
-  const discussionUnread = await countDiscussionUnread(user);
 
   return (
     <AppShell

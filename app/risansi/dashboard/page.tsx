@@ -53,7 +53,11 @@ export default async function DashboardPage({
   // status vocabulary, its target date, its sign-offs.
   const view = deptViewForRole(user.role);
   const Dashboard = view ? DEPT_DASHBOARDS[view.key] : undefined;
-  const reminders = await listRemindersForRole(user.role);
+  // The reminders and the department's rows don't depend on each other.
+  const [reminders, rows] = await Promise.all([
+    listRemindersForRole(user.role),
+    view && Dashboard ? listOrdersOverview(view.key) : Promise.resolve([]),
+  ]);
 
   if (!view || !Dashboard) {
     return (
@@ -75,7 +79,6 @@ export default async function DashboardPage({
   // Its own orders only: an order this department has nothing to do with
   // (Purchase on a no-BOI order, Quality where QC is not needed) is off its
   // dashboard entirely, not shown as N/A.
-  const rows = await listOrdersOverview(view.key);
   const completions = await listDeptCompletions([
     ...new Set(rows.map((r) => r.order_id)),
   ]);

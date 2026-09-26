@@ -264,7 +264,9 @@ function ColumnCards({
   return (
     <div
       ref={scrollRef}
-      className="-mr-1 max-h-[70vh] overflow-y-auto pr-1 xl:max-h-none xl:min-h-0 xl:flex-1"
+      // relative: the cards' visually-hidden labels are absolutely positioned,
+      // and must be clipped by this box, not stretch the page past it.
+      className="relative -mr-1 max-h-[70vh] overflow-y-auto pr-1 xl:max-h-none xl:min-h-0 xl:flex-1"
     >
       <ul className="space-y-2">{cards.slice(0, shown).map(render)}</ul>
       <div ref={footRef} className="h-px" aria-hidden />

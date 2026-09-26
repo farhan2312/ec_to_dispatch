@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   Bug,
@@ -225,8 +225,54 @@ const COLUMN_BG =
   "bg-[color-mix(in_oklab,var(--foreground)_6%,var(--background))] dark:bg-[color-mix(in_oklab,var(--foreground)_8%,var(--background))]";
 const CARD_BG = "bg-surface dark:bg-[color-mix(in_oklab,var(--foreground)_17%,var(--background))]";
 
-/** Cards shown in Done before "Show more" — it is history, not work. */
-const DONE_SHOWN = 15;
+/** Cards a column shows at first, and adds each time its foot scrolls into view. */
+const COLUMN_BATCH = 10;
+
+/**
+ * One column's cards, ten at a time: the column scrolls on its own, and
+ * reaching its foot brings the next ten. Every report is already loaded, so
+ * this only paces what is drawn — a long Resolved / Closed column no longer
+ * stretches the page past the others.
+ */
+function ColumnCards({
+  cards,
+  render,
+}: {
+  cards: BugReportRow[];
+  render: (row: BugReportRow) => React.ReactNode;
+}) {
+  const [shown, setShown] = useState(COLUMN_BATCH);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const footRef = useRef<HTMLDivElement | null>(null);
+  const more = shown < cards.length;
+
+  useEffect(() => {
+    const foot = footRef.current;
+    if (!foot || !more) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) setShown((n) => n + COLUMN_BATCH);
+      },
+      { root: scrollRef.current, rootMargin: "80px" }
+    );
+    observer.observe(foot);
+    return () => observer.disconnect();
+  }, [more, shown]);
+
+  return (
+    <div ref={scrollRef} className="-mr-1 max-h-[70vh] overflow-y-auto pr-1">
+      <ul className="space-y-2">{cards.slice(0, shown).map(render)}</ul>
+      <div ref={footRef} className="h-px" aria-hidden />
+      {cards.length > COLUMN_BATCH && (
+        <p className="pt-2 text-center text-[11px] text-muted">
+          {more
+            ? `${Math.min(shown, cards.length)} of ${cards.length} — scroll for more`
+            : `All ${cards.length} shown`}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function BoardCard({
   row,
@@ -316,17 +362,19 @@ function Board({
   rows,
   savingId,
   readOnly,
+  filterKey,
   onChange,
   onOpen,
 }: {
   rows: BugReportRow[];
   savingId: string | null;
   readOnly: boolean;
+  /** Changes when search or filters do, so each column starts again at ten. */
+  filterKey: string;
   onChange: (id: string, status: BugStatus) => void;
   onOpen: (id: string) => void;
 }) {
   const [over, setOver] = useState<string | null>(null);
-  const [showAllDone, setShowAllDone] = useState(false);
 
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -341,8 +389,6 @@ function Board({
                 severityRank(a.severity) - severityRank(b.severity) ||
                 a.created_at.localeCompare(b.created_at)
           );
-        const shown =
-          col.key === "done" && !showAllDone ? cards.slice(0, DONE_SHOWN) : cards;
 
         return (
           <section
@@ -389,8 +435,10 @@ function Board({
                 {col.key === "done" ? "Nothing finished yet." : "Nothing here."}
               </p>
             ) : (
-              <ul className="space-y-2">
-                {shown.map((r) => (
+              <ColumnCards
+                key={filterKey}
+                cards={cards}
+                render={(r) => (
                   <BoardCard
                     key={r.id}
                     row={r}
@@ -403,17 +451,8 @@ function Board({
                       e.dataTransfer.effectAllowed = "move";
                     }}
                   />
-                ))}
-              </ul>
-            )}
-            {col.key === "done" && cards.length > DONE_SHOWN && (
-              <button
-                type="button"
-                onClick={() => setShowAllDone((v) => !v)}
-                className="mt-2 rounded-lg px-2 py-1.5 text-xs font-medium text-primary hover:bg-surface"
-              >
-                {showAllDone ? "Show fewer" : `Show ${cards.length - DONE_SHOWN} older`}
-              </button>
+                )}
+              />
             )}
           </section>
         );
@@ -872,6 +911,7 @@ export function BugReportsView({
           rows={filtered}
           savingId={savingId}
           readOnly={readOnly}
+          filterKey={`${kind}|${severity}|${search.trim()}`}
           onChange={changeStatus}
           onOpen={setOpenId}
         />

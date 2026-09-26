@@ -5,7 +5,12 @@ const UUID_RE =
 
 export type BugKind = "bug" | "feature";
 export type BugSeverity = "Low" | "Medium" | "High" | "Critical";
-export type BugStatus = "open" | "in_progress" | "resolved" | "wont_fix";
+export type BugStatus =
+  | "open"
+  | "need_clarification"
+  | "in_progress"
+  | "resolved"
+  | "wont_fix";
 
 export type BugReportRow = {
   id: string;
@@ -110,7 +115,7 @@ export async function getBugReportScreenshot(
 export async function countOpenBugReports(): Promise<number> {
   const result = await query<{ n: string }>(
     `SELECT count(*)::text AS n FROM bug_reports
-      WHERE status IN ('open', 'in_progress')`
+      WHERE status IN ('open', 'need_clarification', 'in_progress')`
   );
   return Number(result.rows[0]?.n ?? 0);
 }

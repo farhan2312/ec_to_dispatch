@@ -19,8 +19,13 @@ import { updateBugReportStatusAction } from "@/app/risansi/bug-reports/actions";
 
 // Display-only rename: DB status "wont_fix" surfaces as "Closed" in the UI.
 const STATUS_OPTIONS: { value: BugStatus; label: string; tone: string }[] = [
-  { value: "open", label: "Open", tone: "bg-rose-50 text-rose-700" },
-  { value: "in_progress", label: "In progress", tone: "bg-blue-50 text-blue-700" },
+  { value: "open", label: "Open", tone: "bg-blue-50 text-blue-700" },
+  {
+    value: "need_clarification",
+    label: "Need clarification",
+    tone: "bg-cyan-50 text-cyan-700",
+  },
+  { value: "in_progress", label: "In progress", tone: "bg-amber-50 text-amber-700" },
   { value: "resolved", label: "Resolved", tone: "bg-emerald-50 text-emerald-700" },
   { value: "wont_fix", label: "Closed", tone: "bg-slate-100 text-slate-600" },
 ];
@@ -32,6 +37,7 @@ type StatusFilter = "all" | BugStatus;
 const FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "all", label: "All" },
   { value: "open", label: "Open" },
+  { value: "need_clarification", label: "Need clarification" },
   { value: "in_progress", label: "In progress" },
   { value: "resolved", label: "Resolved" },
   { value: "wont_fix", label: "Closed" },
@@ -161,12 +167,13 @@ function Details({ row }: { row: BugReportRow }) {
 // ---------------------------------------------------------------------------
 
 /**
- * The board's three columns. Resolved and Closed share the last one: both
- * mean nobody has anything left to do, and apart they would be two columns
- * that only ever grow.
+ * The board's four columns. Need Clarification holds reports waiting on
+ * their reporter. Resolved and Closed share the last one: both mean nobody
+ * has anything left to do, and apart they would be two columns that only ever
+ * grow.
  */
 const COLUMNS: {
-  key: "open" | "in_progress" | "done";
+  key: "open" | "need_clarification" | "in_progress" | "done";
   label: string;
   statuses: BugStatus[];
   /** What a card dropped here becomes. */
@@ -174,17 +181,24 @@ const COLUMNS: {
   /** The header dot, in the same hue as the status chips. */
   dot: string;
 }[] = [
-  { key: "open", label: "Open", statuses: ["open"], dropAs: "open", dot: "bg-rose-500" },
+  { key: "open", label: "Open", statuses: ["open"], dropAs: "open", dot: "bg-blue-600" },
+  {
+    key: "need_clarification",
+    label: "Need Clarification",
+    statuses: ["need_clarification"],
+    dropAs: "need_clarification",
+    dot: "bg-cyan-500",
+  },
   {
     key: "in_progress",
     label: "In progress",
     statuses: ["in_progress"],
     dropAs: "in_progress",
-    dot: "bg-blue-500",
+    dot: "bg-amber-600",
   },
   {
     key: "done",
-    label: "Done",
+    label: "Resolved / Closed",
     statuses: ["resolved", "wont_fix"],
     dropAs: "resolved",
     dot: "bg-emerald-500",
@@ -298,7 +312,7 @@ function Board({
   const [showAllDone, setShowAllDone] = useState(false);
 
   return (
-    <div className="grid gap-4 md:grid-cols-3">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       {COLUMNS.map((col) => {
         const cards = rows
           .filter((r) => col.statuses.includes(r.status))
@@ -342,12 +356,12 @@ function Board({
                 : `border-card-border ${COLUMN_BG}`
             }`}
           >
-            <header className="mb-3 flex items-center justify-between px-1">
+            <header className="mb-3 flex items-center gap-2 px-1">
               <h2 className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
                 <span className={`h-2 w-2 rounded-full ${col.dot}`} aria-hidden />
                 {col.label}
               </h2>
-              <span className="rounded-full bg-surface px-2 py-0.5 text-[11px] font-semibold text-muted">
+              <span className="min-w-6 rounded-full border border-card-border bg-surface px-2 py-0.5 text-center text-[11px] font-semibold tabular-nums text-foreground">
                 {cards.length}
               </span>
             </header>
@@ -490,6 +504,7 @@ function ReportList({
   const counts: Record<StatusFilter, number> = {
     all: rows.length,
     open: rows.filter((r) => r.status === "open").length,
+    need_clarification: rows.filter((r) => r.status === "need_clarification").length,
     in_progress: rows.filter((r) => r.status === "in_progress").length,
     resolved: rows.filter((r) => r.status === "resolved").length,
     wont_fix: rows.filter((r) => r.status === "wont_fix").length,

@@ -2150,3 +2150,22 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS so_handover_date DATE;
 ALTER TABLE bug_reports DROP CONSTRAINT IF EXISTS bug_reports_status_check;
 ALTER TABLE bug_reports ADD CONSTRAINT bug_reports_status_check
     CHECK (status IN ('open', 'need_clarification', 'in_progress', 'resolved', 'wont_fix'));
+
+-- ===========================================================================
+-- notifications addressed to one person
+-- ===========================================================================
+-- Most notifications go to a department (recipient_role). A few are about
+-- something a person did themselves — a bug they reported changing status — so
+-- they go to that user instead. Exactly one of the two is set.
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS recipient_user_id UUID
+    REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE notifications ALTER COLUMN recipient_role DROP NOT NULL;
+ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_one_recipient;
+ALTER TABLE notifications ADD CONSTRAINT notifications_one_recipient
+    CHECK ((recipient_role IS NULL) <> (recipient_user_id IS NULL));
+CREATE INDEX IF NOT EXISTS notifications_recipient_user_idx
+    ON notifications (recipient_user_id, created_at DESC)
+    WHERE recipient_user_id IS NOT NULL;
+-- Which bug report a personal notification is about, so it can link there.
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS bug_report_id UUID
+    REFERENCES bug_reports(id) ON DELETE CASCADE;

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
-import { canSeeEscalations, isCentral } from "@/lib/roles";
+import { canSeeEscalations } from "@/lib/roles";
 import { countAlerts } from "@/lib/alerts";
 import { countRemindersForRole } from "@/lib/reminders";
 import { countUnread, recipientRolesForUser } from "@/lib/notifications";
@@ -29,8 +29,14 @@ export default async function RisansiLayout({
     await Promise.all([
       canSeeEscalations(user.role) ? countAlerts() : Promise.resolve(0),
       countRemindersForRole(user.role),
-      countUnread(recipientRolesForUser(user.role), user.notifications_seen_at),
-      isCentral(user.role) ? countOpenBugReports() : Promise.resolve(0),
+      countUnread(
+        recipientRolesForUser(user.role),
+        user.notifications_seen_at,
+        user.id
+      ),
+      // The tracker is the admin's to run; everyone else follows their own
+      // reports through the bell.
+      user.role === "admin" ? countOpenBugReports() : Promise.resolve(0),
     ]);
 
   const discussionUnread = await countDiscussionUnread(user);

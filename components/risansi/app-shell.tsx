@@ -8,7 +8,6 @@ import { ReportBugTrigger } from "./report-bug";
 import { DiscussionBell } from "./discussion-bell";
 import { Sidebar } from "./sidebar";
 import { BottomNav } from "./bottom-nav";
-import { isCentral } from "@/lib/roles";
 
 // SharePoint-hosted demo walkthrough. Opens in a new tab; noopener/noreferrer
 // so we don't hand the target a window.opener reference or leak Referer.
@@ -38,7 +37,7 @@ const ROUTE_LABELS: Record<string, Crumb> = {
   "/risansi/departments/dispatch": { label: "Dispatch", parent: "Departments" },
   "/risansi/user-access-control": { label: "User Access Control", parent: "Central Admin" },
   "/risansi/audit-log": { label: "Audit Log", parent: "Central Admin" },
-  "/risansi/bug-reports": { label: "Bug Tracker", parent: "Central Admin" },
+  "/risansi/bug-reports": { label: "Bug Reports" },
 };
 
 function crumbsFor(pathname: string): { label: string; href?: string }[] {
@@ -82,7 +81,7 @@ export function AppShell({
   // so the page picks up other people's saves without a full reload.
   const [refreshing, startRefresh] = useTransition();
   const crumbs = useMemo(() => crumbsFor(pathname ?? ""), [pathname]);
-  const showBugBell = isCentral(user.role);
+  const showBugBell = user.role === "admin";
   // On mobile the breadcrumb's last segment doubles as the page title.
   const mobileTitle = crumbs.length > 0 ? crumbs[crumbs.length - 1].label : "Risansi";
 

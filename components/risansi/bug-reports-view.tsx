@@ -138,6 +138,16 @@ function StatusButtons({
   );
 }
 
+/** The status as a chip — what a reporter sees in place of the controls. */
+function StatusChip({ status }: { status: BugStatus }) {
+  const meta = statusMeta(status);
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${meta.tone}`}>
+      {meta.label}
+    </span>
+  );
+}
+
 function Details({ row }: { row: BugReportRow }) {
   return (
     <>
@@ -221,12 +231,15 @@ const DONE_SHOWN = 15;
 function BoardCard({
   row,
   saving,
+  readOnly,
   onOpen,
   onChange,
   onDragStart,
 }: {
   row: BugReportRow;
   saving: boolean;
+  /** The reporter's own view: the status shows, nothing moves. */
+  readOnly: boolean;
   onOpen: () => void;
   onChange: (status: BugStatus) => void;
   onDragStart: (e: DragEvent) => void;
@@ -234,10 +247,10 @@ function BoardCard({
   const meta = statusMeta(row.status);
   return (
     <li
-      draggable={!saving}
-      onDragStart={onDragStart}
+      draggable={!saving && !readOnly}
+      onDragStart={readOnly ? undefined : onDragStart}
       className={`group rounded-lg border border-card-border ${CARD_BG} p-3 shadow-sm transition-shadow hover:shadow-md ${
-        saving ? "opacity-60" : "cursor-grab active:cursor-grabbing"
+        saving ? "opacity-60" : readOnly ? "" : "cursor-grab active:cursor-grabbing"
       }`}
     >
       <button type="button" onClick={onOpen} className="block w-full text-left">
@@ -273,6 +286,7 @@ function BoardCard({
       </button>
 
       {/* Dragging needs a mouse; this does the same on a phone or keyboard. */}
+      {!readOnly && (
       <div className="mt-2 flex items-center justify-end border-t border-card-border pt-2">
         {saving ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" />
@@ -293,6 +307,7 @@ function BoardCard({
           </label>
         )}
       </div>
+      )}
     </li>
   );
 }
@@ -300,11 +315,13 @@ function BoardCard({
 function Board({
   rows,
   savingId,
+  readOnly,
   onChange,
   onOpen,
 }: {
   rows: BugReportRow[];
   savingId: string | null;
+  readOnly: boolean;
   onChange: (id: string, status: BugStatus) => void;
   onOpen: (id: string) => void;
 }) {
@@ -332,6 +349,7 @@ function Board({
             key={col.key}
             aria-label={col.label}
             onDragOver={(e) => {
+              if (readOnly) return;
               e.preventDefault();
               e.dataTransfer.dropEffect = "move";
               setOver(col.key);
@@ -341,6 +359,7 @@ function Board({
               if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(null);
             }}
             onDrop={(e) => {
+              if (readOnly) return;
               e.preventDefault();
               setOver(null);
               const id = e.dataTransfer.getData("text/plain");
@@ -376,6 +395,7 @@ function Board({
                     key={r.id}
                     row={r}
                     saving={savingId === r.id}
+                    readOnly={readOnly}
                     onOpen={() => onOpen(r.id)}
                     onChange={(s) => onChange(r.id, s)}
                     onDragStart={(e) => {
@@ -405,11 +425,13 @@ function Board({
 function ReportModal({
   row,
   saving,
+  readOnly,
   onChange,
   onClose,
 }: {
   row: BugReportRow;
   saving: boolean;
+  readOnly: boolean;
   onChange: (status: BugStatus) => void;
   onClose: () => void;
 }) {
@@ -469,7 +491,16 @@ function ReportModal({
           <Details row={row} />
         </div>
         <div className="border-t border-card-border px-5 py-3">
-          <StatusButtons row={row} saving={saving} onChange={onChange} />
+          {readOnly ? (
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Status
+              </span>
+              <StatusChip status={row.status} />
+            </div>
+          ) : (
+            <StatusButtons row={row} saving={saving} onChange={onChange} />
+          )}
         </div>
       </div>
     </div>
@@ -483,10 +514,12 @@ function ReportModal({
 function ReportList({
   rows,
   savingId,
+  readOnly,
   onChange,
 }: {
   rows: BugReportRow[];
   savingId: string | null;
+  readOnly: boolean;
   onChange: (id: string, status: BugStatus) => void;
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -604,13 +637,15 @@ function ReportList({
                   {isOpen && (
                     <div className="mt-4 space-y-4 rounded-lg bg-background/40 p-4">
                       <Details row={r} />
-                      <div className="pt-1">
-                        <StatusButtons
-                          row={r}
-                          saving={savingId === r.id}
-                          onChange={(s) => onChange(r.id, s)}
-                        />
-                      </div>
+                      {!readOnly && (
+                        <div className="pt-1">
+                          <StatusButtons
+                            row={r}
+                            saving={savingId === r.id}
+                            onChange={(s) => onChange(r.id, s)}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </li>
@@ -630,14 +665,27 @@ function ReportList({
 type View = "board" | "list";
 const VIEW_KEY = "bug-tracker-view";
 
-export function BugReportsView({ rows }: { rows: BugReportRow[] }) {
+export function BugReportsView({
+  rows,
+  readOnly = false,
+  initialOpenId = null,
+}: {
+  rows: BugReportRow[];
+  /**
+   * The reporter's view of their own reports: statuses show, nothing moves.
+   * Changing a status is the admin's alone (and the action says so too).
+   */
+  readOnly?: boolean;
+  /** A report to open on arrival — where a notification about it links. */
+  initialOpenId?: string | null;
+}) {
   const router = useRouter();
   const [view, setView] = useState<View>("board");
   const [kind, setKind] = useState<"all" | BugReportRow["kind"]>("all");
   const [severity, setSeverity] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [savingId, setSavingId] = useState<string | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(initialOpenId);
   const [error, setError] = useState<string | null>(null);
   // A move shows straight away; the server's answer confirms or undoes it.
   // Each is kept with the status it moved from, and applies only while the
@@ -718,7 +766,9 @@ export function BugReportsView({ rows }: { rows: BugReportRow[] }) {
       <div className="rounded-xl border border-card-border bg-surface px-6 py-16 text-center shadow-sm">
         <p className="text-sm font-medium text-foreground">No reports yet</p>
         <p className="mt-1 text-sm text-muted">
-          Submissions from the &ldquo;Report a Bug&rdquo; button will show here.
+          {readOnly
+            ? "Bugs and ideas you send with the “Report a Bug” button will show here, with where each one stands."
+            : "Submissions from the “Report a Bug” button will show here."}
         </p>
       </div>
     );
@@ -818,15 +868,27 @@ export function BugReportsView({ rows }: { rows: BugReportRow[] }) {
       )}
 
       {view === "board" ? (
-        <Board rows={filtered} savingId={savingId} onChange={changeStatus} onOpen={setOpenId} />
+        <Board
+          rows={filtered}
+          savingId={savingId}
+          readOnly={readOnly}
+          onChange={changeStatus}
+          onOpen={setOpenId}
+        />
       ) : (
-        <ReportList rows={filtered} savingId={savingId} onChange={changeStatus} />
+        <ReportList
+          rows={filtered}
+          savingId={savingId}
+          readOnly={readOnly}
+          onChange={changeStatus}
+        />
       )}
 
       {openRow && (
         <ReportModal
           row={openRow}
           saving={savingId === openRow.id}
+          readOnly={readOnly}
           onChange={(s) => changeStatus(openRow.id, s)}
           onClose={() => setOpenId(null)}
         />

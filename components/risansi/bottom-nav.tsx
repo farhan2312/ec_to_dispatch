@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Bell,
+  Bug,
   KeyRound,
   LogOut,
   MoreHorizontal,
@@ -193,6 +194,16 @@ export function BottomNav({
                         }
                       />
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {user.role !== "admin" && (
+                <div className="mb-4">
+                  <div className="space-y-1">
+                    <SheetLink
+                      item={{ label: "My Bug Reports", href: "/risansi/bug-reports", icon: Bug }}
+                    />
                   </div>
                 </div>
               )}

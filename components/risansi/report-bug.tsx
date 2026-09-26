@@ -167,8 +167,8 @@ function ReportBugModal({ onClose }: { onClose: () => void }) {
         </h2>
         <p className="mb-5 text-sm text-muted">
           {kind === "bug"
-            ? "Tell us what went wrong — it goes straight to the admin's Bug Tracker."
-            : "Tell us what you'd like to see — it goes straight to the admin's Bug Tracker."}
+            ? "Tell us what went wrong — it goes straight to the admin's Bug Tracker. Follow it under My Bug Reports; you'll be notified as it moves."
+            : "Tell us what you'd like to see — it goes straight to the admin's Bug Tracker. Follow it under My Bug Reports; you'll be notified as it moves."}
         </p>
 
         {done ? (

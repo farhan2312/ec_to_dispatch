@@ -105,7 +105,13 @@ export async function updateBugReportStatusAction(
   if (!isCentral(user.role)) {
     return { ok: false, error: "Only Admin / Central Visibility may change status." };
   }
-  const valid: BugStatus[] = ["open", "in_progress", "resolved", "wont_fix"];
+  const valid: BugStatus[] = [
+    "open",
+    "need_clarification",
+    "in_progress",
+    "resolved",
+    "wont_fix",
+  ];
   if (!(valid as string[]).includes(status)) {
     return { ok: false, error: "Invalid status." };
   }

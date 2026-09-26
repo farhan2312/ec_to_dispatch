@@ -2141,3 +2141,12 @@ UPDATE notifications n
 -- Drawing's first target is counted from it (lib/target-rules.ts), as the
 -- other first targets are counted back from the delivery date.
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS so_handover_date DATE;
+
+-- ===========================================================================
+-- bug_reports: a "need clarification" status
+-- ===========================================================================
+-- A report waiting on its reporter for more detail: not being worked on, not
+-- closed. Sits between Open and In progress on the board.
+ALTER TABLE bug_reports DROP CONSTRAINT IF EXISTS bug_reports_status_check;
+ALTER TABLE bug_reports ADD CONSTRAINT bug_reports_status_check
+    CHECK (status IN ('open', 'need_clarification', 'in_progress', 'resolved', 'wont_fix'));

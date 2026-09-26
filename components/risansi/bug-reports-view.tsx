@@ -260,7 +260,10 @@ function ColumnCards({
   }, [more, shown]);
 
   return (
-    <div ref={scrollRef} className="-mr-1 max-h-[70vh] overflow-y-auto pr-1">
+    <div
+      ref={scrollRef}
+      className="-mr-1 max-h-[70vh] overflow-y-auto pr-1 xl:max-h-none xl:min-h-0 xl:flex-1"
+    >
       <ul className="space-y-2">{cards.slice(0, shown).map(render)}</ul>
       <div ref={footRef} className="h-px" aria-hidden />
       {cards.length > COLUMN_BATCH && (
@@ -377,7 +380,7 @@ function Board({
   const [over, setOver] = useState<string | null>(null);
 
   return (
-    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-4 md:grid-cols-2 xl:min-h-0 xl:flex-1 xl:grid-cols-4 xl:grid-rows-[minmax(0,1fr)]">
       {COLUMNS.map((col) => {
         const cards = rows
           .filter((r) => col.statuses.includes(r.status))
@@ -415,13 +418,13 @@ function Board({
               if (!row || col.statuses.includes(row.status)) return;
               onChange(id, col.dropAs);
             }}
-            className={`flex min-h-48 flex-col rounded-xl border p-3 transition-colors ${
+            className={`flex min-h-48 flex-col rounded-xl border p-3 transition-colors xl:min-h-0 ${
               over === col.key
                 ? "border-primary bg-primary/10"
                 : `border-card-border ${COLUMN_BG}`
             }`}
           >
-            <header className="mb-3 flex items-center gap-2 px-1">
+            <header className="mb-3 flex shrink-0 items-center gap-2 px-1">
               <h2 className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
                 <span className={`h-2 w-2 rounded-full ${col.dot}`} aria-hidden />
                 {col.label}
@@ -814,8 +817,10 @@ export function BugReportsView({
   }
 
   return (
-    <>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+    // On a wide screen the tracker fits the window: the page holds still and
+    // each column (or the list) scrolls inside it.
+    <div className="flex flex-col xl:min-h-0 xl:flex-1">
+      <div className="mb-4 flex shrink-0 flex-wrap items-center gap-2">
         <div className="relative min-w-52 flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -916,12 +921,14 @@ export function BugReportsView({
           onOpen={setOpenId}
         />
       ) : (
-        <ReportList
-          rows={filtered}
-          savingId={savingId}
-          readOnly={readOnly}
-          onChange={changeStatus}
-        />
+        <div className="xl:min-h-0 xl:flex-1 xl:overflow-y-auto">
+          <ReportList
+            rows={filtered}
+            savingId={savingId}
+            readOnly={readOnly}
+            onChange={changeStatus}
+          />
+        </div>
       )}
 
       {openRow && (
@@ -933,6 +940,6 @@ export function BugReportsView({
           onClose={() => setOpenId(null)}
         />
       )}
-    </>
+    </div>
   );
 }

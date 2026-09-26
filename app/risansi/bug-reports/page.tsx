@@ -34,8 +34,10 @@ export default async function BugReportsPage({
   const openId = report && UUID_RE.test(report) && rows.some((r) => r.id === report) ? report : null;
 
   return (
-    <div className="px-4 py-6 sm:px-8 sm:py-8">
-      <div className="mb-6 flex items-center gap-3">
+    // Wide screens: exactly the window below the top bar (h-14), so the board
+    // scrolls within its columns rather than the page scrolling around it.
+    <div className="px-4 py-6 sm:px-8 sm:py-8 xl:flex xl:h-[calc(100dvh-3.5rem)] xl:flex-col xl:overflow-hidden">
+      <div className="mb-6 flex shrink-0 items-center gap-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground">
           <Bug className="h-6 w-6" />
         </div>

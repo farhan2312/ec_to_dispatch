@@ -10,7 +10,7 @@ import {
 } from "./url-table";
 import type { PageResult } from "@/lib/pagination";
 import { ALL_ROLES, roleLabel } from "@/lib/roles";
-import type { User, UserStatus } from "@/lib/users";
+import type { User, UserListRow, UserStatus } from "@/lib/users";
 import {
   addUserAction,
   deleteUserAction,
@@ -19,6 +19,57 @@ import {
   updateUserDetailsAction,
 } from "@/app/risansi/user-access-control/actions";
 import { ConfirmDialog } from "./confirm-dialog";
+
+function shortDate(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    timeZone: "Asia/Kolkata",
+  });
+}
+
+const REVIEW_WORD: Record<string, string> = {
+  approved: "Approved",
+  rejected: "Rejected",
+  disabled: "Disabled",
+  pending: "Set to pending",
+};
+
+/**
+ * Who brought the user in — an admin adding them, or their own request — and
+ * who last decided their access. Read off the audit log.
+ */
+function Provenance({ u }: { u: UserListRow }) {
+  if (!u.origin && !u.review) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+  return (
+    <div className="space-y-0.5 text-xs leading-tight">
+      {u.origin && (
+        <div>
+          <span className="text-muted">
+            {u.origin === "added" ? "Added by " : "Requested access"}
+          </span>
+          {u.origin === "added" && (
+            <span className="font-medium text-foreground">{u.origin_by ?? "—"}</span>
+          )}
+          {u.origin_at && <span className="text-muted"> · {shortDate(u.origin_at)}</span>}
+        </div>
+      )}
+      {u.review && (
+        <div>
+          <span className="text-muted">{REVIEW_WORD[u.review] ?? u.review} by </span>
+          <span className="font-medium text-foreground">{u.review_by ?? "—"}</span>
+          {u.review_at && <span className="text-muted"> · {shortDate(u.review_at)}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const STATUS_STYLES: Record<UserStatus, string> = {
   pending: "bg-amber-50 text-amber-700 ring-amber-200",
@@ -75,7 +126,7 @@ export function UsersAccessView({
   platformAdminEmail,
 }: {
   // One server-fetched page, plus per-status totals for the whole table.
-  result: PageResult<User> & { counts: Record<string, number> };
+  result: PageResult<UserListRow> & { counts: Record<string, number> };
   currentEmail: string;
   platformAdminEmail: string;
 }) {
@@ -135,20 +186,21 @@ export function UsersAccessView({
 
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[850px] text-sm">
+          <table className="w-full min-w-[1040px] text-sm">
             <thead>
               <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
                 <th className="px-4 py-3">User</th>
                 <th className="px-4 py-3">Role</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Active</th>
+                <th className="px-4 py-3">Added / Reviewed by</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-card-border">
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-sm text-muted">
+                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted">
                     No users match your filters.
                   </td>
                 </tr>
@@ -184,6 +236,9 @@ export function UsersAccessView({
                       ) : (
                         <span className="text-muted">No</span>
                       )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Provenance u={u} />
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-center justify-end gap-1.5">

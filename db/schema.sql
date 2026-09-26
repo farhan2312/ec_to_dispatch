@@ -2169,3 +2169,12 @@ CREATE INDEX IF NOT EXISTS notifications_recipient_user_idx
 -- Which bug report a personal notification is about, so it can link there.
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS bug_report_id UUID
     REFERENCES bug_reports(id) ON DELETE CASCADE;
+
+-- ===========================================================================
+-- Users & Access: who added or reviewed each user
+-- ===========================================================================
+-- The column is read off the audit log's ownership events for each user's
+-- email (lib/users.ts), so they are looked up by target.
+CREATE INDEX IF NOT EXISTS audit_log_ownership_target_idx
+    ON audit_log (lower(target), created_at DESC)
+    WHERE category = 'ownership';

@@ -2,12 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/session";
-import { isCentral } from "@/lib/roles";
 import {
+  BUG_STATUS_LABELS,
+  getBugReportOwner,
   insertBugReport,
   updateBugReportStatus,
   type BugStatus,
 } from "@/lib/bug-reports";
+import { emitToUser } from "@/lib/notifications";
 import { logAudit } from "@/lib/audit";
 
 export type SubmitBugResult = { ok: true } | { ok: false; error: string };
@@ -95,15 +97,15 @@ export async function submitBugReportAction(
 
 export type UpdateBugStatusResult = { ok: true } | { ok: false; error: string };
 
-/** Admin-only: move a report through its lifecycle. */
+/** Admin-only: move a report through its lifecycle, telling whoever reported it. */
 export async function updateBugReportStatusAction(
   id: string,
   status: string
 ): Promise<UpdateBugStatusResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
-  if (!isCentral(user.role)) {
-    return { ok: false, error: "Only Admin / Central Visibility may change status." };
+  if (user.role !== "admin") {
+    return { ok: false, error: "Only the admin can change a report's status." };
   }
   const valid: BugStatus[] = [
     "open",
@@ -116,7 +118,17 @@ export async function updateBugReportStatusAction(
     return { ok: false, error: "Invalid status." };
   }
   try {
+    const before = await getBugReportOwner(id);
     await updateBugReportStatus(id, status as BugStatus);
+    // The reporter hears each move, unless they moved it themselves.
+    if (before && before.status !== status && before.user_id && before.user_id !== user.id) {
+      await emitToUser({
+        userId: before.user_id,
+        type: "bug_status",
+        bugReportId: id,
+        message: `Your ${before.title ? `report "${before.title}"` : "bug report"} is now ${BUG_STATUS_LABELS[status as BugStatus]}`,
+      });
+    }
     revalidatePath("/risansi/bug-reports");
     return { ok: true };
   } catch (error) {

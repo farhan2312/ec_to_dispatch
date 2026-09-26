@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import {
   AlertTriangle,
   Bell,
+  Bug,
   CheckCircle2,
   Clock,
   OctagonAlert,
@@ -35,6 +36,7 @@ const NOTIF_ICON = {
   target_date: Clock,
   dept_complete: CheckCircle2,
   dept_update: Pencil,
+  bug_status: Bug,
 } as const;
 
 const NOTIF_TONE = {
@@ -42,6 +44,7 @@ const NOTIF_TONE = {
   target_date: "bg-blue-50 text-blue-600",
   dept_complete: "bg-emerald-50 text-emerald-600",
   dept_update: "bg-slate-100 text-slate-600",
+  bug_status: "bg-rose-50 text-rose-600",
 } as const;
 
 function timeAgo(iso: string): string {
@@ -160,7 +163,7 @@ function NotificationFeed({
                   <p className="mt-1 text-xs text-muted">{timeAgo(n.created_at)}</p>
                 </div>
               </div>
-              {n.order_id && (
+              {(n.order_id || n.bug_report_id) && (
                 <Link
                   href={hrefFor(n)}
                   className="shrink-0 text-sm font-medium text-primary hover:text-primary-hover"
@@ -310,7 +313,11 @@ export default async function NotificationsPage({
   const params = await searchParams;
   const oversight = canSeeEscalations(user.role);
   const [notifications, alerts] = await Promise.all([
-    listNotificationsPage(recipientRolesForUser(user.role), parsePage(params.npage)),
+    listNotificationsPage(
+      recipientRolesForUser(user.role),
+      parsePage(params.npage),
+      user.id
+    ),
     oversight
       ? listAlertsPage(parsePage(params.epage))
       : Promise.resolve(pageResult<AlertRow>([], 0, 1, ALERTS_PAGE_SIZE)),
@@ -321,6 +328,8 @@ export default async function NotificationsPage({
   // when known, else the SO.
   const deptHref = departmentHrefForRole(user.role);
   const hrefFor = (n: NotificationRow) => {
+    // A bug report's news opens the tracker at that report.
+    if (n.bug_report_id) return `/risansi/bug-reports?report=${n.bug_report_id}`;
     if (deptHref) return `${deptHref}?edit=${n.item_id ?? n.order_id}`;
     if (n.item_id && n.order_id) {
       return `/risansi/orders/${n.order_id}/items/${n.item_id}`;

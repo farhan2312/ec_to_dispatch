@@ -2,22 +2,36 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Bug } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { isCentral } from "@/lib/roles";
 import { listBugReports } from "@/lib/bug-reports";
 import { BugReportsView } from "@/components/risansi/bug-reports-view";
 
 export const metadata: Metadata = {
-  title: "Bug Tracker | Risansi",
+  title: "Bug Reports | Risansi",
 };
 
 export const dynamic = "force-dynamic";
 
-export default async function BugReportsPage() {
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * The admin runs the tracker: every report, and moving them along. Everyone
+ * else sees the reports they sent themselves and where each one stands, read
+ * only — they are told on the bell when one moves.
+ */
+export default async function BugReportsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ report?: string }>;
+}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!isCentral(user.role)) redirect("/risansi/dashboard");
 
-  const rows = await listBugReports();
+  const isAdmin = user.role === "admin";
+  const rows = await listBugReports({ reporterId: isAdmin ? null : user.id });
+  // A notification links to its report; open it if it is one this user sees.
+  const { report } = await searchParams;
+  const openId = report && UUID_RE.test(report) && rows.some((r) => r.id === report) ? report : null;
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">
@@ -27,16 +41,21 @@ export default async function BugReportsPage() {
         </div>
         <div>
           <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-            Bug Tracker
+            {isAdmin ? "Bug Tracker" : "My Bug Reports"}
           </h1>
           <p className="text-sm text-muted">
-            User-submitted bugs and feature requests — {rows.length}{" "}
-            {rows.length === 1 ? "report" : "reports"}.
+            {isAdmin
+              ? `User-submitted bugs and feature requests — ${rows.length} ${
+                  rows.length === 1 ? "report" : "reports"
+                }.`
+              : `What you have reported, and where each one stands — ${rows.length} ${
+                  rows.length === 1 ? "report" : "reports"
+                }. You are notified when a status changes.`}
           </p>
         </div>
       </div>
 
-      <BugReportsView rows={rows} />
+      <BugReportsView rows={rows} readOnly={!isAdmin} initialOpenId={openId} />
     </div>
   );
 }

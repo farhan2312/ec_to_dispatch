@@ -7,6 +7,7 @@ import Image from "next/image";
 import logo from "@/assets/logo.png";
 import {
   Bell,
+  Bug,
   ChevronsUpDown,
   KeyRound,
   LogOut,
@@ -126,6 +127,13 @@ export function Sidebar({
               }}
               badge={notifBadge}
             />
+            {/* The admin reaches the whole tracker under Admin; everyone else
+                follows the reports they sent. */}
+            {user.role !== "admin" && (
+              <NavLink
+                item={{ label: "My Bug Reports", href: "/risansi/bug-reports", icon: Bug }}
+              />
+            )}
           </div>
         </div>
 

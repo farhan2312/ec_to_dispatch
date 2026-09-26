@@ -13,6 +13,8 @@ export type NotificationType =
   | "payment_terms"
   | "target_date"
   | "dept_update"
+  // A bug the recipient reported changed status (addressed to them alone).
+  | "bug_status"
   // No longer emitted — department saves are all reported as "dept_update"
   // now. Kept so notifications already stored still render.
   | "dept_complete";
@@ -39,6 +41,8 @@ export type NotificationRow = {
   order_pi_nos: string | null;
   order_pi_total: string | null;
   order_pi_count: number;
+  /** A personal notification about a bug report: the report it concerns. */
+  bug_report_id: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -68,9 +72,11 @@ export const FEED_PAGE_SIZE = 25;
  */
 export async function listNotificationsPage(
   roles: string[],
-  page: number
+  page: number,
+  /** The reader: their own notifications come alongside their role's. */
+  userId: string | null = null
 ): Promise<PageResult<NotificationRow>> {
-  if (roles.length === 0) return pageResult([], 0, 1, FEED_PAGE_SIZE);
+  if (roles.length === 0 && !userId) return pageResult([], 0, 1, FEED_PAGE_SIZE);
   return pageWithTotal(
     page,
     (p) =>
@@ -82,6 +88,7 @@ export async function listNotificationsPage(
                 b.pi_no, b.pi_value::text AS pi_value,
                 pis.nos AS order_pi_nos, pis.total::text AS order_pi_total,
                 COALESCE(pis.count, 0)::int AS order_pi_count,
+                n.bug_report_id,
                 count(*) OVER ()::text AS total_count
            FROM notifications n
            LEFT JOIN orders o ON o.id = n.order_id
@@ -94,15 +101,16 @@ export async function listNotificationsPage(
               WHERE d.order_id = n.order_id
                 AND nullif(btrim(d.pi_no), '') IS NOT NULL
            ) pis ON n.billing_doc_id IS NULL
-          WHERE n.recipient_role = ANY($1)
+          WHERE n.recipient_role = ANY($1) OR n.recipient_user_id = $4
           ORDER BY n.created_at DESC
           LIMIT $2 OFFSET $3`,
-        [roles, FEED_PAGE_SIZE, offsetFor(p, FEED_PAGE_SIZE)]
+        [roles, FEED_PAGE_SIZE, offsetFor(p, FEED_PAGE_SIZE), userId]
       ),
     async () => {
       const r = await query<{ count: string }>(
-        `SELECT count(*)::text AS count FROM notifications WHERE recipient_role = ANY($1)`,
-        [roles]
+        `SELECT count(*)::text AS count FROM notifications
+          WHERE recipient_role = ANY($1) OR recipient_user_id = $2`,
+        [roles, userId]
       );
       return Number(r.rows[0]?.count ?? 0);
     },
@@ -112,15 +120,16 @@ export async function listNotificationsPage(
 
 export async function countUnread(
   roles: string[],
-  seenAt: string | null
+  seenAt: string | null,
+  userId: string | null = null
 ): Promise<number> {
-  if (roles.length === 0) return 0;
+  if (roles.length === 0 && !userId) return 0;
   const result = await query<{ count: string }>(
     `SELECT count(*)::text AS count
        FROM notifications
-      WHERE recipient_role = ANY($1)
+      WHERE (recipient_role = ANY($1) OR recipient_user_id = $3)
         AND ($2::timestamptz IS NULL OR created_at > $2)`,
-    [roles, seenAt]
+    [roles, seenAt, userId]
   );
   return Number(result.rows[0]?.count ?? 0);
 }
@@ -159,6 +168,28 @@ export async function emitNotification(input: {
       `emitNotification failed (roles=${input.roles.join(",")} type=${input.type}):`,
       msg
     );
+  }
+}
+
+/**
+ * A notification for one person rather than a department — about something
+ * they did themselves, like a bug they reported. Never throws.
+ */
+export async function emitToUser(input: {
+  userId: string;
+  type: NotificationType;
+  message: string;
+  bugReportId?: string | null;
+}): Promise<void> {
+  try {
+    await query(
+      `INSERT INTO notifications (recipient_user_id, type, message, bug_report_id)
+       VALUES ($1, $2, $3, $4)`,
+      [input.userId, input.type, input.message, input.bugReportId ?? null]
+    );
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`emitToUser failed (type=${input.type}):`, msg);
   }
 }
 

@@ -12,8 +12,18 @@ export type BugStatus =
   | "resolved"
   | "wont_fix";
 
+/** How each status reads to a person — "wont_fix" is shown as Closed. */
+export const BUG_STATUS_LABELS: Record<BugStatus, string> = {
+  open: "Open",
+  need_clarification: "Need clarification",
+  in_progress: "In progress",
+  resolved: "Resolved",
+  wont_fix: "Closed",
+};
+
 export type BugReportRow = {
   id: string;
+  user_id: string | null;
   user_email: string | null;
   user_role: string | null;
   kind: BugKind;
@@ -75,30 +85,55 @@ export async function insertBugReport(input: NewBugReport): Promise<string> {
  * The board counts its columns from this list, so the cap sits well above
  * the number of reports the tracker holds.
  */
-export async function listBugReports(limit = 1000): Promise<BugReportRow[]> {
+export async function listBugReports(
+  opts: {
+    /** Only this person's own reports; omitted, every report. */
+    reporterId?: string | null;
+    limit?: number;
+  } = {}
+): Promise<BugReportRow[]> {
   const result = await query<BugReportRow>(
-    `SELECT id, user_email, user_role, kind, severity, title, description,
+    `SELECT id, user_id, user_email, user_role, kind, severity, title, description,
             page_path, screenshot_name, screenshot_size, status,
             to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS created_at
        FROM bug_reports
+      WHERE ($2::uuid IS NULL OR user_id = $2)
       ORDER BY created_at DESC
       LIMIT $1`,
-    [limit]
+    [opts.limit ?? 1000, opts.reporterId ?? null]
   );
   return result.rows;
 }
 
-/** Fetch one report's screenshot bytes for download. */
+/** Who reported a bug, and its title — for telling them it moved. */
+export async function getBugReportOwner(
+  id: string
+): Promise<{ user_id: string | null; title: string; status: BugStatus } | null> {
+  if (!UUID_RE.test(id)) return null;
+  const r = await query<{ user_id: string | null; title: string; status: BugStatus }>(
+    `SELECT user_id, title, status FROM bug_reports WHERE id = $1`,
+    [id]
+  );
+  return r.rows[0] ?? null;
+}
+
+/** Fetch one report's screenshot bytes for download, with who reported it. */
 export async function getBugReportScreenshot(
   id: string
-): Promise<{ file_name: string; mime_type: string | null; file_data: Buffer } | null> {
+): Promise<{
+  file_name: string;
+  mime_type: string | null;
+  file_data: Buffer;
+  user_id: string | null;
+} | null> {
   if (!UUID_RE.test(id)) return null;
   const result = await query<{
     screenshot_name: string | null;
     screenshot_mime: string | null;
     screenshot_data: Buffer | null;
+    user_id: string | null;
   }>(
-    `SELECT screenshot_name, screenshot_mime, screenshot_data
+    `SELECT screenshot_name, screenshot_mime, screenshot_data, user_id
        FROM bug_reports WHERE id = $1`,
     [id]
   );
@@ -108,6 +143,7 @@ export async function getBugReportScreenshot(
     file_name: row.screenshot_name,
     mime_type: row.screenshot_mime,
     file_data: row.screenshot_data,
+    user_id: row.user_id,
   };
 }
 

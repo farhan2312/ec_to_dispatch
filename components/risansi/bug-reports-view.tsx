@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   Bug,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Columns3,
   ExternalLink,
   Image as ImageIcon,
@@ -553,6 +555,77 @@ function ReportModal({
 // List — the earlier view, kept for history and looking things up
 // ---------------------------------------------------------------------------
 
+/** Reports a page of the list shows. */
+const LIST_PAGE_SIZE = 20;
+
+/**
+ * Numbered pages for the list, in the same form as the app's other tables.
+ * Every report is already loaded, so paging is local — no round trip.
+ */
+function ListPager({
+  page,
+  total,
+  onPage,
+}: {
+  page: number;
+  total: number;
+  onPage: (page: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / LIST_PAGE_SIZE));
+  if (total === 0) return null;
+  const from = (page - 1) * LIST_PAGE_SIZE + 1;
+  const to = Math.min(page * LIST_PAGE_SIZE, total);
+  // A short window around the current page, so many pages don't render many chips.
+  const start = Math.max(1, Math.min(page - 2, totalPages - 4));
+  const end = Math.min(totalPages, Math.max(page + 2, 5));
+  const pages: number[] = [];
+  for (let p = start; p <= end; p++) pages.push(p);
+  const step =
+    "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-input-border text-foreground transition-colors hover:bg-background disabled:cursor-not-allowed disabled:opacity-50";
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-card-border px-4 py-3 text-sm text-muted">
+      <span>
+        Showing {from}–{to} of {total}
+      </span>
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => onPage(page - 1)}
+          disabled={page <= 1}
+          aria-label="Previous page"
+          className={step}
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        {pages.map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => onPage(p)}
+            aria-current={p === page ? "page" : undefined}
+            className={`inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-sm font-medium transition-colors ${
+              p === page
+                ? "bg-primary text-primary-foreground"
+                : "border border-input-border text-foreground hover:bg-background"
+            }`}
+          >
+            {p}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={() => onPage(page + 1)}
+          disabled={page >= totalPages}
+          aria-label="Next page"
+          className={step}
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ReportList({
   rows,
   savingId,
@@ -566,6 +639,7 @@ function ReportList({
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<StatusFilter>("all");
+  const [page, setPage] = useState(1);
 
   function toggle(id: string) {
     setOpen((prev) => {
@@ -585,6 +659,13 @@ function ReportList({
     wont_fix: rows.filter((r) => r.status === "wont_fix").length,
   };
   const visible = filter === "all" ? rows : rows.filter((r) => r.status === filter);
+  // A move can take the last report off the page; land on the last page left.
+  const pageCount = Math.max(1, Math.ceil(visible.length / LIST_PAGE_SIZE));
+  const current = Math.min(page, pageCount);
+  const pageRows = visible.slice(
+    (current - 1) * LIST_PAGE_SIZE,
+    current * LIST_PAGE_SIZE
+  );
 
   return (
     <>
@@ -595,7 +676,10 @@ function ReportList({
             <button
               key={f.value}
               type="button"
-              onClick={() => setFilter(f.value)}
+              onClick={() => {
+                setFilter(f.value);
+                setPage(1);
+              }}
               className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
                 active
                   ? "bg-primary text-primary-foreground shadow-sm"
@@ -626,7 +710,7 @@ function ReportList({
           </div>
         ) : (
           <ul className="divide-y divide-card-border">
-            {visible.map((r) => {
+            {pageRows.map((r) => {
               const isOpen = open.has(r.id);
               const meta = statusMeta(r.status);
               return (
@@ -695,6 +779,7 @@ function ReportList({
             })}
           </ul>
         )}
+        <ListPager page={current} total={visible.length} onPage={setPage} />
       </div>
     </>
   );
@@ -819,7 +904,12 @@ export function BugReportsView({
   return (
     // On a wide screen the tracker fits the window: the page holds still and
     // each column (or the list) scrolls inside it.
-    <div className="flex flex-col xl:min-h-0 xl:flex-1">
+    <div
+      className="flex flex-col xl:min-h-0 xl:flex-1"
+      // The page fits the window only for the board (see bug-reports/page.tsx);
+      // the list scrolls with the page and pages through its reports.
+      data-board-fit={view === "board" ? "" : undefined}
+    >
       <div className="mb-4 flex shrink-0 flex-wrap items-center gap-2">
         <div className="relative min-w-52 flex-1 sm:max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -921,14 +1011,14 @@ export function BugReportsView({
           onOpen={setOpenId}
         />
       ) : (
-        <div className="xl:min-h-0 xl:flex-1 xl:overflow-y-auto">
-          <ReportList
-            rows={filtered}
-            savingId={savingId}
-            readOnly={readOnly}
-            onChange={changeStatus}
-          />
-        </div>
+        <ReportList
+          // Search or filters changing starts the list again at page one.
+          key={`${kind}|${severity}|${search.trim()}`}
+          rows={filtered}
+          savingId={savingId}
+          readOnly={readOnly}
+          onChange={changeStatus}
+        />
       )}
 
       {openRow && (

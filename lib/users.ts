@@ -93,6 +93,67 @@ export async function listAllUsers(): Promise<User[]> {
 }
 
 /**
+ * How a user came to be, and who last decided their access — read off the
+ * audit log, which recorded both from the start, so users added before this
+ * column existed have it too. Null where the log has nothing (the platform
+ * admin, seeded rather than added).
+ */
+export type UserProvenance = {
+  /** "added" by an admin, or "requested" through the sign-up form. */
+  origin: "added" | "requested" | null;
+  origin_by: string | null;
+  origin_at: string | null;
+  /** The latest access decision: approved, rejected, disabled, pending. */
+  review: string | null;
+  review_by: string | null;
+  review_at: string | null;
+};
+
+export type UserListRow = User & UserProvenance;
+
+const ISO_FMT = `'YYYY-MM-DD"T"HH24:MI:SS"Z"'`;
+
+/** The provenance columns for a `users` row aliased `u`. */
+const PROVENANCE_SQL = `
+        origin.kind AS origin,
+        origin.by_name AS origin_by,
+        to_char(origin.at AT TIME ZONE 'UTC', ${ISO_FMT}) AS origin_at,
+        review.kind AS review,
+        review.by_name AS review_by,
+        to_char(review.at AT TIME ZONE 'UTC', ${ISO_FMT}) AS review_at`;
+
+const PROVENANCE_JOINS = `
+       LEFT JOIN LATERAL (
+         SELECT CASE a.action WHEN 'user.create' THEN 'added' ELSE 'requested' END AS kind,
+                -- Whoever acted, by name where they still have an account.
+                CASE WHEN a.action = 'user.create'
+                     THEN COALESCE((SELECT x.full_name FROM users x
+                                     WHERE lower(x.email) = lower(a.user_email) LIMIT 1),
+                                   a.user_email)
+                END AS by_name,
+                a.created_at AS at
+           FROM audit_log a
+          WHERE a.category = 'ownership'
+            AND lower(a.target) = lower(u.email)
+            AND a.action IN ('user.create', 'access.request')
+          ORDER BY a.created_at ASC
+          LIMIT 1
+       ) origin ON TRUE
+       LEFT JOIN LATERAL (
+         SELECT substr(a.action, 6) AS kind,
+                COALESCE((SELECT x.full_name FROM users x
+                           WHERE lower(x.email) = lower(a.user_email) LIMIT 1),
+                         a.user_email) AS by_name,
+                a.created_at AS at
+           FROM audit_log a
+          WHERE a.category = 'ownership'
+            AND lower(a.target) = lower(u.email)
+            AND a.action IN ('user.approved', 'user.rejected', 'user.disabled', 'user.pending')
+          ORDER BY a.created_at DESC
+          LIMIT 1
+       ) review ON TRUE`;
+
+/**
  * One page of users, filtered in SQL. Status counts come back with it so
  * the tabs can show totals for the whole table, not just this page.
  */
@@ -100,7 +161,7 @@ export async function listUsersPage(opts: {
   page: number;
   status: string;
   search: string;
-}): Promise<PageResult<User> & { counts: Record<string, number> }> {
+}): Promise<PageResult<UserListRow> & { counts: Record<string, number> }> {
   const status = opts.status === "all" ? null : opts.status;
   const search = opts.search ? likePattern(opts.search) : null;
 
@@ -126,11 +187,14 @@ export async function listUsersPage(opts: {
 
   const total = Number(totals.rows[0]?.count ?? 0);
   const page = clampPage(opts.page, total);
-  const rows = await query<User>(
-    `SELECT ${PUBLIC_COLUMNS} FROM users
-      ${where}
-      ORDER BY created_at DESC
-      LIMIT $3 OFFSET $4`,
+  const columns = PUBLIC_COLUMNS.split(",").map((c) => `u.${c.trim()}`).join(", ");
+  const rows = await query<UserListRow>(
+    `SELECT ${columns}, ${PROVENANCE_SQL}
+       FROM (SELECT * FROM users ${where}
+              ORDER BY created_at DESC
+              LIMIT $3 OFFSET $4) u
+       ${PROVENANCE_JOINS}
+      ORDER BY u.created_at DESC`,
     [status, search, PAGE_SIZE, offsetFor(page)]
   );
 

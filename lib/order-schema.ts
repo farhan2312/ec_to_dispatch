@@ -245,7 +245,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
         column: "packing_requirement",
         label: "Packing Requirement",
         type: "select",
-        options: opts(["Wooden Box", "Loose"]),
+        options: opts(["Wooden Box", "Loose", "Standard Packing"]),
         group: "Terms & Conditions",
       },
       {

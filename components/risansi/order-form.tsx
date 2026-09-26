@@ -111,6 +111,7 @@ const SECTIONS: Section[] = [
         options: [
           { value: "Wooden Box", label: "Wooden Box" },
           { value: "Loose", label: "Loose" },
+          { value: "Standard Packing", label: "Standard Packing" },
         ],
       },
       {

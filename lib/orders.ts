@@ -3251,7 +3251,9 @@ export async function getPipelinePage(opts: {
                   AND COALESCE(dispatch_target_revised_date, dispatch_target_date)
                         < to_char(${TODAY_IST}, 'YYYY-MM-DD')
                   AND lower(TRIM(COALESCE(dispatch_status, ''))) IN ('', 'pending'))::int AS overdue,
-              (SELECT sum(order_value_inr::numeric) FROM r WHERE id IS NOT NULL)::text AS total_value,
+              -- Printed once per SO (first EC, or the bare SO row), so every SO
+              -- counts once — including SOs with no EC yet.
+              (SELECT sum(order_value_inr::numeric) FROM r)::text AS total_value,
               (SELECT jsonb_object_agg(k, n) FROM (
                  SELECT lower(TRIM(COALESCE(payment_status, ''))) AS k, count(*)::int AS n
                    FROM so GROUP BY 1) x) AS payment,

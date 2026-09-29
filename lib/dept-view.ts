@@ -63,6 +63,30 @@ export function dispatchTarget(row: OrderOverviewRow): string | null {
 const never = () => false;
 
 /**
+ * An order Central Visibility has closed: cancelled by the client, or diverted.
+ * Nothing is deleted, but it is no longer anyone's work.
+ */
+export const CLOSED_ORDER_STATUSES = ["Cancelled by client", "Diverted"] as const;
+
+/** Whether a status set by Central Visibility closes the order. */
+export function isClosedStatus(status: unknown): boolean {
+  return (CLOSED_ORDER_STATUSES as readonly string[]).includes(String(status ?? "").trim());
+}
+
+/**
+ * The order status, in SQL over an orders alias: what Central Visibility set,
+ * else what the invoices say (Pending / LOT dispatch / Fully dispatch).
+ */
+export function orderStatusSql(order = "o"): string {
+  return `COALESCE(NULLIF(${order}.status_override, ''), NULLIF(${order}.dispatch_status, ''), 'Pending')`;
+}
+
+/** The order is still open — not cancelled, not diverted. */
+export function orderOpenSql(order = "o"): string {
+  return `COALESCE(${order}.status_override, '') NOT IN ('Cancelled by client', 'Diverted')`;
+}
+
+/**
  * A Spare EC needs no drawing: it is a part supplied as it is, not something
  * drawn for the client. Read off the EC's own type, else the SO's — an Add-On
  * Spare under a Pump order is still a spare.
@@ -268,6 +292,11 @@ export { isPerEcDept };
  * receivable. The rest work every order.
  */
 export function deptInvolvementSql(dept: DeptKey, alias = "o"): string {
+  // A cancelled or diverted order is nobody's work.
+  return `(${deptOwnInvolvementSql(dept, alias)}) AND ${orderOpenSql(alias)}`;
+}
+
+function deptOwnInvolvementSql(dept: DeptKey, alias: string): string {
   switch (dept) {
     case "drawing":
       return drawingInvolvedSql(alias);

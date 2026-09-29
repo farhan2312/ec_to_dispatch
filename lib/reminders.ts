@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { spareEcSql } from "@/lib/dept-view";
+import { orderOpenSql, orderStatusSql, spareEcSql } from "@/lib/dept-view";
 import { isCentral, reminderDeptForRole, type ReminderDept } from "@/lib/roles";
 
 // The DB session runs in UTC, but the business operates on IST days. Deadlines
@@ -138,7 +138,7 @@ const REMINDERS_SQL = `
     FROM orders o
    WHERE ${PLANNING_DUE} >= ${TODAY_IST}
      AND ${PLANNING_DUE} <= ${TODAY_IST} + 7
-     AND lower(COALESCE(o.dispatch_status, '')) <> 'fully dispatch'
+     AND lower(${orderStatusSql("o")}) <> 'fully dispatch'
 `;
 
 function tierOf(daysLeft: number): ReminderTier {
@@ -156,6 +156,8 @@ export async function listReminders(
     const result = await query<Omit<ReminderRow, "tier"> & { days_left: number }>(
       `SELECT * FROM (${REMINDERS_SQL}) r
         WHERE ($1::text[] IS NULL OR r.dept = ANY($1))
+          -- A cancelled or diverted order has no deadlines left.
+          AND EXISTS (SELECT 1 FROM orders oo WHERE oo.id = r.id AND ${orderOpenSql("oo")})
         ORDER BY r.days_left ASC, r.sl_no ASC`,
       [filter]
     );

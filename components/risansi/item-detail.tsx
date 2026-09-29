@@ -18,6 +18,7 @@ import { OrderChildList } from "./order-children";
 import { RevisionDocsButton } from "./drawing-docs";
 import { OrderCopyCell } from "./order-copy-cell";
 import { isSpareEc } from "@/lib/dept-view";
+import { OrderStatusPanel } from "./order-status-panel";
 
 type Row = Record<string, unknown>;
 
@@ -66,6 +67,10 @@ export function ItemDetail({
         <ArrowLeft className="h-4 w-4" />
         Back to SO {soLabel}
       </Link>
+
+      {/* The order's status, read here too: an EC of a cancelled or diverted
+          order takes no further work. Set from the SO page. */}
+      <OrderStatusPanel orderId={orderId} order={order} role={central ? "view" : role} />
 
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-slate-600">

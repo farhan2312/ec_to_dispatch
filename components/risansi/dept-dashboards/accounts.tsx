@@ -41,8 +41,9 @@ export function AccountsDashboard(props: DeptDashboardProps) {
 
   // order_value is printed once per SO — on its first EC — and Accounts sees
   // one row per SO, so summing the rows on screen cannot double-count.
+  // In INR: a USD order counts at its conversion.
   const outstanding = d.stats.outstanding.reduce(
-    (sum, r) => sum + (Number(r.order_value) || 0),
+    (sum, r) => sum + (Number(r.order_value_inr) || 0),
     0
   );
 

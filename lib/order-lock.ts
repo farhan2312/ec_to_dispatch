@@ -6,12 +6,15 @@
 // and both read this so they cannot disagree.
 
 import type { ChildTable, OrderTable } from "@/lib/order-schema";
+import { isCentral } from "@/lib/roles";
 
 /** The order columns the rules below look at. */
 export type LockFacts = {
   /** Every payment term counted from receipt — see isAfterReceiptOnly. */
   after_receipt_only?: unknown;
   bill_type?: unknown;
+  /** Set by Central Visibility; cancelled or diverted closes the order. */
+  status_override?: unknown;
 };
 
 /**
@@ -22,9 +25,21 @@ export type LockFacts = {
  */
 export function lockReason(
   table: OrderTable | ChildTable,
-  order: LockFacts | null | undefined
+  order: LockFacts | null | undefined,
+  /**
+   * Who is asking. A cancelled or diverted order is closed to the departments;
+   * Central Visibility and Admin can still correct it. Left out, the order is
+   * treated as closed to the caller too.
+   */
+  role?: string
 ): string | null {
   if (!order) return null;
+  const status = String(order.status_override ?? "").trim();
+  if ((status === "Cancelled by client" || status === "Diverted") && !(role && isCentral(role))) {
+    return status === "Diverted"
+      ? "This order has been diverted, so it takes no further entries."
+      : "This order was cancelled by the client, so it takes no further entries.";
+  }
   if (order.after_receipt_only !== true) return null;
   if (table === "order_billing_docs") {
     return "This order is paid after receipt, so there is no PI to raise.";
@@ -38,7 +53,8 @@ export function lockReason(
 /** Shorthand for the places that only need the yes/no. */
 export function isLocked(
   table: OrderTable | ChildTable,
-  order: LockFacts | null | undefined
+  order: LockFacts | null | undefined,
+  role?: string
 ): boolean {
-  return lockReason(table, order) !== null;
+  return lockReason(table, order, role) !== null;
 }

@@ -116,6 +116,18 @@ export const DISPATCH_STATUS_OPTIONS = opts([
   "Fully dispatch",
 ]);
 
+/**
+ * Every order status: the three the invoices give, and the two only Central
+ * Visibility can set — which close the order. See orderStatusSql.
+ */
+export const ORDER_STATUS_OPTIONS = opts([
+  "Pending",
+  "LOT dispatch",
+  "Fully dispatch",
+  "Cancelled by client",
+  "Diverted",
+]);
+
 // --- Dispatch: despatch/docket vocabularies ---------------------------------
 export const DELIVERY_TYPE_OPTIONS = opts(["Door delivery", "Godown delivery"]);
 export const DELIVERY_MODE_OPTIONS = opts([
@@ -208,6 +220,25 @@ export const ORDER_SECTIONS: OrderSection[] = [
         options: CURRENCY_OPTIONS,
         group: "Purchase Order",
       },
+      // An order priced in USD carries its value in INR too — the figure the
+      // totals across orders are added up in. Worked out on save from the rate
+      // set on the Settings page, and kept with the rate it used.
+      {
+        column: "order_value_inr",
+        label: "Order Value in INR (conversion)",
+        type: "number",
+        computed: true,
+        dependsOn: [{ column: "order_currency", value: "USD" }],
+        group: "Purchase Order",
+      },
+      {
+        column: "order_fx_rate",
+        label: "USD → INR rate used",
+        type: "number",
+        computed: true,
+        dependsOn: [{ column: "order_currency", value: "USD" }],
+        group: "Purchase Order",
+      },
       { column: "so_no", label: "Sales Order Number", type: "text", group: "Purchase Order" },
       { column: "so_date", label: "Sales Order Date", type: "date", group: "Purchase Order" },
       { column: "total_quantity", label: "Sales Order Total Quantity", type: "int", min: 0, group: "Purchase Order" },
@@ -271,6 +302,14 @@ export const ORDER_SECTIONS: OrderSection[] = [
         label: "Payment Terms",
         type: "text",
         readOnly: true,
+        group: "Terms & Conditions",
+      },
+      // The terms as the PO worded them, in free text — kept beside the
+      // structured lines above rather than squeezed into them.
+      {
+        column: "payment_terms_remarks",
+        label: "Payment Terms Remarks",
+        type: "text",
         group: "Terms & Conditions",
       },
       { column: "ld", label: "LD", type: "select", options: YES_NO, group: "Terms & Conditions" },
@@ -1068,6 +1107,7 @@ export const SO_CONTEXT_FIELDS: OrderField[] = [
 export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
   ...SO_CONTEXT_FIELDS,
   { column: "payment_terms", label: "Payment Terms", type: "text" },
+  { column: "payment_terms_remarks", label: "Payment Terms Remarks", type: "text" },
 ];
 
 

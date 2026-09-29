@@ -137,7 +137,7 @@ export function Sidebar({
             )}
             {/* Values the whole tracker works from, e.g. the USD → INR rate. */}
             {isCentral(user.role) && (
-              <NavLink item={{ label: "Settings", href: "/risansi/settings", icon: Settings }} />
+              <NavLink item={{ label: "USD to INR", href: "/risansi/settings", icon: Settings }} />
             )}
           </div>
         </div>

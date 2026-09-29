@@ -8,7 +8,7 @@ import { query } from "@/lib/db";
 import { UsdRateForm } from "@/components/risansi/usd-rate-form";
 
 export const metadata: Metadata = {
-  title: "Settings | Risansi",
+  title: "USD to INR | Risansi",
 };
 
 export const dynamic = "force-dynamic";
@@ -38,9 +38,9 @@ export default async function SettingsPage() {
         </div>
         <div>
           <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-            Settings
+            USD to INR
           </h1>
-          <p className="text-sm text-muted">Values the whole tracker works from.</p>
+          <p className="text-sm text-muted">The conversion rate USD orders are valued in INR at.</p>
         </div>
       </div>
 

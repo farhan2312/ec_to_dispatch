@@ -103,6 +103,9 @@ export type OrderListRow = {
   po_no: string | null;
   order_type: string | null;
   order_value: string | null;
+  /** The value's currency (INR when not given), and a USD order's INR figure. */
+  order_currency: string | null;
+  order_value_inr: string | null;
   // Whether this SO has bought-out items at all: the EC form only offers the
   // BOI list when it is Yes.
   boi: string | null;
@@ -2258,6 +2261,8 @@ export async function listOrdersPage(opts: {
             o.po_no,
             o.order_type,
             o.order_value::text AS order_value,
+            o.order_currency,
+            o.order_value_inr::text AS order_value_inr,
             o.boi,
             a.payment_status,
             ${DISPATCH_STATUS} AS dispatch_status,
@@ -2308,6 +2313,8 @@ export async function listOrders(): Promise<OrderListRow[]> {
             o.po_no,
             o.order_type,
             o.order_value::text AS order_value,
+            o.order_currency,
+            o.order_value_inr::text AS order_value_inr,
             o.boi,
             a.payment_status,
             ${DISPATCH_STATUS} AS dispatch_status,

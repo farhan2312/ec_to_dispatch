@@ -244,8 +244,22 @@ export function OrdersTable({
                       </td>
                       <td className="px-4 py-3">{cell(order.client_name)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{cell(order.client_code)}</td>
-                      <td className="px-4 py-3 text-right tabular-nums">
-                        {formatValue(order.order_value)}
+                      <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
+                        {/* With its unit; a USD order shows its INR figure beneath. */}
+                        {order.order_value ? (
+                          <>
+                            {formatValue(order.order_value)}{" "}
+                            <span className="text-xs text-muted">{order.order_currency || "INR"}</span>
+                            {(order.order_currency ?? "INR").toUpperCase() !== "INR" &&
+                              order.order_value_inr && (
+                                <div className="text-xs text-muted">
+                                  {formatValue(order.order_value_inr)} INR
+                                </div>
+                              )}
+                          </>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="px-4 py-3">
                         <StatusChip value={order.payment_status} />

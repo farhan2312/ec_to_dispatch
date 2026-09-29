@@ -2201,3 +2201,27 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS status_reason TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS status_diverted_to TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS status_set_at TIMESTAMPTZ;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS status_set_by UUID REFERENCES users(id) ON DELETE SET NULL;
+
+-- ===========================================================================
+-- app_settings, and the USD → INR rate each order was converted at
+-- ===========================================================================
+-- Values the business sets once and the app reads everywhere — first, the
+-- USD → INR rate. Changes are recorded in the audit log.
+CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+);
+-- The rate a USD order's INR value was worked out at, kept with the order so
+-- a later change of rate does not re-price it.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_fx_rate NUMERIC(12,4);
+-- USD orders that came with their own INR figure (the migration sheet): the
+-- rate that figure implies, so a later save keeps it. Only rows still without
+-- a rate, so re-running changes nothing.
+UPDATE orders
+   SET order_fx_rate = round(order_value_inr / order_value, 4)
+ WHERE order_fx_rate IS NULL
+   AND upper(COALESCE(order_currency, '')) = 'USD'
+   AND order_value_inr IS NOT NULL
+   AND order_value > 0;

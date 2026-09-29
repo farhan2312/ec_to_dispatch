@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   Bell,
   Bug,
+  Settings,
   KeyRound,
   LogOut,
   MoreHorizontal,
@@ -204,12 +205,18 @@ export function BottomNav({
                     <SheetLink
                       item={{ label: "My Bug Reports", href: "/risansi/bug-reports", icon: Bug }}
                     />
+                    {isCentral(user.role) && (
+                      <SheetLink item={{ label: "Settings", href: "/risansi/settings", icon: Settings }} />
+                    )}
                   </div>
                 </div>
               )}
 
               {user.role === "admin" && (
                 <div className="mb-4">
+                  <div className="mb-2 space-y-1">
+                    <SheetLink item={{ label: "Settings", href: "/risansi/settings", icon: Settings }} />
+                  </div>
                   <p className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-sidebar-muted">
                     Admin
                   </p>

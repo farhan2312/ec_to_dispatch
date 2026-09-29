@@ -99,6 +99,7 @@ export const NAV_HREFS: string[] = [
   "/risansi/messages",
   "/risansi/escalations",
   "/risansi/dispatched",
+  "/risansi/settings",
   ...ADMIN_NAV.map((i) => i.href),
 ];
 

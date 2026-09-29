@@ -221,12 +221,21 @@ export const ORDER_SECTIONS: OrderSection[] = [
         group: "Purchase Order",
       },
       // An order priced in USD carries its value in INR too — the figure the
-      // totals across orders are added up in.
+      // totals across orders are added up in. Worked out on save from the rate
+      // set on the Settings page, and kept with the rate it used.
       {
         column: "order_value_inr",
         label: "Order Value in INR (conversion)",
         type: "number",
-        min: 0,
+        computed: true,
+        dependsOn: [{ column: "order_currency", value: "USD" }],
+        group: "Purchase Order",
+      },
+      {
+        column: "order_fx_rate",
+        label: "USD → INR rate used",
+        type: "number",
+        computed: true,
         dependsOn: [{ column: "order_currency", value: "USD" }],
         group: "Purchase Order",
       },

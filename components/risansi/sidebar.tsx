@@ -8,6 +8,7 @@ import logo from "@/assets/logo.png";
 import {
   Bell,
   Bug,
+  Settings,
   ChevronsUpDown,
   KeyRound,
   LogOut,
@@ -133,6 +134,10 @@ export function Sidebar({
               <NavLink
                 item={{ label: "My Bug Reports", href: "/risansi/bug-reports", icon: Bug }}
               />
+            )}
+            {/* Values the whole tracker works from, e.g. the USD → INR rate. */}
+            {isCentral(user.role) && (
+              <NavLink item={{ label: "Settings", href: "/risansi/settings", icon: Settings }} />
             )}
           </div>
         </div>

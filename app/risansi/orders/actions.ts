@@ -27,6 +27,7 @@ import {
   completeDept,
   deleteLatestTargetRevision,
   deptInvolvedInOrder,
+  applyUsdConversion,
   getOrderStatusState,
   setOrderStatus,
   fillFirstTargets,
@@ -77,6 +78,7 @@ import {
   type TargetRevision,
 } from "@/lib/target-dates";
 import { logAudit } from "@/lib/audit";
+import { getUsdInrRate } from "@/lib/settings";
 import { lockReason } from "@/lib/order-lock";
 import {
   checkFieldBounds,
@@ -151,8 +153,12 @@ export async function createOrderAction(
       before: null,
       after: input as Record<string, unknown>,
     });
-    // A delivery or hand-over date on the new order gives its first targets.
-    await autoFillTargets(id, user);
+    // A delivery or hand-over date on the new order gives its first targets,
+    // and a USD value its INR conversion.
+    await Promise.all([
+      autoFillTargets(id, user),
+      getUsdInrRate().then((rate) => applyUsdConversion(id, rate)),
+    ]);
 
     revalidatePath("/risansi/orders");
     return { ok: true, slNo: sl_no };
@@ -671,6 +677,10 @@ export async function updateOrderSectionAction(
           : null,
         // Order details carry the dates the first targets are counted from.
         tbl === "orders" ? autoFillTargets(id, user) : null,
+        // …and the value and currency its INR conversion is worked out from.
+        tbl === "orders"
+          ? getUsdInrRate().then((rate) => applyUsdConversion(id, rate))
+          : null,
       ]);
       revalidatePath(`/risansi/orders/${id}`);
     } else {

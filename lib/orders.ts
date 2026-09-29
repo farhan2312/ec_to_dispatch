@@ -996,6 +996,40 @@ export async function setOrderStatus(input: {
   );
 }
 
+/**
+ * Work out a USD order's INR value: its USD value × the rate kept on the
+ * order, or — for an order not yet converted — today's rate, which is then
+ * kept with it, so a later change of rate never re-prices an older order. An
+ * order not in USD carries neither. Without a rate set yet, a USD order is
+ * left as it is. Writes only when something changes.
+ */
+export async function applyUsdConversion(orderId: string, rate: number | null): Promise<void> {
+  if (!UUID_RE.test(orderId)) return;
+  await query(
+    `WITH next AS (
+       SELECT o.id,
+              CASE WHEN upper(COALESCE(o.order_currency, '')) = 'USD'
+                   THEN COALESCE(o.order_fx_rate, $2::numeric) END AS fx,
+              o.order_value, o.order_currency, o.order_value_inr AS inr_now,
+              o.order_fx_rate AS fx_now
+         FROM orders o WHERE o.id = $1
+     ),
+     calc AS (
+       SELECT id, fx, fx_now, inr_now,
+              CASE WHEN upper(COALESCE(order_currency, '')) <> 'USD' THEN NULL
+                   WHEN order_value IS NULL OR fx IS NULL THEN inr_now
+                   ELSE round(order_value * fx, 2) END AS inr
+         FROM next
+     )
+     UPDATE orders o
+        SET order_fx_rate = calc.fx, order_value_inr = calc.inr
+       FROM calc
+      WHERE o.id = calc.id
+        AND (calc.fx IS DISTINCT FROM calc.fx_now OR calc.inr IS DISTINCT FROM calc.inr_now)`,
+    [orderId, rate]
+  );
+}
+
 /** The lock facts of the order an EC belongs to. */
 export async function lockFactsForItem(itemId: string): Promise<LockFacts | null> {
   if (!UUID_RE.test(itemId)) return null;

@@ -1,5 +1,8 @@
 import { query } from "@/lib/db";
-import { spareEcSql } from "@/lib/dept-view";
+import { orderOpenSql, orderStatusSql, spareEcSql } from "@/lib/dept-view";
+
+/** A cancelled or diverted order raises no escalation. `a.id` is the SO. */
+const OPEN_ONLY = `EXISTS (SELECT 1 FROM orders oo WHERE oo.id = a.id AND ${orderOpenSql("oo")})`;
 import {
   offsetFor,
   pageResult,
@@ -101,7 +104,7 @@ const ALERTS_SQL = `
             - COALESCE(o.dispatch_target_revised_date, o.dispatch_target_date))::int
     FROM orders o
    WHERE COALESCE(o.dispatch_target_revised_date, o.dispatch_target_date) < ${TODAY_IST}
-     AND lower(COALESCE(o.dispatch_status, '')) <> 'fully dispatch'
+     AND lower(${orderStatusSql("o")}) <> 'fully dispatch'
 
   UNION ALL
   -- Payment on hold (escalated to Central Visibility, SO-level)
@@ -130,6 +133,7 @@ export async function listAlertsPage(page: number): Promise<PageResult<AlertRow>
                   a.client_name, a.department, a.type, a.due_date, a.days_overdue,
                   count(*) OVER ()::text AS total_count
              FROM (${ALERTS_SQL}) a
+            WHERE ${OPEN_ONLY}
             ORDER BY a.days_overdue DESC NULLS FIRST, a.sl_no ASC, a.department ASC,
                      a.ec_no ASC NULLS FIRST, a.item_id ASC
             LIMIT $1 OFFSET $2`,
@@ -151,7 +155,7 @@ export async function listAlertsPage(page: number): Promise<PageResult<AlertRow>
 export async function countAlerts(): Promise<number> {
   try {
     const result = await query<{ count: number }>(
-      `SELECT count(*)::int AS count FROM (${ALERTS_SQL}) a`
+      `SELECT count(*)::int AS count FROM (${ALERTS_SQL}) a WHERE ${OPEN_ONLY}`
     );
     return Number(result.rows[0]?.count ?? 0);
   } catch (error) {

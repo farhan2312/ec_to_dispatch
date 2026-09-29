@@ -2178,3 +2178,26 @@ ALTER TABLE notifications ADD COLUMN IF NOT EXISTS bug_report_id UUID
 CREATE INDEX IF NOT EXISTS audit_log_ownership_target_idx
     ON audit_log (lower(target), created_at DESC)
     WHERE category = 'ownership';
+
+-- ===========================================================================
+-- Payment Terms Remarks, INR conversion, and the order status
+-- ===========================================================================
+-- Remarks: the payment terms as the PO worded them, in free text, beside the
+-- structured terms (order_payment_terms) the workflow acts on.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_terms_remarks TEXT;
+-- An order priced in another currency carries its INR value too, so totals
+-- across orders add up in one currency.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_value_inr NUMERIC(14,2);
+-- The order status is dispatch_status (worked out from the invoices) unless
+-- Central Visibility sets it: cancelled, diverted, or a dispatch state the
+-- invoices do not show (history brought in without its invoices). NULL means
+-- it follows the invoices.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS status_override TEXT;
+ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_override_check;
+ALTER TABLE orders ADD CONSTRAINT orders_status_override_check
+    CHECK (status_override IS NULL OR status_override IN
+           ('Pending', 'LOT dispatch', 'Fully dispatch', 'Cancelled by client', 'Diverted'));
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS status_reason TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS status_diverted_to TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS status_set_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS status_set_by UUID REFERENCES users(id) ON DELETE SET NULL;

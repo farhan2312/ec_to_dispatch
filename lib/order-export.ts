@@ -165,10 +165,24 @@ function writeSheet(wb: ExcelJS.Workbook, spec: SheetSpec) {
   return ws;
 }
 
-/** Dispatch Status is recomputed from the invoices rather than typed in. */
+/**
+ * The order status: what Central Visibility set, else what the invoices say.
+ * Recomputed rather than typed in; its reason and the diverted-to note ride
+ * alongside.
+ */
 const DISPATCH_STATUS_FIELD: OrderField = {
-  column: "dispatch_status",
-  label: "Dispatch Status",
+  column: "order_status",
+  label: "Order Status",
+  type: "text",
+};
+const STATUS_REASON_FIELD: OrderField = {
+  column: "status_reason",
+  label: "Order Status Reason",
+  type: "text",
+};
+const DIVERTED_TO_FIELD: OrderField = {
+  column: "status_diverted_to",
+  label: "Diverted To",
   type: "text",
 };
 
@@ -243,7 +257,13 @@ function collect(orders: OrderExportRow[]) {
     const soNo = text(so.order.so_no);
     const key = { slNo, soNo, ecNo: null };
 
-    soRows.push({ ...key, source: so.order });
+    soRows.push({
+      ...key,
+      source: {
+        ...so.order,
+        order_status: so.order.status_override ?? so.order.dispatch_status ?? "Pending",
+      },
+    });
     // A missing 1:1 detail row still earns a line — "Accounts hasn't filled
     // this in yet" is different from "this SO isn't in the file".
     accounts.push({ ...key, source: so.order_accounts ?? {} });
@@ -281,7 +301,7 @@ function collect(orders: OrderExportRow[]) {
       name: "Orders",
       about: "One row per SO — the order details Central Visibility fills.",
       perEc: false,
-      fields: [...fieldsOf("orders"), DISPATCH_STATUS_FIELD],
+      fields: [...fieldsOf("orders"), DISPATCH_STATUS_FIELD, STATUS_REASON_FIELD, DIVERTED_TO_FIELD],
       rows: soRows,
     },
     {

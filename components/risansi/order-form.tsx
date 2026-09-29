@@ -74,6 +74,13 @@ const SECTIONS: Section[] = [
         type: "select",
         options: CURRENCY_OPTIONS,
       },
+      {
+        name: "order_value_inr",
+        label: "Order Value in INR (conversion)",
+        type: "number",
+        min: 0,
+        dependsOn: { name: "order_currency", value: "USD" },
+      },
       { name: "so_no", label: "Sales Order Number", type: "text" },
       { name: "so_date", label: "Sales Order Date", type: "date" },
       {
@@ -121,6 +128,7 @@ const SECTIONS: Section[] = [
       },
       { name: "so_handover_date", label: "SO Hand Over Date", type: "date" },
       { name: "payment_terms", label: "Payment Terms", type: "text" },
+      { name: "payment_terms_remarks", label: "Payment Terms Remarks", type: "text" },
       { name: "ld", label: "LD", type: "select", options: YES_NO_OPTIONS },
       {
         name: "ld_date",

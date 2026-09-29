@@ -24,6 +24,7 @@ const NOT_INPUT = new Set([
   "order_copy_file_name", // an uploaded file
   "lr_file_name", // an uploaded file
   "dispatch_status", // recomputed from the invoices
+  "order_status", // the same, or set by Central Visibility on the SO page
 ]);
 
 /** Who fills each sheet in the app — so the file can be split across teams. */

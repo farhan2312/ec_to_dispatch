@@ -9,7 +9,7 @@
 // the SOs whose popup says Approved.
 
 import {
-  DISPATCH_STATUS_OPTIONS,
+  ORDER_STATUS_OPTIONS,
   PAYMENT_STATUS_OPTIONS,
   PLANNING_STATUS_VALUES,
 } from "@/lib/order-schema";
@@ -61,7 +61,7 @@ const DEPT_STATUSES: Record<DeptFilterKey, string[]> = {
   accounts: [...values(PAYMENT_STATUS_OPTIONS), PENDING, NOT_APPLICABLE],
   // "Pending" is itself a stored dispatch status, so it covers both a blank
   // column and an explicit Pending rather than appearing twice.
-  dispatch: values(DISPATCH_STATUS_OPTIONS).filter((v) => v !== PENDING).concat(PENDING),
+  dispatch: values(ORDER_STATUS_OPTIONS).filter((v) => v !== PENDING).concat(PENDING),
 };
 
 /**

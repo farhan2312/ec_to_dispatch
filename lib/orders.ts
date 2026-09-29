@@ -12,7 +12,12 @@ import {
   type DeptCompletion,
   type DeptKey,
 } from "@/lib/dept-completion";
-import { deptInvolvementSql, spareEcSql } from "@/lib/dept-view";
+import {
+  deptInvolvementSql,
+  orderOpenSql,
+  orderStatusSql,
+  spareEcSql,
+} from "@/lib/dept-view";
 import { autoTargets } from "@/lib/target-rules";
 import type { LockFacts } from "@/lib/order-lock";
 import {
@@ -131,6 +136,8 @@ export type NewOrderInput = {
   delivery_date_as_per_so?: string;
   so_handover_date?: string;
   payment_terms?: string;
+  payment_terms_remarks?: string;
+  order_value_inr?: string;
   ld?: string;
   ld_date?: string;
   order_value?: string;
@@ -226,12 +233,13 @@ export async function createOrder(
           order_type, bill_type, boi,
           total_quantity, drg_target_date, dispatch_target_date,
           dispatch_target_revised_date, qc_doc_target_date, purchase_target_date,
-          packing_details_required, dispatch_team_target_date, so_handover_date
+          packing_details_required, dispatch_team_target_date, so_handover_date,
+          payment_terms_remarks, order_value_inr
        ) VALUES (
           -- The next free number, under the lock above.
           (SELECT COALESCE(max(sl_no), 0) + 1 FROM orders),
           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
-          $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33
+          $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35
        )
        RETURNING id, sl_no::int AS sl_no`,
       [
@@ -268,6 +276,11 @@ export async function createOrder(
         nullify(input.packing_details_required),
         nullify(input.dispatch_team_target_date),
         nullify(input.so_handover_date),
+        nullify(input.payment_terms_remarks),
+        // Only a non-INR order carries a conversion.
+        (input.order_currency ?? "INR").toUpperCase() === "INR"
+          ? null
+          : toNumeric(input.order_value_inr),
       ]
     );
     return result.rows[0];
@@ -451,7 +464,9 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
         -- The order, plus what its payment terms say about who still has work
         -- to do on it: the forms read the lock off this row.
         to_jsonb(o) || jsonb_build_object(
-          'after_receipt_only', ${AFTER_RECEIPT_ONLY}
+          'after_receipt_only', ${AFTER_RECEIPT_ONLY},
+          -- Who set the order status, by name, for the banner.
+          'status_set_by_name', (SELECT u.full_name FROM users u WHERE u.id = o.status_set_by)
         ) AS order,
         to_jsonb(b)  AS order_billing,
         to_jsonb(ac) AS order_accounts,
@@ -931,11 +946,64 @@ export async function upsertInvoiceFromPackingSlip(
 export async function lockFactsForOrder(orderId: string): Promise<LockFacts | null> {
   if (!UUID_RE.test(orderId)) return null;
   const result = await query<LockFacts>(
-    `SELECT ${AFTER_RECEIPT_ONLY} AS after_receipt_only, bill_type
+    `SELECT ${AFTER_RECEIPT_ONLY} AS after_receipt_only, bill_type, status_override
        FROM orders o WHERE o.id = $1`,
     [orderId]
   );
   return result.rows[0] ?? null;
+}
+
+export type OrderStatusState = {
+  so_no: string | null;
+  sl_no: number;
+  status_override: string | null;
+  dispatch_status: string | null;
+};
+
+/** What an order's status stands at before a change: set, and from invoices. */
+export async function getOrderStatusState(orderId: string): Promise<OrderStatusState | null> {
+  if (!UUID_RE.test(orderId)) return null;
+  const r = await query<OrderStatusState>(
+    `SELECT so_no, sl_no::int AS sl_no, status_override, dispatch_status
+       FROM orders WHERE id = $1`,
+    [orderId]
+  );
+  return r.rows[0] ?? null;
+}
+
+/**
+ * Set — or with null, clear — the status Central Visibility gives an order.
+ * Cleared, the status follows the invoices again. The reason and the
+ * diverted-to note belong to the setting, so clearing clears them too.
+ */
+export async function setOrderStatus(input: {
+  orderId: string;
+  status: string | null;
+  reason: string | null;
+  divertedTo: string | null;
+  actorId: string;
+}): Promise<void> {
+  if (!UUID_RE.test(input.orderId)) return;
+  await query(
+    `UPDATE orders
+        SET status_override    = $2,
+            status_reason      = CASE WHEN $2::text IS NULL THEN NULL ELSE $3 END,
+            status_diverted_to = CASE WHEN $2::text = 'Diverted' THEN $4 ELSE NULL END,
+            status_set_at      = now(),
+            status_set_by      = $5
+      WHERE id = $1`,
+    [input.orderId, input.status, input.reason, input.divertedTo, input.actorId]
+  );
+}
+
+/** The lock facts of the order an EC belongs to. */
+export async function lockFactsForItem(itemId: string): Promise<LockFacts | null> {
+  if (!UUID_RE.test(itemId)) return null;
+  const r = await query<{ order_id: string }>(
+    `SELECT order_id FROM order_items WHERE id = $1`,
+    [itemId]
+  );
+  return r.rows[0] ? lockFactsForOrder(r.rows[0].order_id) : null;
 }
 
 export async function lockFactsForChild(
@@ -1222,6 +1290,8 @@ export type OrderOverviewRow = {
   so_date: string | null;
   ec_date: string | null;
   order_value: string | null;
+  /** order_value in INR — the conversion for a non-INR order. For totals. */
+  order_value_inr: string | null;
   has_pi: boolean;
   payment_status: string | null;
   drg_status: string | null;
@@ -1284,6 +1354,11 @@ const overviewColumns = () => `it.id,
             CASE WHEN it.seq IS NULL
                    OR it.seq = MIN(it.seq) OVER (PARTITION BY o.id)
                  THEN o.order_value::text END AS order_value,
+            -- The same, in INR: a USD order counts at its conversion, so
+            -- totals across orders add up in one currency.
+            CASE WHEN it.seq IS NULL
+                   OR it.seq = MIN(it.seq) OVER (PARTITION BY o.id)
+                 THEN (${ORDER_VALUE_INR})::text END AS order_value_inr,
             -- Billing's progress: a PI with a number on it, or a challan.
             ${BILLING_RAISED} AS has_pi,
             a.payment_status,
@@ -1350,7 +1425,7 @@ export async function listOrdersOverview(
       WHERE ${
         // Drawing's rows are ECs: a Spare EC is out, whatever the SO around it.
         dept === "drawing"
-          ? `NOT (${spareEcSql("it", "o")})`
+          ? `NOT (${spareEcSql("it", "o")}) AND ${orderOpenSql("o")}`
           : dept
             ? deptInvolvementSql(dept)
             : "TRUE"
@@ -1380,7 +1455,8 @@ export const HOLDS_PAGE_SIZE = 25;
 export async function listPaymentHoldsPage(page: number): Promise<PageResult<PaymentHoldRow>> {
   const from = `FROM orders o
                  JOIN order_accounts a ON a.order_id = o.id
-                WHERE lower(a.payment_status) = 'outstanding hold'`;
+                WHERE lower(a.payment_status) = 'outstanding hold'
+                  AND ${orderOpenSql("o")}`;
   return pageWithTotal(
     page,
     (p) =>
@@ -1714,7 +1790,16 @@ function detailSelect(alias: string, f: { column: string; type: string }): strin
  * invoices has no other state it could be in, so a blank reads as Pending
  * rather than as an unknown.
  */
-const DISPATCH_STATUS = `COALESCE(NULLIF(o.dispatch_status, ''), 'Pending')`;
+// The order status as everyone sees it: what Central Visibility set (cancelled,
+// diverted, or a dispatch state), else what the invoices say.
+const DISPATCH_STATUS = orderStatusSql("o");
+
+/**
+ * An order's value in INR: its own value when priced in INR (or with no
+ * currency given), its recorded conversion otherwise. What totals add up.
+ */
+const ORDER_VALUE_INR = `CASE WHEN upper(COALESCE(NULLIF(o.order_currency, ''), 'INR')) = 'INR'
+                             THEN o.order_value ELSE o.order_value_inr END`;
 
 /**
  * Whether Billing has actually raised a PI (or filed a challan) on this SO.
@@ -1800,7 +1885,8 @@ const READY_TO_DISPATCH = `(EXISTS (SELECT 1 FROM order_items it2
                                        ON ad2.item_id = it2.id
                                     WHERE it2.order_id = o.id
                                       AND ad2.actual_packing_date IS NOT NULL)
-                            AND lower(COALESCE(o.dispatch_status, '')) <> 'fully dispatch')`;
+                            AND lower(${orderStatusSql("o")}) <> 'fully dispatch'
+                            AND ${orderOpenSql("o")})`;
 
 const PACKED = `EXISTS (SELECT 1 FROM order_assembly_dispatch ad
                         WHERE ad.item_id = it.id
@@ -1908,8 +1994,8 @@ function soState(dept: DeptFilterKey, status: string): string {
   }
   // Dispatch: "Pending" is itself a stored value, so it also covers a blank.
   return status === PENDING
-    ? `COALESCE(o.dispatch_status, '') IN ('', ${lit(PENDING)})`
-    : `o.dispatch_status = ${lit(status)}`;
+    ? `${orderStatusSql("o")} = ${lit(PENDING)}`
+    : `${orderStatusSql("o")} = ${lit(status)}`;
 }
 
 /** The target column a department is judged against, if it has one. */
@@ -1956,7 +2042,7 @@ function deptOverduePredicate(dept: DeptFilterKey): string {
   const outstanding = isPerEcDept(dept)
     ? `EXISTS (SELECT 1 FROM order_items it
                 WHERE it.order_id = o.id AND NOT (${ecDonePredicate(dept)}))`
-    : `lower(COALESCE(o.dispatch_status, '')) <> 'fully dispatch'`;
+    : `lower(${orderStatusSql("o")}) <> 'fully dispatch'`;
   return `(${column} < ${TODAY_IST} AND ${outstanding})`;
 }
 
@@ -2391,7 +2477,8 @@ export async function listOrdersForBillingPage(opts: {
     page: opts.page,
     search: opts.search,
     focusOrderId: opts.focusOrderId ?? null,
-    restrict: `TRUE`,
+    // A cancelled or diverted order is no longer Billing's or Dispatch's work.
+    restrict: orderOpenSql("o"),
     searchable: (term) =>
       `(o.so_no ILIKE ${term} OR o.client_name ILIKE ${term} OR o.sl_no::text ILIKE ${term})`,
     filter: opts.filter,
@@ -3123,7 +3210,7 @@ export async function getPipelinePage(opts: {
                   AND COALESCE(dispatch_target_revised_date, dispatch_target_date)
                         < to_char(${TODAY_IST}, 'YYYY-MM-DD')
                   AND lower(TRIM(COALESCE(dispatch_status, ''))) IN ('', 'pending'))::int AS overdue,
-              (SELECT sum(order_value::numeric) FROM r WHERE id IS NOT NULL)::text AS total_value,
+              (SELECT sum(order_value_inr::numeric) FROM r WHERE id IS NOT NULL)::text AS total_value,
               (SELECT jsonb_object_agg(k, n) FROM (
                  SELECT lower(TRIM(COALESCE(payment_status, ''))) AS k, count(*)::int AS n
                    FROM so GROUP BY 1) x) AS payment,

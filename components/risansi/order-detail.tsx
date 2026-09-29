@@ -15,6 +15,7 @@ import { deleteItemAction } from "@/app/risansi/orders/actions";
 import { BILLING_DOC_FIELDS, INVOICE_FIELDS, SO_SECTIONS } from "@/lib/order-schema";
 import { paymentTermsExtra } from "./payment-terms-control";
 import { lockReason } from "@/lib/order-lock";
+import { OrderStatusPanel } from "./order-status-panel";
 import {
   canAccessDepartment,
   canCreateOrders,
@@ -140,6 +141,10 @@ export function OrderDetail({
         </Link>
       </div>
 
+      {/* The order status — a banner once it is cancelled or diverted — and,
+          for Central Visibility and Admin, the control that sets it. */}
+      <OrderStatusPanel orderId={orderId} order={order} role={role} />
+
       <div className="space-y-6">
         {/* Per-SO discussion. One lane per department, no cross-department
             visibility — Central picks who they are replying to. */}
@@ -189,7 +194,7 @@ export function OrderDetail({
             }
             if (section.table === "order_billing") {
               const isChallan = String(order.bill_type ?? "") === "Challan";
-              const piLock = lockReason("order_billing_docs", order);
+              const piLock = lockReason("order_billing_docs", order, role);
               const billingCanEditChild = canEditChild(role, "order_billing_docs");
               return (
                 <div key={section.key} className="space-y-6">
@@ -226,7 +231,7 @@ export function OrderDetail({
                 : (detail[section.table as "order_billing" | "order_accounts"] as Row | null);
             // A section this order carries no work for takes no entries: say
             // so instead of offering a form the action would refuse.
-            const sectionLock = lockReason(section.table, order);
+            const sectionLock = lockReason(section.table, order, role);
             if (sectionLock) {
               return (
                 <section
@@ -289,13 +294,7 @@ export function OrderDetail({
                 <h2 className="font-display text-base font-semibold text-foreground">
                   EC orders
                 </h2>
-                {/* Dispatch status is an SO-level value (derived from this SO's
-                    invoices), so it's shown once here — not per EC. */}
-                {str(order.dispatch_status) && (
-                  <span className="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
-                    Dispatch: {str(order.dispatch_status)}
-                  </span>
-                )}
+
               </div>
               <p className="text-sm text-muted">
                 {items.length} {items.length === 1 ? "item" : "items"} under this SO.

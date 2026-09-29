@@ -26,6 +26,7 @@ import {
   type OrderSection,
 } from "@/lib/order-schema";
 import { canAccessDepartment, isCentral } from "@/lib/roles";
+import { OrderStatusPanel } from "./order-status-panel";
 import { DEPT_LABELS, type DeptCompletion } from "@/lib/dept-completion";
 import type { ItemDetail, OrderDetail, SoDeptStatus } from "@/lib/orders";
 import {
@@ -320,6 +321,8 @@ export function OrderOverview({
         <ArrowLeft className="h-4 w-4" />
         All orders
       </Link>
+
+      <OrderStatusPanel orderId={orderId} order={order} role={role} />
 
       {/* ---------- header ---------- */}
       <div className="rounded-xl border border-card-border bg-surface p-5 shadow-sm">

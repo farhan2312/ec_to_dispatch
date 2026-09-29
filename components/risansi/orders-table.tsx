@@ -36,12 +36,24 @@ function cell(value: string | null): string {
   return value && value.trim() !== "" ? value : "—";
 }
 
+/** The order status; a cancelled or diverted order stands out. */
+const STATUS_TONE: Record<string, string> = {
+  "Cancelled by client": "bg-rose-50 text-rose-700",
+  Diverted: "bg-amber-50 text-amber-700",
+  "Fully dispatch": "bg-emerald-50 text-emerald-700",
+  "LOT dispatch": "bg-blue-50 text-blue-700",
+};
+
 function StatusChip({ value }: { value: string | null }) {
   if (!value || value.trim() === "") {
     return <span className="text-muted-foreground">—</span>;
   }
   return (
-    <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+    <span
+      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+        STATUS_TONE[value.trim()] ?? "bg-slate-100 text-slate-600"
+      }`}
+    >
       {value}
     </span>
   );
@@ -181,7 +193,7 @@ export function OrdersTable({
                 <th className="px-4 py-3">Client Code</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
                 <th className="px-4 py-3">Payment Status</th>
-                <th className="px-4 py-3">Dispatch Status</th>
+                <th className="px-4 py-3">Order Status</th>
                 <th className="px-4 py-3 text-center normal-case">ECs</th>
                 <th className="px-4 py-3" />
                 {canDelete && <th className="px-4 py-3" />}

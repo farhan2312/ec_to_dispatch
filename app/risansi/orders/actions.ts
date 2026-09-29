@@ -19,6 +19,7 @@ import {
   insertBillingDocs,
   lockFactsForChild,
   lockFactsForOrder,
+  lockFactsForItem,
   getOrderLabel,
   insertQcDocument,
   listQcDocuments,
@@ -26,6 +27,8 @@ import {
   completeDept,
   deleteLatestTargetRevision,
   deptInvolvedInOrder,
+  getOrderStatusState,
+  setOrderStatus,
   fillFirstTargets,
   listTargetRevisions,
   uncompleteDept,
@@ -39,6 +42,7 @@ import {
 } from "@/lib/orders";
 import {
   CHILD_FIELDS,
+  ORDER_STATUS_OPTIONS,
   SECTION_BY_TABLE,
   firstMissingAddOnField,
   type ChildTable,
@@ -60,6 +64,7 @@ import {
 } from "@/lib/roles";
 import { parsePiWorkbook } from "@/lib/pi-import";
 import { DEPT_FILTER_KEYS } from "@/lib/dept-status";
+import { isClosedStatus } from "@/lib/dept-view";
 import {
   describeDays,
   DEPT_LABELS,
@@ -604,7 +609,7 @@ export async function updateOrderSectionAction(
       // Sections an order carries no work for take no entries: an order paid
       // after receipt has no payment for Accounts to record. The form hides
       // the fields; this is the same rule on the endpoint.
-      const locked = lockReason(tbl, before?.order as never);
+      const locked = lockReason(tbl, before?.order as never, user.role);
       if (locked) return { ok: false, error: locked };
       // Amount received never exceeds the order value — checked from whichever
       // side is being saved, so neither can be moved past the other.
@@ -671,6 +676,8 @@ export async function updateOrderSectionAction(
     } else {
       // Item-scope: id is the item_id.
       const before = await getItemDetail(id);
+      const itemLock = lockReason(tbl, before?.order as never, user.role);
+      if (itemLock) return { ok: false, error: itemLock };
       await updateOrderSection(id, tbl, allowedValues);
       const after = before ? await getItemDetail(id) : null;
       const pick = (d: NonNullable<typeof before>) =>
@@ -789,7 +796,9 @@ export async function addOrderChildAction(
   // No PI on an order that is paid after receipt — see lib/order-lock.
   const addLock = lockReason(
     table as ChildTable,
-    await lockFactsForOrder(orderId)
+    // Per-EC lists pass the EC's id as orderId; their order is found from it.
+    (await lockFactsForOrder(orderId)) ?? (await lockFactsForItem(orderId)),
+    guard.user.role
   );
   if (addLock) return { ok: false, error: addLock };
   try {
@@ -902,7 +911,7 @@ export async function updateOrderChildAction(
   }
   const [lockFacts, piBefore, slipMeta, drgBefore, rowBefore, subject, soOrderId] = reads;
 
-  const rowLock = lockReason(tbl, lockFacts);
+  const rowLock = lockReason(tbl, lockFacts, user.role);
   if (rowLock) return { ok: false, error: rowLock };
   // The audit line, once the row is saved — kept outside the try so a failure
   // later in the save still waits for it before answering.
@@ -1109,6 +1118,108 @@ async function autoFillTargets(
     }
   } catch (error) {
     console.error("autoFillTargets failed:", error);
+  }
+}
+
+/** The department roles, by the department they run — for telling them. */
+const ROLE_BY_DEPT: Record<DeptKey, string> = {
+  drawing: "drawing",
+  purchase: "purchase",
+  quality: "qc",
+  planning: "planning",
+  assembly: "assembly",
+  dispatch: "dispatch",
+  billing: "operations",
+  accounts: "accounts",
+};
+
+export type SetOrderStatusResult = { ok: true } | { ok: false; error: string };
+
+/**
+ * Central Visibility sets an order's status by hand: cancelled by the client,
+ * diverted, or a dispatch state the invoices do not show. "auto" hands it back
+ * to the invoices. Closing an order (cancel, divert) takes it off every
+ * department's work and tells the departments that had work on it; reopening
+ * tells them too. Nothing on the order is deleted.
+ */
+export async function setOrderStatusAction(
+  orderId: string,
+  status: string,
+  reason: string,
+  divertedTo: string
+): Promise<SetOrderStatusResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!isCentral(user.role)) {
+    return { ok: false, error: "Only Central Visibility or Admin can change an order's status." };
+  }
+  const next = status === "auto" ? null : status;
+  if (next !== null && !ORDER_STATUS_OPTIONS.some((o) => o.value === next)) {
+    return { ok: false, error: "Unknown status." };
+  }
+  const why = reason.trim().slice(0, 1000) || null;
+  const closing = isClosedStatus(next);
+  if (closing && !why) {
+    return { ok: false, error: "Say why — a reason is needed to cancel or divert an order." };
+  }
+
+  try {
+    const before = await getOrderStatusState(orderId);
+    if (!before) return { ok: false, error: "Order not found." };
+    const label = before.so_no ?? `#${before.sl_no}`;
+    const wasClosed = isClosedStatus(before.status_override);
+
+    // Who had work on it — read before closing it, since a closed order
+    // counts for no department.
+    const depts = (Object.keys(ROLE_BY_DEPT) as DeptKey[]);
+    const involved = wasClosed === closing
+      ? []
+      : (await Promise.all(depts.map((d) => deptInvolvedInOrder(d, orderId).then((yes) => (yes ? d : null)))))
+          .filter((d): d is DeptKey => d !== null);
+
+    await setOrderStatus({
+      orderId,
+      status: next,
+      reason: why,
+      divertedTo: next === "Diverted" ? divertedTo.trim().slice(0, 300) || null : null,
+      actorId: user.id,
+    });
+
+    const shownBefore = before.status_override ?? before.dispatch_status ?? "Pending";
+    const shownAfter = next ?? `${before.dispatch_status ?? "Pending"} (from invoices)`;
+    const follow: Promise<unknown>[] = [
+      logAudit({
+        actor: { id: user.id, email: user.email, role: user.role },
+        action: "order.update",
+        category: "activity",
+        target: label,
+        details: `Order status: ${shownBefore} → ${shownAfter}${why ? ` — reason: ${why}` : ""}${
+          next === "Diverted" && divertedTo.trim() ? ` — diverted to ${divertedTo.trim()}` : ""
+        }`,
+        subject: { orderId, soNo: label },
+      }),
+    ];
+    if (involved.length > 0) {
+      const roles = involved.map((d) => ROLE_BY_DEPT[d]);
+      if (user.role !== "central_visibility") roles.push("central_visibility");
+      follow.push(
+        emitNotification({
+          roles,
+          orderId,
+          type: "dept_update",
+          message: closing
+            ? `${label} ${next === "Diverted" ? "diverted" : "cancelled by the client"} — no further work on it${why ? ` · ${why}` : ""}`
+            : `${label} reopened — back in your work${why ? ` · ${why}` : ""}`,
+        })
+      );
+    }
+    await Promise.all(follow);
+    revalidatePath(`/risansi/orders/${orderId}`);
+    revalidatePath("/risansi/orders");
+    return { ok: true };
+  } catch (error) {
+    console.error("setOrderStatus failed:", error);
+    return { ok: false, error: "Could not change the order status." };
   }
 }
 
@@ -1426,7 +1537,8 @@ export async function importPiExcelAction(
 
   const importLock = lockReason(
     "order_billing_docs",
-    await lockFactsForOrder(orderId)
+    await lockFactsForOrder(orderId),
+    user.role
   );
   if (importLock) return { ok: false, error: importLock };
 

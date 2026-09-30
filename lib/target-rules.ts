@@ -1,7 +1,8 @@
 // How an SO's first target dates are worked out from its own dates.
 //
-//   Delivery date as per SO →  Dispatch target   = delivery − 3 days
-//                              Packing target    = delivery − 4 days
+//   SO date                 →  Dispatch target   = SO date + 3 weeks (Pump)
+//                                                 = SO date + 2 weeks (Spare)
+//   Delivery date as per SO →  Packing target    = delivery − 4 days
 //                              Quality target    = delivery − 7 days
 //   SO Hand Over date       →  Drawing target    = hand-over + 2 days (up to 4 qty)
 //                                                 = hand-over + 3 days (5 qty or more)
@@ -17,6 +18,9 @@ import type { TargetKey } from "@/lib/target-dates";
 
 /** The SO facts the rules read. */
 export type TargetInputs = {
+  so_date?: unknown;
+  /** Pump or Spare — sets how long Dispatch is given from the SO date. */
+  order_type?: unknown;
   delivery_date_as_per_so?: unknown;
   so_handover_date?: unknown;
   total_quantity?: unknown;
@@ -31,6 +35,9 @@ export type AutoTarget = {
   /** Why this date — recorded as the revision's reason, and quoted in the notice. */
   reason: string;
 };
+
+/** Days from the SO date to the dispatch target, by order type. */
+export const DISPATCH_DAYS_FROM_SO: Record<string, number> = { pump: 21, spare: 14 };
 
 /** Drawing gets a day more once an order runs to this many pumps. */
 export const DRAWING_LARGE_QTY = 5;
@@ -63,10 +70,22 @@ function readable(date: string): string {
 export function autoTargets(o: TargetInputs): AutoTarget[] {
   const out: AutoTarget[] = [];
 
+  // Dispatch works to the SO date; without an order type there is no telling
+  // which allowance applies.
+  const soDate = isoDate(o.so_date);
+  const type = String(o.order_type ?? "").trim().toLowerCase();
+  const dispatchDays = DISPATCH_DAYS_FROM_SO[type];
+  if (soDate && dispatchDays) {
+    out.push({
+      key: "dispatch",
+      date: shift(soDate, dispatchDays),
+      reason: `Auto: ${dispatchDays / 7} weeks after SO date (${readable(soDate)}), ${String(o.order_type).trim()}`,
+    });
+  }
+
   const delivery = isoDate(o.delivery_date_as_per_so);
   if (delivery) {
     const from = `Delivery date as per SO (${readable(delivery)})`;
-    out.push({ key: "dispatch", date: shift(delivery, -3), reason: `Auto: 3 days before ${from}` });
     out.push({ key: "packing", date: shift(delivery, -4), reason: `Auto: 4 days before ${from}` });
     // Quality's target only applies when the order needs QC documents.
     if (String(o.qc_required ?? "").trim().toLowerCase() === "yes") {

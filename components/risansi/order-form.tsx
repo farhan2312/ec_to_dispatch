@@ -13,6 +13,7 @@ import {
   CURRENCY_OPTIONS,
   ORDER_TYPE_OPTIONS,
   YES_NO_OPTIONS,
+  withValueRules,
 } from "@/lib/order-schema";
 
 type FieldType = "text" | "date" | "number" | "select";
@@ -225,7 +226,7 @@ export function OrderForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   function update(name: keyof NewOrderInput, value: string) {
-    setValues((prev) => ({ ...prev, [name]: value }));
+    setValues((prev) => withValueRules(prev, name, value));
   }
 
   // Picking a client from the Market Intell directory fills the Client

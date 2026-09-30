@@ -648,7 +648,6 @@ ALTER TABLE orders DROP COLUMN IF EXISTS ec_rcvd_operations_date;
 ALTER TABLE orders DROP COLUMN IF EXISTS ec_sent_production_date;
 ALTER TABLE orders DROP COLUMN IF EXISTS file_no;
 ALTER TABLE orders DROP COLUMN IF EXISTS item;
-ALTER TABLE orders DROP COLUMN IF EXISTS qc_required;
 ALTER TABLE orders DROP COLUMN IF EXISTS model_no;
 ALTER TABLE orders DROP COLUMN IF EXISTS pump_qty;
 ALTER TABLE orders DROP COLUMN IF EXISTS pump_sno;
@@ -656,11 +655,11 @@ ALTER TABLE orders DROP COLUMN IF EXISTS orientation;
 ALTER TABLE orders DROP COLUMN IF EXISTS liquid_application;
 ALTER TABLE orders DROP COLUMN IF EXISTS version;
 ALTER TABLE orders DROP COLUMN IF EXISTS project;
-ALTER TABLE orders DROP COLUMN IF EXISTS payment_terms;
 ALTER TABLE orders DROP COLUMN IF EXISTS master_reason_of_delay;
-ALTER TABLE orders DROP COLUMN IF EXISTS dispatch_target_date;
-ALTER TABLE orders DROP COLUMN IF EXISTS dispatch_target_revised_date;
-ALTER TABLE orders DROP COLUMN IF EXISTS drg_target_date;
+-- qc_required, payment_terms, dispatch_target_date, dispatch_target_revised_date
+-- and drg_target_date were dropped here too. They are re-added further down,
+-- and this file runs whole on every migrate, so the drop emptied them each
+-- time. They stay: only columns that never come back are dropped.
 
 -- QC Req and Payment Terms return to the order (Central Visibility sets them
 -- at intake, same as before they were trimmed above). LD / LD Date move from

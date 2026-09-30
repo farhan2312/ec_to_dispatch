@@ -8,6 +8,7 @@ import {
   canonicalSelectValue,
   dependsOnSatisfied,
   selectOptionsFor,
+  withValueRules,
   type OrderField,
   type OrderSection,
 } from "@/lib/order-schema";
@@ -261,10 +262,9 @@ export function EditableSection({
                             <select
                               value={values[field.column] ?? ""}
                               onChange={(e) =>
-                                setValues((prev) => ({
-                                  ...prev,
-                                  [field.column]: e.target.value,
-                                }))
+                                setValues((prev) =>
+                                  withValueRules(prev, field.column, e.target.value)
+                                )
                               }
                               className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
                             >

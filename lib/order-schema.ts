@@ -870,20 +870,41 @@ export const ADD_ON_SPARE_FIELDS: OrderField[] = [
   { column: "quantity", label: "Quantity", type: "int" },
 ];
 
+/**
+ * One field's new value, with what it implies for the others: a Challan
+ * carries no value, so picking it sets the order value to 0 INR.
+ */
+export function withValueRules<T extends Record<string, unknown>>(
+  prev: T,
+  column: string,
+  value: string
+): T {
+  const next: Record<string, unknown> = { ...prev, [column]: value };
+  if (column === "bill_type" && value === "Challan") {
+    next.order_value = "0";
+    next.order_currency = "INR";
+  }
+  return next as T;
+}
+
 /** Which Add-On field set an SO's order type uses. */
 export function addOnFieldsFor(orderType?: string | null): OrderField[] {
   return orderType === "Spare" ? ADD_ON_SPARE_FIELDS : ADD_ON_PUMP_FIELDS;
 }
 
+/** Add-On fields that may be left blank; every other one is mandatory. */
+export const ADD_ON_OPTIONAL = new Set<string>(["version"]);
+
 /**
- * The first Add-On field left blank, or null when the EC is complete. Every
- * field on the form is mandatory.
+ * The first mandatory Add-On field left blank, or null when the EC is
+ * complete.
  */
 export function firstMissingAddOnField(
   orderType: string | null | undefined,
   values: Record<string, unknown>
 ): OrderField | null {
   for (const f of addOnFieldsFor(orderType)) {
+    if (ADD_ON_OPTIONAL.has(f.column)) continue;
     const v = values[f.column];
     if (v === null || v === undefined || String(v).trim() === "") return f;
   }

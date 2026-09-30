@@ -1004,10 +1004,19 @@ export async function setOrderStatus(input: {
  * order, or — for an order not yet converted — today's rate, which is then
  * kept with it, so a later change of rate never re-prices an older order. An
  * order not in USD carries neither. Without a rate set yet, a USD order is
- * left as it is. Writes only when something changes.
+ * left as it is. A Challan is set to 0 INR first. Writes only when something changes.
  */
 export async function applyUsdConversion(orderId: string, rate: number | null): Promise<void> {
   if (!UUID_RE.test(orderId)) return;
+  // A Challan carries no value: 0 INR, whatever was typed.
+  await query(
+    `UPDATE orders
+        SET order_value = 0, order_currency = 'INR', order_value_inr = NULL, order_fx_rate = NULL
+      WHERE id = $1 AND bill_type = 'Challan'
+        AND (order_value IS DISTINCT FROM 0 OR COALESCE(order_currency, '') <> 'INR'
+             OR order_value_inr IS NOT NULL OR order_fx_rate IS NOT NULL)`,
+    [orderId]
+  );
   await query(
     `WITH next AS (
        SELECT o.id,
@@ -2896,6 +2905,8 @@ export async function fillFirstTargets(
 ): Promise<{ target: TargetDate; date: string; reason: string }[]> {
   if (!UUID_RE.test(orderId)) return [];
   const r = await query<{
+    so_date: string | null;
+    order_type: string | null;
     delivery: string | null;
     handover: string | null;
     qty: string | null;
@@ -2908,7 +2919,9 @@ export async function fillFirstTargets(
     packing: boolean;
     dispatch: boolean;
   }>(
-    `SELECT to_char(o.delivery_date_as_per_so, 'YYYY-MM-DD') AS delivery,
+    `SELECT to_char(o.so_date, 'YYYY-MM-DD') AS so_date,
+            o.order_type,
+            to_char(o.delivery_date_as_per_so, 'YYYY-MM-DD') AS delivery,
             to_char(o.so_handover_date, 'YYYY-MM-DD') AS handover,
             -- The SO's quantity, else what its ECs add up to.
             COALESCE(o.total_quantity,
@@ -2939,6 +2952,8 @@ export async function fillFirstTargets(
 
   const filled: { target: TargetDate; date: string; reason: string }[] = [];
   for (const auto of autoTargets({
+    so_date: o.so_date,
+    order_type: o.order_type,
     delivery_date_as_per_so: o.delivery,
     so_handover_date: o.handover,
     total_quantity: o.qty,

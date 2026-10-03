@@ -655,9 +655,8 @@ ALTER TABLE orders DROP COLUMN IF EXISTS orientation;
 ALTER TABLE orders DROP COLUMN IF EXISTS liquid_application;
 ALTER TABLE orders DROP COLUMN IF EXISTS version;
 ALTER TABLE orders DROP COLUMN IF EXISTS project;
-ALTER TABLE orders DROP COLUMN IF EXISTS master_reason_of_delay;
--- qc_required, payment_terms, dispatch_target_date, dispatch_target_revised_date
--- and drg_target_date were dropped here too. They are re-added further down,
+-- master_reason_of_delay, qc_required, payment_terms, dispatch_target_date,
+-- dispatch_target_revised_date and drg_target_date were dropped here too. They are re-added further down,
 -- and this file runs whole on every migrate, so the drop emptied them each
 -- time. They stay: only columns that never come back are dropped.
 
@@ -2224,3 +2223,10 @@ UPDATE orders
    AND upper(COALESCE(order_currency, '')) = 'USD'
    AND order_value_inr IS NOT NULL
    AND order_value > 0;
+
+-- ---------------------------------------------------------------------------
+-- SO-level remarks: the order's own notes (hold, assembly state, anything
+-- Central wants on the record), beside the Master Reason of Delay.
+-- ---------------------------------------------------------------------------
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS master_reason_of_delay TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS so_remarks TEXT;

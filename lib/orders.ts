@@ -65,7 +65,6 @@ const DROPPED_ORDER_COLUMNS = new Set([
   "liquid_application",
   "version",
   "project",
-  "master_reason_of_delay",
 ]);
 
 type Row = Record<string, unknown>;
@@ -883,6 +882,22 @@ export async function recomputeDispatchStatus(orderId: string): Promise<void> {
            FROM order_invoices WHERE order_id = $1
        ) inv
       WHERE o.id = $1`,
+    [orderId]
+  );
+  // A Lot / Fully dispatched status carried in from the migration sheet (set
+  // by no one) stands in for invoices not entered yet; the first real invoice
+  // takes over. One set by hand stays until it is changed by hand.
+  await query(
+    `UPDATE orders o
+        SET status_override = NULL, status_reason = NULL, status_diverted_to = NULL,
+            status_set_at = now()
+      WHERE o.id = $1
+        AND o.status_override IN ('Fully dispatch', 'LOT dispatch')
+        AND o.status_set_by IS NULL
+        AND EXISTS (SELECT 1 FROM order_invoices i
+                     WHERE i.order_id = o.id
+                       AND (i.invoice_no IS NOT NULL OR i.challan_no IS NOT NULL
+                            OR i.invoice_value IS NOT NULL OR i.challan_value IS NOT NULL))`,
     [orderId]
   );
 }

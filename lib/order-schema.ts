@@ -78,6 +78,16 @@ export const PUMP_TYPE_OPTIONS = opts(["PCP", "MMP", "RBL", "OLB"]);
 // PI: Tax Invoice → PI No./Date/Value; Challan → Challan No./Date/Value + FR.
 export const BILL_TYPE_OPTIONS = opts(["Tax Invoice", "Challan"]);
 // FR (financial reconciliation) reason for a Challan.
+/** Why an order is late, at SO level. */
+export const MASTER_DELAY_REASON_OPTIONS = opts([
+  "Hold by Client",
+  "Payment",
+  "BOI",
+  "Drawing Issue",
+  "Part Issue",
+  "Other Reason",
+]);
+
 export const FR_REASON_OPTIONS = opts([
   "Wrong supply",
   "Short supply",
@@ -359,6 +369,17 @@ export const ORDER_SECTIONS: OrderSection[] = [
         readOnly: true,
         group: "Target Dates",
       },
+
+      // The order's own record: why it is late, and any note Central keeps
+      // on it (a hold, where assembly stands).
+      {
+        column: "master_reason_of_delay",
+        label: "Master Reason of Delay",
+        type: "select",
+        options: MASTER_DELAY_REASON_OPTIONS,
+        group: "Remarks",
+      },
+      { column: "so_remarks", label: "Remarks", type: "text", group: "Remarks" },
 
       // --- Everything below is commented out, not deleted: the orders table
       // was trimmed to Client + Purchase Order Details columns only, and

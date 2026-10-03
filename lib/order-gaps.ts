@@ -31,7 +31,12 @@ const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
  * dispatch date only exists once a date has actually been moved, so an order
  * running to its original target is not waiting on anything.
  */
-const NOT_A_GAP = new Set(["dispatch_target_revised_date", "payment_terms_remarks"]);
+const NOT_A_GAP = new Set([
+  "dispatch_target_revised_date",
+  "payment_terms_remarks",
+  "master_reason_of_delay",
+  "so_remarks",
+]);
 
 /** The fields the check covers: everything the Order details form asks for. */
 const GAP_FIELDS: OrderField[] = (SECTION_BY_TABLE.get("orders")?.fields ?? []).filter(

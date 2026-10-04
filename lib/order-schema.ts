@@ -745,7 +745,7 @@ export const PACKING_SLIP_KINDS = {
 export const INVOICE_FIELDS: OrderField[] = [
   // Phase 1 — the "Invoice" phase. Two field sets share this slot:
   //   • Tax Invoice orders → invoice_no / _date / _value / _quantity
-  //   • Challan orders     → challan_no / _date / _value / fr_reason
+  //   • Challan orders     → challan_no / _date / _value / _quantity / fr_reason
   // The correct set is chosen at render time via `bill_type` in the parent
   // SO's context (passed to OrderChildList as `context.bill_type`).
   { column: "invoice_no",       label: "Invoice No.",   type: "text",   group: "Invoice", dependsOn: [{ column: "bill_type", value: "Tax Invoice" }] },
@@ -755,6 +755,9 @@ export const INVOICE_FIELDS: OrderField[] = [
   { column: "challan_no",       label: "Challan No.",   type: "text",   group: "Invoice", dependsOn: [{ column: "bill_type", value: "Challan" }] },
   { column: "challan_date",     label: "Challan Date",  type: "date",   group: "Invoice", dependsOn: [{ column: "bill_type", value: "Challan" }] },
   { column: "challan_value",    label: "Challan Value", type: "number", group: "Invoice", dependsOn: [{ column: "bill_type", value: "Challan" }] },
+  // What the challan sends — without it a Challan order could never read as
+  // fully dispatched.
+  { column: "challan_quantity", label: "Challan Qty",   type: "int",    group: "Invoice", dependsOn: [{ column: "bill_type", value: "Challan" }] },
   { column: "fr_reason",        label: "FR Reason",     type: "select", options: FR_REASON_OPTIONS, group: "Invoice", dependsOn: [{ column: "bill_type", value: "Challan" }] },
 
   // Phase 2 — dispatch details.

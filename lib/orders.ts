@@ -875,9 +875,10 @@ export async function recomputeDispatchStatus(orderId: string): Promise<void> {
          -- invoice_no/qty/value, they carry challan_value instead.
          SELECT COUNT(*) FILTER (
                   WHERE invoice_no IS NOT NULL OR challan_no IS NOT NULL
+                        OR invoice_date IS NOT NULL OR challan_date IS NOT NULL
                         OR invoice_value IS NOT NULL OR challan_value IS NOT NULL
                 ) AS n,
-                SUM(COALESCE(invoice_quantity, packing_quantity, 0)) AS qty,
+                SUM(COALESCE(invoice_quantity, challan_quantity, packing_quantity, 0)) AS qty,
                 SUM(COALESCE(invoice_value, challan_value, 0)) AS val
            FROM order_invoices WHERE order_id = $1
        ) inv
@@ -897,6 +898,7 @@ export async function recomputeDispatchStatus(orderId: string): Promise<void> {
         AND EXISTS (SELECT 1 FROM order_invoices i
                      WHERE i.order_id = o.id
                        AND (i.invoice_no IS NOT NULL OR i.challan_no IS NOT NULL
+                            OR i.invoice_date IS NOT NULL OR i.challan_date IS NOT NULL
                             OR i.invoice_value IS NOT NULL OR i.challan_value IS NOT NULL))`,
     [orderId]
   );

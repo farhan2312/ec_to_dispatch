@@ -1,9 +1,9 @@
 "use client";
 
 // One SO on one page: what it is, where every department stands, and every
-// value recorded against each of its ECs. Read-only by design — it is the view
-// you land on from the order list and the pipeline, and it links out to the
-// forms that own each value rather than repeating them as inputs.
+// value recorded against it and each of its ECs — each section the same form
+// it is on its own page, so whoever owns a value edits it here without
+// switching pages.
 
 import { useState } from "react";
 import Link from "next/link";
@@ -13,19 +13,20 @@ import {
   ChevronRight,
   ExternalLink,
   Pencil,
+  Plus,
 } from "lucide-react";
 import {
   CHILD_FIELDS,
-  ITEM_SECTIONS,
-  SO_SECTIONS,
   canonicalSelectValue,
   dependsOnSatisfied,
-  isAfterReceiptOnly,
   type ChildTable,
   type OrderField,
-  type OrderSection,
 } from "@/lib/order-schema";
-import { canAccessDepartment, isCentral } from "@/lib/roles";
+import { canAccessDepartment, canCreateOrders, isCentral } from "@/lib/roles";
+import type { TargetRevision } from "@/lib/target-dates";
+import { ItemSections } from "./item-sections";
+import { SoSections } from "./so-sections";
+import { AddOnForm } from "./add-on-form";
 import { OrderStatusPanel } from "./order-status-panel";
 import { DEPT_LABELS, type DeptCompletion } from "@/lib/dept-completion";
 import type { ItemDetail, OrderDetail, SoDeptStatus } from "@/lib/orders";
@@ -38,7 +39,6 @@ import {
   formatDate,
   orderComplete,
 } from "./dept-status-board";
-import { isSpareEc } from "@/lib/dept-view";
 
 type Row = Record<string, unknown>;
 
@@ -63,12 +63,6 @@ function fieldValue(field: OrderField, row: Row | null): string {
   if (field.type === "select") return canonicalSelectValue(field, raw);
   if (field.type === "number") return money(raw);
   return raw;
-}
-
-/** Only the fields that apply to this row — a Challan order has no PI fields. */
-function applicableFields(fields: OrderField[], row: Row | null, extra?: Row): OrderField[] {
-  const read = (column: string) => str(row?.[column] ?? extra?.[column]);
-  return fields.filter((f) => dependsOnSatisfied(f, read));
 }
 
 // ---------------------------------------------------------------------------
@@ -97,36 +91,6 @@ function Chip({ value, tone = "slate" }: { value: string; tone?: "slate" | "prim
     >
       {value}
     </span>
-  );
-}
-
-/** A section's values as a label/value grid — the read-only twin of the form. */
-function FieldGrid({
-  fields,
-  row,
-  extra,
-}: {
-  fields: OrderField[];
-  row: Row | null;
-  // Values the row itself doesn't carry but its fields gate on (an EC's
-  // item_type for Planning's pump-only fields, the SO's bill_type for Billing).
-  extra?: Row;
-}) {
-  const shown = applicableFields(fields, row, extra);
-  if (shown.length === 0) {
-    return <p className="text-sm text-muted">Nothing recorded.</p>;
-  }
-  return (
-    <dl className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-      {shown.map((f) => (
-        <div key={f.column} className="min-w-0">
-          <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {f.label}
-          </dt>
-          <dd className="mt-0.5 break-words text-sm text-foreground">{fieldValue(f, row)}</dd>
-        </div>
-      ))}
-    </dl>
   );
 }
 
@@ -180,26 +144,6 @@ function ChildTableView({
   );
 }
 
-/** What a section's 1:many list is called where it appears under that section. */
-function childCaption(table: ChildTable, kind?: string): string {
-  switch (table) {
-    case "order_drawing_revisions":
-      return "Revisions";
-    case "order_boi_items":
-      return "Bought-out items";
-    case "order_packing_slips":
-      return kind === "tentative" ? "Tentative packing details" : "Actual packing details";
-    case "order_billing_docs":
-      return "PIs";
-    case "order_invoices":
-      return "Invoice and dispatch";
-    case "order_lots":
-      return "Lots";
-    case "order_payment_terms":
-      return "Payment terms";
-  }
-}
-
 function Panel({
   title,
   aside,
@@ -231,9 +175,11 @@ export function OrderOverview({
   status,
   completions,
   role,
+  targetRevisions,
 }: {
   orderId: string;
   detail: OrderDetail;
+  targetRevisions: TargetRevision[];
   // Every EC of this SO with each department's row and child lists.
   items: ItemDetail[];
   status: SoDeptStatus | null;
@@ -243,6 +189,8 @@ export function OrderOverview({
   const order = detail.order;
   const soLabel = str(order.so_no) || `#${str(order.sl_no) || "—"}`;
   const central = isCentral(role);
+  const canManageItems = canCreateOrders(role);
+  const [addOpen, setAddOpen] = useState(false);
   // One EC opens by itself; a longer list stays closed so the page still reads
   // as a summary until you ask for a particular EC.
   const [open, setOpen] = useState<Set<string>>(
@@ -258,13 +206,7 @@ export function OrderOverview({
       return next;
     });
 
-  // Which sections this role may read. Same rule as the forms: a department
-  // sees its own section plus whatever it owns; Central and Admin see all.
   const qcNeeded = str(order.qc_required).trim().toLowerCase() !== "no";
-  const soSections = SO_SECTIONS.filter((s) => canAccessDepartment(role, s.table));
-  const itemSections = ITEM_SECTIONS.filter(
-    (s) => canAccessDepartment(role, s.table) && (s.table !== "order_qc" || qcNeeded)
-  );
 
   // The departments that chase and record the money work to the payment
   // terms and are notified of each one, so they can read the list even though
@@ -275,16 +217,6 @@ export function OrderOverview({
     canAccessDepartment(role, "order_billing");
   const seesValue = canAccessDepartment(role, "orders");
   const seesMoney = canAccessDepartment(role, "order_accounts");
-  // Paid only on receipt: the two departments that chase money have nothing
-  // to record, so say so where their panels would otherwise look unfilled.
-  const paidAfterReceipt = isAfterReceiptOnly(detail.order_payment_terms);
-  const notRequired: Partial<Record<string, string>> = paidAfterReceipt
-    ? {
-        order_billing: "No PI on this order — it is paid after receipt.",
-        order_accounts:
-          "Nothing to confirm until the payment arrives — this order is paid after receipt.",
-      }
-    : {};
 
   const received = Number(str(detail.order_accounts?.amount_received) || "0");
   const value = Number(str(order.order_value) || "0");
@@ -292,25 +224,6 @@ export function OrderOverview({
     Number.isFinite(received) && Number.isFinite(value) && str(order.order_value).trim() !== ""
       ? value - received
       : null;
-
-  // A section's rows for one EC: the packing-slip table is shared by Planning
-  // (tentative) and Packing (actual), so each section shows only its own kind.
-  const childRows = (section: OrderSection, item: ItemDetail): Row[] => {
-    const rows = ((item as unknown as Record<string, unknown>)[section.childTable!] ??
-      []) as Row[];
-    if (section.childTable === "order_packing_slips" && section.childKind) {
-      return rows.filter((r) => str(r.kind) === section.childKind);
-    }
-    return rows;
-  };
-
-  const childGateOk = (section: OrderSection): boolean => {
-    const gate = section.childGate;
-    if (!gate) return true;
-    return "present" in gate
-      ? str(order[gate.column]).trim() !== ""
-      : str(order[gate.column]) === gate.value;
-  };
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-8 sm:py-8">
@@ -421,181 +334,8 @@ export function OrderOverview({
         </Panel>
       </div>
 
-      {/* ---------- the ECs ---------- */}
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="font-display text-lg font-semibold text-foreground">
-          ECs
-          <span className="ml-2 text-sm font-normal text-muted">
-            {items.length} on this order
-          </span>
-        </h2>
-        {items.length > 1 && (
-          <button
-            type="button"
-            onClick={() =>
-              setOpen(allOpen ? new Set() : new Set(items.map((i) => str(i.item.id))))
-            }
-            className="inline-flex h-8 items-center rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
-          >
-            {allOpen ? "Collapse all" : "Expand all"}
-          </button>
-        )}
-      </div>
-
-      {items.length === 0 ? (
-        <p className="mt-3 rounded-xl border border-card-border bg-surface px-5 py-10 text-center text-sm text-muted shadow-sm">
-          No ECs on this order yet.
-        </p>
-      ) : (
-        <div className="mt-3 space-y-3">
-          {items.map((entry) => {
-            const item = entry.item;
-            const id = str(item.id);
-            const isOpen = open.has(id);
-            const ecStatus = status?.ecs.find((e) => e.id === id) ?? null;
-            const ecDone = ecStatus ? ecComplete(ecStatus) : false;
-            return (
-              <div
-                key={id}
-                className={`overflow-hidden rounded-xl border bg-surface shadow-sm ${
-                  ecDone ? "border-emerald-500/40" : "border-card-border"
-                }`}
-              >
-                <div
-                  className={`flex flex-wrap items-center gap-3 px-4 py-3 ${
-                    ecDone ? "bg-emerald-500/10" : ""
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggle(id)}
-                    aria-expanded={isOpen}
-                    aria-label={isOpen ? "Collapse this EC" : "Expand this EC"}
-                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-input-border text-muted-foreground transition-colors hover:bg-background"
-                  >
-                    {isOpen ? (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    )}
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <p className="flex flex-wrap items-center gap-2 truncate text-sm font-semibold text-foreground">
-                      {str(item.ec_no) || "EC"}
-                      {ecDone && <AllDoneChip />}
-                      <span className="ml-2 font-normal text-muted">
-                        {[
-                          str(item.item_type),
-                          str(item.pump_type),
-                          str(item.model_no),
-                          str(item.quantity) ? `Qty ${str(item.quantity)}` : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    </p>
-                    {ecStatus && (
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {/* Named, because five bare "Pending" chips say nothing
-                            about which department is pending. */}
-                        {EC_DEPTS.map((d) => (
-                          <Badge
-                            key={d.key}
-                            cell={{
-                              state: ecStatus[d.key].state,
-                              label: `${DEPT_LABELS[d.key]} · ${ecStatus[d.key].label}`,
-                            }}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <Link
-                    href={`/risansi/orders/${orderId}/items/${id}`}
-                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
-                  >
-                    <ExternalLink className="h-3.5 w-3.5" />
-                    EC summary
-                  </Link>
-                </div>
-
-                {isOpen && (
-                  <div className="space-y-5 border-t border-card-border bg-background/40 px-4 py-4">
-                    {itemSections
-                      // A Spare EC has no drawing to track.
-                      .filter(
-                        (section) =>
-                          section.table !== "order_drawing" ||
-                          !isSpareEc({
-                            item_type: str(item.item_type),
-                            order_type: str(order.order_type),
-                          })
-                      )
-                      .map((section) => {
-                      const row =
-                        section.table === "order_items"
-                          ? item
-                          : (((entry as unknown as Record<string, unknown>)[
-                              section.table
-                            ] ?? null) as Row | null);
-                      const rows = section.childTable ? childRows(section, entry) : [];
-                      return (
-                        <div key={section.key}>
-                          <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                            {section.title}
-                          </p>
-                          {section.fields.length > 0 && (
-                            <FieldGrid
-                              fields={section.fields}
-                              row={row}
-                              // Department rows carry no item_type / bill_type
-                              // of their own, but their fields gate on them.
-                              extra={{
-                                item_type: item.item_type,
-                                bill_type: order.bill_type,
-                                market_type: order.market_type,
-                                packing_details_required: order.packing_details_required,
-                              }}
-                            />
-                          )}
-                          {section.childTable && (
-                            <div className={section.fields.length > 0 ? "mt-3" : ""}>
-                              <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
-                                {childCaption(section.childTable, section.childKind)}
-                              </p>
-                              {childGateOk(section) ? (
-                                <ChildTableView
-                                  table={section.childTable}
-                                  rows={rows}
-                                  context={{
-                                    bill_type: order.bill_type,
-                                    market_type: order.market_type,
-                                    packing_details_required:
-                                      order.packing_details_required,
-                                  }}
-                                />
-                              ) : (
-                                <p className="text-sm text-muted">
-                                  {section.childTable === "order_packing_slips"
-                                    ? "Packing details are not required on this order."
-                                    : "No BOI on this order."}
-                                </p>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* ---------- order-level detail ---------- */}
-      <div className="mt-6 space-y-4">
+      {/* ---------- every section, editable where the role owns it ---------- */}
+      <div className="mt-6 space-y-6">
         {/* Shown on its own for Accounts and Billing, who do not see the rest
             of Order details; for Central it appears inside that section. */}
         {seesTerms && !canAccessDepartment(role, "orders") && (
@@ -607,46 +347,149 @@ export function OrderOverview({
             />
           </Panel>
         )}
-        {soSections.map((section) => {
-          const row =
-            section.table === "orders"
-              ? order
-              : ((detail as unknown as Record<string, unknown>)[section.table] ??
-                  null) as Row | null;
-          const note = notRequired[section.table];
-          return (
-            <Panel key={section.key} title={section.title}>
-              {note && <p className="mb-3 text-sm text-muted">{note}</p>}
-              {section.fields.length > 0 && (
-                <FieldGrid fields={section.fields} row={row} extra={order} />
-              )}
-              {section.childTable && (
-                <div className={section.fields.length > 0 ? "mt-4" : ""}>
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                    {childCaption(section.childTable, section.childKind)}
-                  </p>
-                  {childGateOk(section) ? (
-                    <ChildTableView
-                      table={section.childTable}
-                      rows={
-                        ((detail as unknown as Record<string, unknown>)[
-                          section.childTable
-                        ] ?? []) as Row[]
-                      }
-                      context={order}
-                    />
-                  ) : (
-                    <p className="text-sm text-muted">
-                      This order is not a Tax Invoice order, so it carries no PI list.
-                    </p>
-                  )}
-                </div>
-              )}
-            </Panel>
-          );
-        })}
+        <SoSections
+          detail={detail}
+          orderId={orderId}
+          role={role}
+          targetRevisions={targetRevisions}
+          // The ECs sit between Order details and Billing / Accounts / Dispatch,
+          // as on the SO page.
+          middle={
+            <div>
+          {/* ---------- the ECs ---------- */}
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-display text-lg font-semibold text-foreground">
+              ECs
+              <span className="ml-2 text-sm font-normal text-muted">
+                {items.length} on this order
+              </span>
+            </h2>
+            <div className="flex flex-wrap items-center gap-2">
+            {canManageItems && (
+              <button
+                type="button"
+                onClick={() => setAddOpen(true)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {`${str(order.order_type) || "Pump"} Add-On`}
+              </button>
+            )}
+            {items.length > 1 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setOpen(allOpen ? new Set() : new Set(items.map((i) => str(i.item.id))))
+                }
+                className="inline-flex h-8 items-center rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
+              >
+                {allOpen ? "Collapse all" : "Expand all"}
+              </button>
+            )}
+            </div>
+          </div>
 
+          {items.length === 0 ? (
+            <p className="mt-3 rounded-xl border border-card-border bg-surface px-5 py-10 text-center text-sm text-muted shadow-sm">
+              No ECs on this order yet.
+            </p>
+          ) : (
+            <div className="mt-3 space-y-3">
+              {items.map((entry) => {
+                const item = entry.item;
+                const id = str(item.id);
+                const isOpen = open.has(id);
+                const ecStatus = status?.ecs.find((e) => e.id === id) ?? null;
+                const ecDone = ecStatus ? ecComplete(ecStatus) : false;
+                return (
+                  <div
+                    key={id}
+                    className={`overflow-hidden rounded-xl border bg-surface shadow-sm ${
+                      ecDone ? "border-emerald-500/40" : "border-card-border"
+                    }`}
+                  >
+                    <div
+                      className={`flex flex-wrap items-center gap-3 px-4 py-3 ${
+                        ecDone ? "bg-emerald-500/10" : ""
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggle(id)}
+                        aria-expanded={isOpen}
+                        aria-label={isOpen ? "Collapse this EC" : "Expand this EC"}
+                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-input-border text-muted-foreground transition-colors hover:bg-background"
+                      >
+                        {isOpen ? (
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <p className="flex flex-wrap items-center gap-2 truncate text-sm font-semibold text-foreground">
+                          {str(item.ec_no) || "EC"}
+                          {ecDone && <AllDoneChip />}
+                          <span className="ml-2 font-normal text-muted">
+                            {[
+                              str(item.item_type),
+                              str(item.pump_type),
+                              str(item.model_no),
+                              str(item.quantity) ? `Qty ${str(item.quantity)}` : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        </p>
+                        {ecStatus && (
+                          <div className="mt-1.5 flex flex-wrap gap-1.5">
+                            {/* Named, because five bare "Pending" chips say nothing
+                                about which department is pending. */}
+                            {EC_DEPTS.map((d) => (
+                              <Badge
+                                key={d.key}
+                                cell={{
+                                  state: ecStatus[d.key].state,
+                                  label: `${DEPT_LABELS[d.key]} · ${ecStatus[d.key].label}`,
+                                }}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <Link
+                        href={`/risansi/orders/${orderId}/items/${id}`}
+                        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        EC summary
+                      </Link>
+                    </div>
+
+                    {isOpen && (
+                      <div className="border-t border-card-border bg-background/40 px-4 py-4">
+                        <ItemSections detail={entry} orderId={orderId} itemId={id} role={role} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+            </div>
+          }
+        />
       </div>
+
+      {addOpen && (
+        <AddOnForm
+          orderId={orderId}
+          soLabel={soLabel}
+          orderType={str(order.order_type) || null}
+          boiFlag={str(order.boi) || null}
+          onClose={() => setAddOpen(false)}
+        />
+      )}
     </div>
   );
 }

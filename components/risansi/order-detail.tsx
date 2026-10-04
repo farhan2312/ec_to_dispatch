@@ -12,43 +12,20 @@ import {
   Trash2,
 } from "lucide-react";
 import { deleteItemAction } from "@/app/risansi/orders/actions";
-import { BILLING_DOC_FIELDS, INVOICE_FIELDS, SO_SECTIONS } from "@/lib/order-schema";
-import { paymentTermsExtra } from "./payment-terms-control";
-import { lockReason } from "@/lib/order-lock";
 import { OrderStatusPanel } from "./order-status-panel";
-import {
-  canAccessDepartment,
-  canCreateOrders,
-  canEditChild,
-  isCentral,
-} from "@/lib/roles";
+import { canCreateOrders } from "@/lib/roles";
 import type { OrderDetail as OrderDetailData } from "@/lib/orders";
-import { EditableSection } from "./editable-section";
 import { AddOnForm } from "./add-on-form";
-import { OrderChildList } from "./order-children";
-import { InvoiceLrCell } from "./invoice-lr-cell";
 import { OrderThread } from "./order-thread";
-import { targetDateExtra } from "./target-date-control";
 import type { TargetRevision } from "@/lib/target-dates";
+import { SoSections } from "./so-sections";
+
+export { invoiceRowHeader } from "./so-sections";
 
 type Row = Record<string, unknown>;
 
 function str(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
-}
-
-// Header shown at the top of each Dispatch card: the packing-slip
-// context copied from Assembly's actual packing slip. Falls back to a
-// placeholder when the invoice has no linked slip (should be rare).
-export function invoiceRowHeader(inv: Row): React.ReactNode {
-  const ec = str(inv.ec_no);
-  const psn = str(inv.packing_slip_no);
-  const qty = str(inv.packing_quantity);
-  const parts: string[] = [];
-  if (ec) parts.push(`EC ${ec}`);
-  if (psn) parts.push(`Packing Slip ${psn}`);
-  if (qty) parts.push(`Qty ${qty}`);
-  return parts.length ? parts.join(" · ") : "Awaiting packing slip";
 }
 
 function formatDate(value: unknown): string {
@@ -76,26 +53,11 @@ export function OrderDetail({
 }) {
   const router = useRouter();
   const order = detail.order;
-  const central = isCentral(role);
   const canManageItems = canCreateOrders(role);
   const [addOpen, setAddOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const soLabel = str(order.so_no) || `#${str(order.sl_no) || "—"}`;
-
-  // SO-scope sections the current role can see (Central sees all; Billing sees
-  // Billing & Operations; Accounts sees Accounts). Accounts is skipped
-  // entirely for Challan orders — no A/R for those.
-  const isChallanOrder = String(order.bill_type ?? "") === "Challan";
-  const visibleSections = SO_SECTIONS.filter(
-    (s) =>
-      canAccessDepartment(role, s.table) &&
-      !(s.table === "order_accounts" && isChallanOrder)
-  );
-  // Split so the EC panel can sit between Order details (core) and the other
-  // SO sections (Billing & Operations, Accounts).
-  const coreSections = visibleSections.filter((s) => s.table === "orders");
-  const otherSections = visibleSections.filter((s) => s.table !== "orders");
 
   const items = (detail.items ?? []) as Row[];
 
@@ -110,6 +72,116 @@ export function OrderDetail({
     if (!res.ok) alert(res.error);
     else router.refresh();
   }
+
+  const ecOrdersPanel = (
+    <section className="rounded-xl border border-card-border bg-surface p-6 shadow-sm">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h2 className="font-display text-base font-semibold text-foreground">
+              EC orders
+            </h2>
+
+          </div>
+          <p className="text-sm text-muted">
+            {items.length} {items.length === 1 ? "item" : "items"} under this SO.
+          </p>
+        </div>
+        {canManageItems && (
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {`${str(order.order_type) || "Pump"} Add-On`}
+          </button>
+        )}
+      </div>
+
+      {items.length === 0 ? (
+        <p className="text-sm text-muted">
+          No EC items yet.
+          {canManageItems
+            ? ` Use ${str(order.order_type) || "Pump"} Add-On to add one.`
+            : ""}
+        </p>
+      ) : (
+        (() => {
+          // Columns follow the SO's order type: a Spare has no Pump Type /
+          // Series Version (matching the Spare Add-On form), while a Pump
+          // shows both, plus Model.
+          const isSpareSo = str(order.order_type).trim().toLowerCase() === "spare";
+          return (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-sm">
+                <thead>
+                  <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
+                    <th className="px-3 py-2">EC No.</th>
+                    <th className="px-3 py-2">EC Date</th>
+                    {!isSpareSo && <th className="px-3 py-2">Pump Type</th>}
+                    <th className="px-3 py-2">Model No.</th>
+                    <th className="px-3 py-2">Internal Model</th>
+                    <th className="px-3 py-2">Version</th>
+                    <th className="px-3 py-2">Qty</th>
+                    <th className="px-3 py-2" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-card-border">
+                  {items.map((item) => {
+                    const id = str(item.id);
+                    return (
+                      <tr key={id} className="text-foreground">
+                        <td className="px-3 py-2 whitespace-nowrap font-medium">
+                          {str(item.ec_no) || "—"}
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-muted">
+                          {formatDate(item.ec_date)}
+                        </td>
+                        {!isSpareSo && (
+                          <td className="px-3 py-2">{str(item.pump_type) || "—"}</td>
+                        )}
+                        <td className="px-3 py-2">{str(item.model_no) || "—"}</td>
+                        <td className="px-3 py-2">{str(item.internal_model) || "—"}</td>
+                        <td className="px-3 py-2">{str(item.version) || "—"}</td>
+                        <td className="px-3 py-2 tabular-nums">{str(item.quantity) || "—"}</td>
+                        <td className="px-3 py-2 whitespace-nowrap text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <Link
+                              href={`/risansi/orders/${orderId}/items/${id}`}
+                              className="inline-flex h-8 items-center gap-1 rounded-lg border border-input-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                            >
+                              Open
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            </Link>
+                            {canManageItems && (
+                              <button
+                                type="button"
+                                onClick={() => removeItem(item)}
+                                disabled={deletingId === id}
+                                aria-label="Delete EC"
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                              >
+                                {deletingId === id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          );
+        })()
+      )}
+    </section>
+  );
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-8">
@@ -156,247 +228,14 @@ export function OrderDetail({
           defaultOpen={false}
         />
 
-        {(() => {
-          // Render a single SO-scope section — Billing is a compound view
-          // (Challan fields or the PI list; the invoice cards are Dispatch's).
-          const renderSection = (section: typeof SO_SECTIONS[number]) => {
-            if (section.table === "order_dispatch") {
-              // Dispatch: one invoice-and-despatch card per despatch. The cards
-              // are created by Packing saving an actual packing slip, so there
-              // is no Add here.
-              return (
-                <OrderChildList
-                  key={section.key}
-                  orderId={orderId}
-                  table="order_invoices"
-                  title="Invoice and dispatch"
-                  fields={INVOICE_FIELDS}
-                  rows={(detail.order_invoices ?? []) as Row[]}
-                  canEdit={canEditChild(role, "order_invoices")}
-                  canAdd={false}
-                  // The parent SO's bill_type decides whether each card shows
-                  // invoice_* or challan_* fields — pass it as context so
-                  // per-field dependsOn can gate the correct set.
-                  context={{ bill_type: order.bill_type }}
-                  rowHeader={invoiceRowHeader}
-                  renderExtra={{
-                    label: "LR Attachment",
-                    render: (inv) => (
-                      <InvoiceLrCell
-                        row={inv}
-                        orderId={orderId}
-                        canEdit={canEditChild(role, "order_invoices")}
-                      />
-                    ),
-                  }}
-                />
-              );
-            }
-            if (section.table === "order_billing") {
-              const isChallan = String(order.bill_type ?? "") === "Challan";
-              const piLock = lockReason("order_billing_docs", order, role);
-              const billingCanEditChild = canEditChild(role, "order_billing_docs");
-              return (
-                <div key={section.key} className="space-y-6">
-                  {/* Challan orders skip the Operation card entirely — their
-                      challan fields sit inside each Dispatch card. Tax
-                      Invoice orders keep the PI list here. */}
-                  {!isChallan &&
-                    (piLock ? (
-                      // Nothing to raise, so the list is closed rather than
-                      // sitting there inviting a PI nobody should file.
-                      <section className="rounded-xl border border-card-border bg-surface p-6 shadow-sm">
-                      <h2 className="font-display text-base font-semibold text-foreground">
-                        {section.title}
-                      </h2>
-                      <p className="mt-1 text-sm text-muted">{piLock}</p>
-                    </section>
-                    ) : (
-                      <OrderChildList
-                        orderId={orderId}
-                        table="order_billing_docs"
-                        title={section.title}
-                        fields={BILLING_DOC_FIELDS}
-                        rows={detail.order_billing_docs as Row[]}
-                        canEdit={billingCanEditChild}
-                      />
-                    ))}
-                </div>
-              );
-            }
-
-            const data: Row | null =
-              section.table === "orders"
-                ? detail.order
-                : (detail[section.table as "order_billing" | "order_accounts"] as Row | null);
-            // A section this order carries no work for takes no entries: say
-            // so instead of offering a form the action would refuse.
-            const sectionLock = lockReason(section.table, order, role);
-            if (sectionLock) {
-              return (
-                <section
-                  key={section.key}
-                  className="rounded-xl border border-card-border bg-surface p-6 shadow-sm"
-                >
-                  <h2 className="font-display text-base font-semibold text-foreground">
-                    {section.title}
-                  </h2>
-                  <p className="mt-1 text-sm text-muted">{sectionLock}</p>
-                </section>
-              );
-            }
-            return (
-              <div key={section.key} className="space-y-6">
-              <EditableSection
-                targetId={orderId}
-                section={section}
-                data={data ?? null}
-                canEdit={canAccessDepartment(role, section.table)}
-                canEditCentral={central}
-                // Order details carries the client columns — offer the
-                // directory search there so a wrong client can be corrected.
-                clientLookup={section.table === "orders" && canManageItems}
-                // Target dates are never edited by the section form; each one
-                // carries its own revise button and change history instead.
-                fieldExtra={
-                  section.table === "orders"
-                    ? (field) =>
-                        // Target dates carry their own control; Payment Terms
-                        // carries the list of terms. Everything else, nothing.
-                        paymentTermsExtra(
-                          orderId,
-                          detail.order_payment_terms as Row[],
-                          canEditChild(role, "order_payment_terms")
-                        )(field) ??
-                        targetDateExtra(orderId, targetRevisions, canManageItems)(field)
-                    : undefined
-                }
-              />
-              </div>
-            );
-          };
-
-          return (
-            <>
-              {coreSections.map(renderSection)}
-              {/* EC orders sits between Order details and Billing/Accounts. */}
-              <EcOrdersPanel />
-              {otherSections.map(renderSection)}
-            </>
-          );
-
-          function EcOrdersPanel() {
-            return (
-        <section className="rounded-xl border border-card-border bg-surface p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-2.5">
-                <h2 className="font-display text-base font-semibold text-foreground">
-                  EC orders
-                </h2>
-
-              </div>
-              <p className="text-sm text-muted">
-                {items.length} {items.length === 1 ? "item" : "items"} under this SO.
-              </p>
-            </div>
-            {canManageItems && (
-              <button
-                type="button"
-                onClick={() => setAddOpen(true)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                {`${str(order.order_type) || "Pump"} Add-On`}
-              </button>
-            )}
-          </div>
-
-          {items.length === 0 ? (
-            <p className="text-sm text-muted">
-              No EC items yet.
-              {canManageItems
-                ? ` Use ${str(order.order_type) || "Pump"} Add-On to add one.`
-                : ""}
-            </p>
-          ) : (
-            (() => {
-              // Columns follow the SO's order type: a Spare has no Pump Type /
-              // Series Version (matching the Spare Add-On form), while a Pump
-              // shows both, plus Model.
-              const isSpareSo = str(order.order_type).trim().toLowerCase() === "spare";
-              return (
-                <div className="overflow-x-auto">
-                  <table className="w-full min-w-[720px] text-sm">
-                    <thead>
-                      <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
-                        <th className="px-3 py-2">EC No.</th>
-                        <th className="px-3 py-2">EC Date</th>
-                        {!isSpareSo && <th className="px-3 py-2">Pump Type</th>}
-                        <th className="px-3 py-2">Model No.</th>
-                        <th className="px-3 py-2">Internal Model</th>
-                        <th className="px-3 py-2">Version</th>
-                        <th className="px-3 py-2">Qty</th>
-                        <th className="px-3 py-2" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-card-border">
-                      {items.map((item) => {
-                        const id = str(item.id);
-                        return (
-                          <tr key={id} className="text-foreground">
-                            <td className="px-3 py-2 whitespace-nowrap font-medium">
-                              {str(item.ec_no) || "—"}
-                            </td>
-                            <td className="px-3 py-2 whitespace-nowrap text-muted">
-                              {formatDate(item.ec_date)}
-                            </td>
-                            {!isSpareSo && (
-                              <td className="px-3 py-2">{str(item.pump_type) || "—"}</td>
-                            )}
-                            <td className="px-3 py-2">{str(item.model_no) || "—"}</td>
-                            <td className="px-3 py-2">{str(item.internal_model) || "—"}</td>
-                            <td className="px-3 py-2">{str(item.version) || "—"}</td>
-                            <td className="px-3 py-2 tabular-nums">{str(item.quantity) || "—"}</td>
-                            <td className="px-3 py-2 whitespace-nowrap text-right">
-                              <div className="flex items-center justify-end gap-2">
-                                <Link
-                                  href={`/risansi/orders/${orderId}/items/${id}`}
-                                  className="inline-flex h-8 items-center gap-1 rounded-lg border border-input-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
-                                >
-                                  Open
-                                  <ChevronRight className="h-3.5 w-3.5" />
-                                </Link>
-                                {canManageItems && (
-                                  <button
-                                    type="button"
-                                    onClick={() => removeItem(item)}
-                                    disabled={deletingId === id}
-                                    aria-label="Delete EC"
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
-                                  >
-                                    {deletingId === id ? (
-                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                    ) : (
-                                      <Trash2 className="h-3.5 w-3.5" />
-                                    )}
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })()
-          )}
-        </section>
-            );
-          }
-        })()}
+        <SoSections
+          detail={detail}
+          orderId={orderId}
+          role={role}
+          targetRevisions={targetRevisions}
+          // EC orders sits between Order details and Billing/Accounts.
+          middle={ecOrdersPanel}
+        />
 
       </div>
 

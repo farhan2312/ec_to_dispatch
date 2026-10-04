@@ -2230,3 +2230,6 @@ UPDATE orders
 -- ---------------------------------------------------------------------------
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS master_reason_of_delay TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS so_remarks TEXT;
+
+-- A challan's own quantity, so a Challan order can read as fully dispatched.
+ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS challan_quantity INTEGER;

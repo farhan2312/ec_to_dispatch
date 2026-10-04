@@ -5,6 +5,7 @@ import {
   getOrderDetail,
   listDeptCompletions,
   listItemDetails,
+  listTargetRevisions,
 } from "@/lib/orders";
 import { getCurrentUser } from "@/lib/session";
 import { roleSeesOrder } from "@/lib/dept-view";
@@ -25,14 +26,15 @@ export default async function OrderOverviewPage({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  // Four independent reads, so they go together: the SO itself, every EC with
-  // each department's row and child lists, the derived status, and the
-  // sign-offs. The database is remote, so the round trips are what cost.
-  const [detail, items, status, completions] = await Promise.all([
+  // Independent reads, so they go together: the SO itself, every EC with each
+  // department's row and child lists, the derived status, the sign-offs and
+  // the target dates' history. The database is remote, so the round trips are what cost.
+  const [detail, items, status, completions, targetRevisions] = await Promise.all([
     getOrderDetail(id),
     listItemDetails([id]),
     getOrderDeptStatus(id),
     listDeptCompletions([id]),
+    listTargetRevisions(id),
   ]);
   if (!detail) notFound();
   // A department that has nothing to do with this order cannot reach it by
@@ -54,6 +56,7 @@ export default async function OrderOverviewPage({
       status={status}
       completions={completions}
       role={user.role}
+      targetRevisions={targetRevisions}
     />
   );
 }

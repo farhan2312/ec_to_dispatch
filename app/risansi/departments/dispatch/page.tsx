@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { canEditChild, canEditSection } from "@/lib/roles";
 import {
   listOrdersForBillingPage,
+  parseQueueSort,
   resolveFocusOrderId,
   listDeptCompletions,
   listOrderListOptions,
@@ -46,6 +47,7 @@ export default async function DispatchWorkspacePage({
       page: parsePage(page),
       search: parseQuery(q),
       focusOrderId,
+      sort: parseQueueSort(params.sort),
       filter,
       // Nothing to send before Assembly & Packing files a packing slip.
       onlyPacked: true,

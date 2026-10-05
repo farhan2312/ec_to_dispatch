@@ -2,13 +2,18 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { BellRing, ChevronDown, Clock } from "lucide-react";
+import { AlertTriangle, BellRing, Clock } from "lucide-react";
 import type { ReminderRow, ReminderTier } from "@/lib/reminders";
 
 const TIER_STYLE: Record<
   ReminderTier,
   { label: string; chip: string; dot: string }
 > = {
+  overdue: {
+    label: "Overdue",
+    chip: "bg-rose-100 text-rose-800 ring-rose-300",
+    dot: "bg-rose-600",
+  },
   "24h": {
     label: "Within 24h",
     chip: "bg-rose-50 text-rose-700 ring-rose-200",
@@ -37,7 +42,8 @@ function formatDate(value: string): string {
 }
 
 function dueText(daysLeft: number): string {
-  if (daysLeft <= 0) return "Due today";
+  if (daysLeft < 0) return `Overdue by ${-daysLeft} day${daysLeft === -1 ? "" : "s"}`;
+  if (daysLeft === 0) return "Due today";
   if (daysLeft === 1) return "Due tomorrow";
   return `Due in ${daysLeft} days`;
 }
@@ -51,49 +57,72 @@ function dueText(daysLeft: number): string {
 export function RemindersPanel({
   reminders,
   showDepartment = false,
+  showClient = true,
 }: {
   reminders: ReminderRow[];
   showDepartment?: boolean;
+  /** Off for departments not shown client details (Planning, Assembly). */
+  showClient?: boolean;
 }) {
-  const [open, setOpen] = useState(true);
+  // Closed until asked for: the queue is the work. Two buttons — what is
+  // coming due, and what is already past — each opening its own list.
+  const [open, setOpen] = useState<"upcoming" | "overdue" | null>(null);
 
   if (reminders.length === 0) return null;
 
-  const critical = reminders.filter((r) => r.tier === "24h").length;
+  const overdue = reminders.filter((r) => r.tier === "overdue");
+  const upcoming = reminders.filter((r) => r.tier !== "overdue");
+  const critical = upcoming.filter((r) => r.tier === "24h").length;
+  const shown = open === "overdue" ? overdue : open === "upcoming" ? upcoming : [];
+  const toggle = (which: "upcoming" | "overdue") => setOpen((prev) => (prev === which ? null : which));
 
   return (
-    <div className="mb-6 overflow-hidden rounded-xl border border-card-border bg-surface shadow-sm">
-      <button
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        aria-expanded={open}
-        className="flex w-full items-center gap-2.5 border-b border-card-border px-5 py-3.5 text-left transition-colors hover:bg-background/60"
-      >
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600">
-          <BellRing className="h-4 w-4" />
-        </span>
-        <div className="flex-1">
-          <p className="text-sm font-semibold text-foreground">Reminders</p>
-          <p className="text-xs text-muted">
-            {reminders.length} upcoming deadline
-            {reminders.length === 1 ? "" : "s"}
-            {critical > 0 ? ` · ${critical} due within 24h` : ""}
-          </p>
-        </div>
-        <ChevronDown
-          className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${
-            open ? "rotate-180" : ""
+    <div className="mb-6">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => toggle("upcoming")}
+          aria-pressed={open === "upcoming"}
+          disabled={upcoming.length === 0}
+          className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors disabled:opacity-50 ${
+            open === "upcoming"
+              ? "border-amber-300 bg-amber-50 text-amber-800"
+              : "border-input-border bg-surface text-foreground hover:bg-background"
           }`}
-        />
-      </button>
+        >
+          <BellRing className="h-4 w-4 text-amber-600" />
+          Reminders
+          <span className="rounded-full bg-amber-100 px-1.5 text-xs font-semibold text-amber-800">
+            {upcoming.length}
+          </span>
+          {critical > 0 && <span className="text-xs text-rose-600">· {critical} within 24h</span>}
+        </button>
+        <button
+          type="button"
+          onClick={() => toggle("overdue")}
+          aria-pressed={open === "overdue"}
+          disabled={overdue.length === 0}
+          className={`inline-flex h-9 items-center gap-2 rounded-lg border px-3 text-sm font-medium transition-colors disabled:opacity-50 ${
+            open === "overdue"
+              ? "border-rose-300 bg-rose-50 text-rose-800"
+              : "border-input-border bg-surface text-foreground hover:bg-background"
+          }`}
+        >
+          <AlertTriangle className="h-4 w-4 text-rose-600" />
+          Overdue
+          <span className="rounded-full bg-rose-100 px-1.5 text-xs font-semibold text-rose-800">
+            {overdue.length}
+          </span>
+        </button>
+      </div>
 
-      {open && (
-        <ul className="divide-y divide-card-border">
-          {reminders.map((r) => {
+      {shown.length > 0 && (
+        <ul className="mt-2 divide-y divide-card-border overflow-hidden rounded-xl border border-card-border bg-surface shadow-sm">
+          {shown.map((r) => {
             const style = TIER_STYLE[r.tier];
             return (
               <li
-                key={`${r.id}-${r.dept}`}
+                key={`${r.id}-${r.dept}-${r.ec_no ?? ""}`}
                 className="flex flex-col gap-2 px-5 py-3 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="flex min-w-0 items-start gap-3">
@@ -112,7 +141,7 @@ export function RemindersPanel({
                     <p className="truncate text-xs text-muted">
                       #{r.sl_no} · {r.so_no ?? "—"}
                       {r.ec_no ? ` · ${r.ec_no}` : ""}
-                      {r.client_name ? ` · ${r.client_name}` : ""}
+                      {showClient && r.client_name ? ` · ${r.client_name}` : ""}
                     </p>
                   </div>
                 </div>

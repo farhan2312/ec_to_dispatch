@@ -100,7 +100,7 @@ export default async function PlanningWorkspacePage({
         </div>
       </div>
 
-      <RemindersPanel reminders={reminders} />
+      <RemindersPanel reminders={reminders} showClient={false} />
 
       <DepartmentWorkspace
         completions={completions}

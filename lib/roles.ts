@@ -79,6 +79,14 @@ export function canCreateOrders(role: string): boolean {
 }
 
 /** Payment holds escalate to Central Visibility (and Admin). */
+/**
+ * Who the customer is does not change what Planning or Assembly & Packing do
+ * — they work to dates and statuses — so they are not shown client details.
+ */
+export function canSeeClient(role: string): boolean {
+  return role !== "planning" && role !== "assembly";
+}
+
 export function canSeeEscalations(role: string): boolean {
   return role === "admin" || role === "central_visibility";
 }

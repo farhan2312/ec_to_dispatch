@@ -4,6 +4,7 @@ import { PenTool } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
 import { listItemsForSectionPage,
+  parseQueueSort,
   resolveFocusOrderId,
   listDeptCompletions,
   listOrderListOptions,
@@ -57,7 +58,7 @@ export default async function DrawingWorkspacePage({
         from: f.from ?? ("orders" as const),
       }))
     ,
-      { page: parsePage(page), search: parseQuery(q), focusOrderId, filter }
+      { page: parsePage(page), search: parseQuery(q), focusOrderId, filter, sort: parseQueueSort(params.sort) }
     ),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
     listOrderListOptions(),

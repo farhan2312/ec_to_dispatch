@@ -22,7 +22,7 @@ import {
   type ChildTable,
   type OrderField,
 } from "@/lib/order-schema";
-import { canAccessDepartment, canCreateOrders, isCentral } from "@/lib/roles";
+import { canAccessDepartment, canCreateOrders, canSeeClient, isCentral } from "@/lib/roles";
 import type { TargetRevision } from "@/lib/target-dates";
 import { ItemSections } from "./item-sections";
 import { SoSections } from "./so-sections";
@@ -253,11 +253,13 @@ export function OrderOverview({
                 <AllDoneChip label="All departments done" />
               )}
             </div>
-            <p className="mt-0.5 text-sm text-muted">
-              {str(order.client_name) || "—"}
-              {str(order.client_code) ? ` · ${str(order.client_code)}` : ""}
-              {str(order.reps) ? ` · ${str(order.reps)}` : ""}
-            </p>
+            {canSeeClient(role) && (
+              <p className="mt-0.5 text-sm text-muted">
+                {str(order.client_name) || "—"}
+                {str(order.client_code) ? ` · ${str(order.client_code)}` : ""}
+                {str(order.reps) ? ` · ${str(order.reps)}` : ""}
+              </p>
+            )}
             <div className="mt-2 flex flex-wrap gap-1.5">
               {[
                 str(order.order_type),

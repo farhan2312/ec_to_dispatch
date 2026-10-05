@@ -12,6 +12,7 @@ import {
 } from "@/lib/roles";
 import {
   listItemsForSectionPage,
+  parseQueueSort,
   listQcDocumentCounts,
   resolveFocusOrderId,
   listDeptCompletions,
@@ -67,7 +68,7 @@ export default async function QcWorkspacePage({
         from: f.from ?? ("orders" as const),
       }))
     ,
-      { page: parsePage(page), search: parseQuery(q), focusOrderId, filter }
+      { page: parsePage(page), search: parseQuery(q), focusOrderId, filter, sort: parseQueueSort(params.sort) }
     ),
     listQcDocumentCounts("order_qc_documents"),
     listQcDocumentCounts("order_qc_requirement_documents"),

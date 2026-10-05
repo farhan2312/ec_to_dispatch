@@ -4,6 +4,7 @@ import { Wallet } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditSection } from "@/lib/roles";
 import { listOrdersForSectionPage,
+  parseQueueSort,
   resolveFocusOrderId,
   listDeptCompletions,
   listOrderListOptions,
@@ -48,7 +49,7 @@ export default async function AccountsWorkspacePage({
     listOrdersForSectionPage(
       TABLE,
       PAYMENT_TERMS_CONTEXT_FIELDS.map((f) => ({ column: f.column, type: f.type })),
-      { page: parsePage(page), search: parseQuery(q), focusOrderId, filter }
+      { page: parsePage(page), search: parseQuery(q), focusOrderId, filter, sort: parseQueueSort(params.sort) }
     ),
     listOrderListOptions(),
   ]);

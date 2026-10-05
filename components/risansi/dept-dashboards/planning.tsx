@@ -68,7 +68,6 @@ export function PlanningDashboard(props: DeptDashboardProps) {
           c.sl,
           c.so,
           c.ec,
-          c.client,
           c.zone,
           c.status,
           // c.target already resolves to the revised date where there is one;

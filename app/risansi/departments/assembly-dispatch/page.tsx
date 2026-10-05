@@ -4,6 +4,7 @@ import { Boxes } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
 import { listItemsForSectionPage,
+  parseQueueSort,
   resolveFocusOrderId,
   listDeptCompletions,
   listOrderListOptions,
@@ -54,7 +55,14 @@ export default async function AssemblyDispatchWorkspacePage({
         from: f.from ?? ("orders" as const),
       }))
     ,
-      { page: parsePage(page), search: parseQuery(q), focusOrderId, filter }
+      {
+        page: parsePage(page),
+        search: parseQuery(q),
+        focusOrderId,
+        filter,
+        // By ready date (Planning's readiness date, which a Spare's lots keep).
+        sort: parseQueueSort(params.sort),
+      }
     ),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),
     listOrderListOptions(),
@@ -89,7 +97,7 @@ export default async function AssemblyDispatchWorkspacePage({
         </div>
       </div>
 
-      <RemindersPanel reminders={reminders} />
+      <RemindersPanel reminders={reminders} showClient={false} />
 
       <DepartmentWorkspace
         completions={completions}

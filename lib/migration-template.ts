@@ -91,7 +91,7 @@ function noteFor(field: OrderField): string {
   }
   for (const d of field.dependsOn ?? []) {
     const when = Array.isArray(d.value) ? d.value.join(" / ") : d.value;
-    lines.push(`Only when ${d.column.replace(/_/g, " ")} = ${when}`);
+    lines.push(`Only when ${d.column.replace(/_/g, " ")} ${d.not ? "is not" : "="} ${when}`);
   }
   if (field.centralOnly) lines.push("Filled by Central Visibility");
   return lines.join("\n");

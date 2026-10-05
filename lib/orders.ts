@@ -38,6 +38,7 @@ import {
 } from "@/lib/pagination";
 import {
   CHILD_FIELDS,
+  READY_LOT_LIMIT,
   coerceField,
   SECTION_BY_TABLE,
   type ChildTable,
@@ -128,6 +129,9 @@ export type NewOrderInput = {
   industry_type?: string;
   order_type?: string;
   bill_type?: string;
+  bill_mode?: string;
+  complaint_no?: string;
+  complaint_date?: string;
   boi?: string;
   qc_required?: string;
   quotation_no?: string;
@@ -236,12 +240,14 @@ export async function createOrder(
           total_quantity, drg_target_date, dispatch_target_date,
           dispatch_target_revised_date, qc_doc_target_date, purchase_target_date,
           packing_details_required, dispatch_team_target_date, so_handover_date,
-          payment_terms_remarks, order_value_inr
+          payment_terms_remarks, order_value_inr, bill_mode,
+          complaint_no, complaint_date
        ) VALUES (
           -- The next free number, under the lock above.
           (SELECT COALESCE(max(sl_no), 0) + 1 FROM orders),
           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
-          $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35
+          $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,
+          $37,$38
        )
        RETURNING id, sl_no::int AS sl_no`,
       [
@@ -283,6 +289,9 @@ export async function createOrder(
         (input.order_currency ?? "INR").toUpperCase() === "INR"
           ? null
           : toNumeric(input.order_value_inr),
+        nullify(input.bill_mode),
+        nullify(input.complaint_no),
+        nullify(input.complaint_date),
       ]
     );
     return result.rows[0];
@@ -455,6 +464,8 @@ export type OrderDetail = {
   order_payment_terms: Row[];
   order_billing_docs: Row[];
   order_invoices: Row[];
+  /** The SO's packing slips (both kinds); an older one may name its EC. */
+  order_packing_slips: Row[];
   items: Row[];
 };
 
@@ -481,6 +492,11 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
         COALESCE((SELECT jsonb_agg((to_jsonb(inv) - 'lr_file_data') ORDER BY inv.seq)
                   FROM order_invoices inv WHERE inv.order_id = o.id),
                  '[]'::jsonb) AS order_invoices,
+        COALESCE((SELECT jsonb_agg(to_jsonb(ps) || jsonb_build_object(
+                    'ec_no', (SELECT si.ec_no FROM order_items si WHERE si.id = ps.item_id))
+                  ORDER BY ps.seq)
+                    FROM order_packing_slips ps WHERE ps.order_id = o.id),
+                 '[]'::jsonb) AS order_packing_slips,
         -- EC items only. Dispatch status is NOT aliased in here: it's an
         -- SO-level value (o.dispatch_status above), and copying it onto every
         -- EC made identical values look per-EC.
@@ -516,6 +532,7 @@ export type ItemDetail = {
   order_billing_docs: Row[];
   order_packing_slips: Row[];
   order_drawing_revisions: Row[];
+  order_ready_lots: Row[];
 };
 
 const ITEM_DETAIL_SELECT = `
@@ -537,7 +554,9 @@ const ITEM_DETAIL_SELECT = `
     COALESCE((SELECT jsonb_agg(to_jsonb(ps) ORDER BY ps.seq)
               FROM order_packing_slips ps WHERE ps.item_id = it.id), '[]'::jsonb) AS order_packing_slips,
     COALESCE((SELECT jsonb_agg(to_jsonb(rv) || jsonb_build_object('doc_count', (SELECT count(*) FROM order_drawing_documents dd WHERE dd.revision_id = rv.id)) ORDER BY rv.seq)
-              FROM order_drawing_revisions rv WHERE rv.item_id = it.id), '[]'::jsonb) AS order_drawing_revisions
+              FROM order_drawing_revisions rv WHERE rv.item_id = it.id), '[]'::jsonb) AS order_drawing_revisions,
+    COALESCE((SELECT jsonb_agg(to_jsonb(rl) ORDER BY rl.seq)
+              FROM order_ready_lots rl WHERE rl.item_id = it.id), '[]'::jsonb) AS order_ready_lots
    FROM order_items it
    JOIN orders o                        ON o.id  = it.order_id
    LEFT JOIN order_billing b            ON b.order_id  = o.id
@@ -604,6 +623,7 @@ export type OrderExportRow = {
   order_payment_terms: Row[];
   order_billing_docs: Row[];
   order_invoices: Row[];
+  order_packing_slips: Row[];
   items: OrderExportItem[];
 };
 
@@ -629,6 +649,11 @@ export async function listOrderExports(
             COALESCE((SELECT jsonb_agg((to_jsonb(inv) - 'lr_file_data') ORDER BY inv.seq)
                         FROM order_invoices inv WHERE inv.order_id = o.id),
                      '[]'::jsonb) AS order_invoices,
+            COALESCE((SELECT jsonb_agg(to_jsonb(ps) || jsonb_build_object(
+                        'ec_no', (SELECT si.ec_no FROM order_items si WHERE si.id = ps.item_id))
+                      ORDER BY ps.seq)
+                        FROM order_packing_slips ps WHERE ps.order_id = o.id),
+                     '[]'::jsonb) AS order_packing_slips,
             COALESCE((
               SELECT jsonb_agg(jsonb_build_object(
                        'item', to_jsonb(it) - 'order_copy_file_data',
@@ -750,6 +775,111 @@ export async function updateOrderSection(
   }
 }
 
+/**
+ * Replace a Spare EC's readiness lots, and — when there are any — make the
+ * latest one its Actual Spare Status and Readiness Date. One transaction, so
+ * the status never disagrees with its lots. The lots are validated by the
+ * caller (lib/ready-lots.ts).
+ */
+export async function saveReadyLots(
+  itemId: string,
+  lots: { status: string; ready_date: string }[]
+): Promise<void> {
+  if (!UUID_RE.test(itemId)) return;
+  await withTransaction(async (c) => {
+    // Lot by lot in place, so what Assembly & Packing recorded against a lot
+    // (its packing date) stays with it; a lot whose status changes carries
+    // its packing status along.
+    const existing = await c.query<{ id: string }>(
+      `SELECT id FROM order_ready_lots WHERE item_id = $1 ORDER BY seq`,
+      [itemId]
+    );
+    for (let i = 0; i < lots.length; i++) {
+      const lot = lots[i];
+      const id = existing.rows[i]?.id;
+      if (id) {
+        await c.query(
+          `UPDATE order_ready_lots
+              SET status = $2, ready_date = $3,
+                  packing_status = CASE WHEN packed_date IS NULL THEN NULL
+                                        WHEN $2 = 'Fully ready' THEN 'Fully packed'
+                                        ELSE 'Partially packed' END
+            WHERE id = $1`,
+          [id, lot.status, lot.ready_date]
+        );
+      } else {
+        await c.query(
+          `INSERT INTO order_ready_lots (item_id, status, ready_date) VALUES ($1, $2, $3)`,
+          [itemId, lot.status, lot.ready_date]
+        );
+      }
+    }
+    const extra = existing.rows.slice(lots.length).map((r) => r.id);
+    if (extra.length > 0) {
+      await c.query(`DELETE FROM order_ready_lots WHERE id = ANY($1::uuid[])`, [extra]);
+    }
+    await syncPackedFromLots(c, itemId);
+    const last = lots[lots.length - 1];
+    if (last) {
+      await c.query(
+        `INSERT INTO order_planning (item_id, actual_spare_status, planning_readiness_date)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (item_id) DO UPDATE
+            SET actual_spare_status = EXCLUDED.actual_spare_status,
+                planning_readiness_date = EXCLUDED.planning_readiness_date`,
+        [itemId, last.status, last.ready_date]
+      );
+    }
+  });
+}
+
+/**
+ * Record when Assembly & Packing packed each readiness lot of a Spare EC. The
+ * packing status follows the lot: Partial ready → Partially packed, Fully
+ * ready → Fully packed. Only the lots of this EC are touched.
+ */
+export async function saveLotPacking(
+  itemId: string,
+  entries: { id: string; packed_date: string }[]
+): Promise<void> {
+  if (!UUID_RE.test(itemId)) return;
+  await withTransaction(async (c) => {
+    for (const e of entries) {
+      if (!UUID_RE.test(e.id)) continue;
+      await c.query(
+        `UPDATE order_ready_lots
+            SET packed_date = NULLIF($3, '')::date,
+                packing_status = CASE WHEN NULLIF($3, '') IS NULL THEN NULL
+                                      WHEN status = 'Fully ready' THEN 'Fully packed'
+                                      ELSE 'Partially packed' END
+          WHERE id = $1 AND item_id = $2`,
+        [e.id, itemId, e.packed_date]
+      );
+    }
+    await syncPackedFromLots(c, itemId);
+  });
+}
+
+/**
+ * A Spare EC is packed when a lot is Fully packed: its Actual Material Packing
+ * Date is that lot's date — the one every "packed" check, alert and Dispatch's
+ * ready shortlist already reads. With lots but none Fully packed, it is not
+ * packed yet. An EC without lots is left alone.
+ */
+async function syncPackedFromLots(c: PoolClient, itemId: string): Promise<void> {
+  await c.query(
+    `WITH l AS (
+       SELECT count(*) AS n,
+              max(packed_date) FILTER (WHERE packing_status = 'Fully packed') AS packed
+         FROM order_ready_lots WHERE item_id = $1
+     )
+     INSERT INTO order_assembly_dispatch (item_id, actual_packing_date)
+     SELECT $1, l.packed FROM l WHERE l.n > 0
+     ON CONFLICT (item_id) DO UPDATE SET actual_packing_date = EXCLUDED.actual_packing_date`,
+    [itemId]
+  );
+}
+
 /** Recompute the SO's accounts balance from order value and amount received. */
 async function recomputeAccountsBalance(orderId: string): Promise<void> {
   if (!UUID_RE.test(orderId)) return;
@@ -768,8 +898,10 @@ export const CHILD_PARENT_COLUMN: Record<ChildTable, "order_id" | "item_id"> = {
   order_payment_terms: "order_id",
   order_lots: "item_id",
   order_boi_items: "item_id",
-  order_packing_slips: "item_id",
+  // Packing slips belong to the SO (an older slip may still name its EC).
+  order_packing_slips: "order_id",
   order_drawing_revisions: "item_id",
+  order_ready_lots: "item_id",
   order_billing_docs: "order_id",
   order_invoices: "order_id",
 };
@@ -784,6 +916,14 @@ export async function addChildRow(
   kind?: string
 ): Promise<{ id: string } | null> {
   const keyCol = CHILD_PARENT_COLUMN[table];
+  // A Spare is readied in at most three lots.
+  if (table === "order_ready_lots") {
+    const n = await query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM order_ready_lots WHERE item_id = $1`,
+      [parentId]
+    );
+    if ((n.rows[0]?.n ?? 0) >= READY_LOT_LIMIT) return null;
+  }
   const useKind = table === "order_packing_slips" && kind;
   const result = await query<{ id: string }>(
     useKind
@@ -929,10 +1069,10 @@ export async function upsertInvoiceFromPackingSlip(
     quantity: number | null;
   }>(
     `WITH src AS (
-       SELECT it.order_id, it.id AS item_id, it.ec_no,
+       SELECT ps.order_id, ps.item_id,
+              (SELECT it.ec_no FROM order_items it WHERE it.id = ps.item_id) AS ec_no,
               ps.id AS slip_id, ps.packing_slip_no, ps.quantity
          FROM order_packing_slips ps
-         JOIN order_items it ON it.id = ps.item_id
         WHERE ps.id = $1 AND ps.kind = 'actual'
      ),
      up AS (
@@ -1025,6 +1165,13 @@ export async function setOrderStatus(input: {
  */
 export async function applyUsdConversion(orderId: string, rate: number | null): Promise<void> {
   if (!UUID_RE.test(orderId)) return;
+  // A Spare has no bought-out items and no quality documents.
+  await query(
+    `UPDATE orders SET boi = 'No', qc_required = 'No'
+      WHERE id = $1 AND order_type = 'Spare'
+        AND (boi IS DISTINCT FROM 'No' OR qc_required IS DISTINCT FROM 'No')`,
+    [orderId]
+  );
   // A Challan carries no value: 0 INR, whatever was typed.
   await query(
     `UPDATE orders
@@ -1366,6 +1513,10 @@ export type OrderOverviewRow = {
   // Assembly & Packing is per EC, like the four above it — the Departments
   // popup shows all five side by side, and the pipeline matches it.
   assembly_done: boolean;
+  /** Where the EC stands for Assembly & Packing (see ASSEMBLY_STATE_SQL). */
+  assembly_state: string | null;
+  /** Packed for Dispatch's purposes — a packing slip filed, or an EC packed. */
+  so_packed: boolean;
   dispatch_status: string | null;
   // Each department's own deadline, so the pipeline can show a status beside
   // the date it is being judged against. All live on the SO — one target
@@ -1455,6 +1606,8 @@ const overviewColumns = () => `it.id,
                      NULLIF(pl.actual_spare_status, ''),
                      NULLIF(pl.planning_status, '')) AS planning_status,
             (ad.actual_packing_date IS NOT NULL) AS assembly_done,
+            CASE WHEN it.id IS NULL THEN NULL ELSE ${ASSEMBLY_STATE_SQL("it")} END AS assembly_state,
+            ${SO_PACKED_SQL("o")} AS so_packed,
             ${DISPATCH_STATUS} AS dispatch_status,
             o.payment_terms,
             ${AFTER_RECEIPT_ONLY} AS after_receipt_only,
@@ -1675,6 +1828,9 @@ export async function listItemsForSection(
   if (deptForTable(table) === "drawing") {
     clauses.push(`NOT (${spareEcSql("it", "o")})`);
   }
+  if (deptForTable(table) === "assembly") {
+    clauses.push(SPARE_READY_FOR_ASSEMBLY("it"));
+  }
   if (orderIds) clauses.push(`it.order_id = ANY($1)`);
   const whereSql = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
 
@@ -1698,6 +1854,21 @@ export async function listItemsForSection(
                         WHERE rv.item_id = it.id),
                       '[]'::jsonb) AS child_rows`
         : "";
+  const soChildSelect =
+    section.soChild?.table === "order_packing_slips"
+      ? `, o.market_type, o.packing_details_required,
+         COALESCE((SELECT jsonb_agg(to_jsonb(ps) ORDER BY ps.seq)
+                     FROM order_packing_slips ps
+                    WHERE ps.order_id = it.order_id
+                      AND ps.kind = '${section.soChild.kind === "tentative" ? "tentative" : "actual"}'),
+                  '[]'::jsonb) AS so_child_rows`
+      : "";
+  const readyLotsSelect =
+    table === "order_planning" || table === "order_assembly_dispatch"
+      ? `, COALESCE((SELECT jsonb_agg(to_jsonb(rl) ORDER BY rl.seq)
+                     FROM order_ready_lots rl WHERE rl.item_id = it.id),
+                  '[]'::jsonb) AS ready_lots`
+      : "";
 
   const result = await query<Row>(
     `SELECT it.id,
@@ -1708,7 +1879,7 @@ export async function listItemsForSection(
             it.ec_no,
             it.item_type,
             o.client_name
-            ${childSelect}${detailSelects ? `,\n            ${detailSelects}` : ""}${contextSelects}
+            ${childSelect}${soChildSelect}${readyLotsSelect}${detailSelects ? `,\n            ${detailSelects}` : ""}${contextSelects}
        FROM order_items it
        JOIN orders o ON o.id = it.order_id
        LEFT JOIN ${table} d ON d.item_id = it.id
@@ -1943,13 +2114,46 @@ const QC_SUBMITTED = `EXISTS (SELECT 1 FROM order_qc q
  * Dispatch can act on today. Reads Assembly & Packing's own packing date, so
  * the two departments agree on what "packed" means.
  */
-const READY_TO_DISPATCH = `(EXISTS (SELECT 1 FROM order_items it2
-                                     JOIN order_assembly_dispatch ad2
-                                       ON ad2.item_id = it2.id
-                                    WHERE it2.order_id = o.id
-                                      AND ad2.actual_packing_date IS NOT NULL)
+/**
+ * The SO has been packed, as far as Dispatch is concerned: Assembly & Packing
+ * has filed a packing slip for it (the slip is what raises Dispatch's card),
+ * or packed one of its ECs. Dispatch works the SO, not the EC.
+ */
+const SO_PACKED_SQL = (o: string) => `(EXISTS (SELECT 1 FROM order_packing_slips sps
+                    WHERE sps.order_id = ${o}.id AND sps.kind = 'actual'
+                      AND (NULLIF(btrim(sps.packing_slip_no), '') IS NOT NULL
+                           OR sps.packing_slip_date IS NOT NULL))
+         OR EXISTS (SELECT 1 FROM order_items it2
+                      JOIN order_assembly_dispatch ad2 ON ad2.item_id = it2.id
+                     WHERE it2.order_id = ${o}.id AND ad2.actual_packing_date IS NOT NULL))`;
+
+const READY_TO_DISPATCH = `(${SO_PACKED_SQL("o")}
                             AND lower(${orderStatusSql("o")}) <> 'fully dispatch'
                             AND ${orderOpenSql("o")})`;
+
+/**
+ * Where an EC stands for Assembly & Packing. A Spare with readiness lots is
+ * its latest lot: "Partial ready" / "Fully ready" until packed, then
+ * "Partially packed" / "Fully packed". Otherwise "Fully packed" once the
+ * packing date is in, else "Pending". One expression, so the status column,
+ * the filter and the dashboards agree.
+ */
+export const ASSEMBLY_STATE_SQL = (it: string) => `(CASE
+    WHEN EXISTS (SELECT 1 FROM order_ready_lots asl WHERE asl.item_id = ${it}.id)
+      THEN (SELECT COALESCE(asl.packing_status, asl.status) FROM order_ready_lots asl
+             WHERE asl.item_id = ${it}.id ORDER BY asl.seq DESC LIMIT 1)
+    WHEN EXISTS (SELECT 1 FROM order_assembly_dispatch asd
+                  WHERE asd.item_id = ${it}.id AND asd.actual_packing_date IS NOT NULL)
+      THEN 'Fully packed'
+    ELSE 'Pending' END)`;
+
+/**
+ * An EC Assembly & Packing works on: any Pump, and a Spare only once Planning
+ * has a readiness lot for it (Partial or Fully ready).
+ */
+const SPARE_READY_FOR_ASSEMBLY = (it: string) =>
+  `(NOT (${spareEcSql(it, "o")})
+     OR EXISTS (SELECT 1 FROM order_ready_lots rl WHERE rl.item_id = ${it}.id))`;
 
 const PACKED = `EXISTS (SELECT 1 FROM order_assembly_dispatch ad
                         WHERE ad.item_id = it.id
@@ -2029,7 +2233,8 @@ function ecState(dept: DeptFilterKey, status: string): string {
     case "planning":
       return status === PENDING ? `NOT ${PLANNING_ANY}` : planningIs(status);
     default:
-      return status === "Packed" ? PACKED : `NOT ${PACKED}`;
+      // Assembly & Packing: the same reading as its status column.
+      return `${ASSEMBLY_STATE_SQL("it")} = ${lit(status === "Packed" ? "Fully packed" : status)}`;
   }
 }
 
@@ -2473,7 +2678,10 @@ export async function listItemsForSectionPage(
     page: opts.page,
     search: opts.search,
     focusOrderId: opts.focusOrderId ?? null,
-    restrict: `${restrict} AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id)`,
+    restrict:
+      dept === "assembly"
+        ? `${restrict} AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id AND ${SPARE_READY_FOR_ASSEMBLY("s")})`
+        : `${restrict} AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id)`,
     searchable: soAndEcSearch,
     filter: opts.filter,
   });
@@ -2651,6 +2859,7 @@ export async function getOrderDeptStatus(
     qc_submitted: boolean;
     planning: string | null;
     packed: boolean;
+    assembly_state: string | null;
     packing_date: string | null;
   }>(
     `SELECT it.id, it.ec_no, it.item_type, o.boi,
@@ -2675,6 +2884,7 @@ export async function getOrderDeptStatus(
                      NULLIF(pl.actual_spare_status, ''),
                      NULLIF(pl.planning_status, '')) AS planning,
             (ad.actual_packing_date IS NOT NULL) AS packed,
+            ${ASSEMBLY_STATE_SQL("it")} AS assembly_state,
             to_char(ad.actual_packing_date, 'YYYY-MM-DD') AS packing_date
        FROM order_items it
        JOIN orders o ON o.id = it.order_id
@@ -2704,7 +2914,9 @@ export async function getOrderDeptStatus(
           ? done("Submitted")
           : pending(),
     planning: r.planning ? done(r.planning) : pending(),
-    assembly: r.packed ? done(`Packed`) : pending(),
+    assembly: r.packed
+      ? done(r.assembly_state || "Fully packed")
+      : pending(r.assembly_state && r.assembly_state !== "Pending" ? r.assembly_state : "Pending"),
   }));
 
   const isChallan = String(head.bill_type ?? "") === "Challan";

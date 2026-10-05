@@ -11,6 +11,7 @@ import {
   type DeptKey,
 } from "@/lib/dept-completion";
 import { ConfirmDialog } from "./confirm-dialog";
+import { SIGN_OFF_ENABLED } from "@/lib/dept-completion";
 
 function formatDate(value: string): string {
   const d = new Date(value);
@@ -29,7 +30,12 @@ function formatDate(value: string): string {
  * count is frozen — so it confirms first, and the dialog says what will be
  * recorded. Unticking confirms too, since reopening discards that number.
  */
-export function DeptCompleteCheck({
+/** The Complete control — nothing while sign-offs are switched off. */
+export function DeptCompleteCheck(props: Parameters<typeof CompleteCheck>[0]) {
+  return SIGN_OFF_ENABLED ? <CompleteCheck {...props} /> : null;
+}
+
+function CompleteCheck({
   scopeId,
   dept,
   label,

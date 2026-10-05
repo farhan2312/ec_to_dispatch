@@ -9,6 +9,7 @@ import type { NewOrderInput } from "@/lib/orders";
 import type { MarketIntellClient } from "@/lib/market-intell";
 import { ClientLookup } from "./client-lookup";
 import {
+  BILL_MODE_OPTIONS,
   BILL_TYPE_OPTIONS,
   CURRENCY_OPTIONS,
   ORDER_TYPE_OPTIONS,
@@ -22,7 +23,8 @@ type Field = {
   label: string;
   type: FieldType;
   options?: { value: string; label: string }[];
-  dependsOn?: { name: keyof NewOrderInput; value: string };
+  // With `not`, the field applies unless the other field holds the value.
+  dependsOn?: { name: keyof NewOrderInput; value: string; not?: boolean };
   required?: boolean;
   // Lowest value a number accepts — the browser blocks the submit below it,
   // and createOrderAction refuses it regardless.
@@ -55,14 +57,23 @@ const SECTIONS: Section[] = [
         options: ORDER_TYPE_OPTIONS,
       },
       {
+        name: "bill_mode",
+        label: "Bill Mode",
+        type: "select",
+        options: BILL_MODE_OPTIONS,
+      },
+      {
         name: "bill_type",
         label: "Bill Type",
         type: "select",
         options: BILL_TYPE_OPTIONS,
       },
-      { name: "quotation_no", label: "Quotation No.", type: "text" },
-      { name: "po_no", label: "Purchase Order Number", type: "text" },
-      { name: "customer_po_date", label: "Purchase Order Date", type: "date" },
+      // An FR stands on a complaint, with no quotation or purchase order.
+      { name: "complaint_no", label: "Complaint No.", type: "text", dependsOn: { name: "bill_mode", value: "FR" } },
+      { name: "complaint_date", label: "Complaint Date", type: "date", dependsOn: { name: "bill_mode", value: "FR" } },
+      { name: "quotation_no", label: "Quotation No.", type: "text", dependsOn: { name: "bill_mode", value: "FR", not: true } },
+      { name: "po_no", label: "Purchase Order Number", type: "text", dependsOn: { name: "bill_mode", value: "FR", not: true } },
+      { name: "customer_po_date", label: "Purchase Order Date", type: "date", dependsOn: { name: "bill_mode", value: "FR", not: true } },
       {
         name: "order_value",
         label: "Purchase/Sales Order Value (without GST)",
@@ -82,20 +93,23 @@ const SECTIONS: Section[] = [
         label: "Sales Order Total Quantity",
         type: "number",
         min: 0,
+        // A Spare order is counted by value.
+        dependsOn: { name: "order_type", value: "Spare", not: true },
       },
     ],
   },
   {
     title: "Terms & Conditions",
     fields: [
-      { name: "boi", label: "BOI", type: "select", options: YES_NO_OPTIONS },
+      // A Spare has no bought-out items and no quality documents.
+      { name: "boi", label: "BOI", type: "select", options: YES_NO_OPTIONS, dependsOn: { name: "order_type", value: "Spare", not: true } },
       {
         name: "packing_details_required",
         label: "Packing Details Required",
         type: "select",
         options: YES_NO_OPTIONS,
       },
-      { name: "qc_required", label: "Quality Required", type: "select", options: YES_NO_OPTIONS },
+      { name: "qc_required", label: "Quality Required", type: "select", options: YES_NO_OPTIONS, dependsOn: { name: "order_type", value: "Spare", not: true } },
       {
         name: "freight_terms",
         label: "Freight Terms",
@@ -154,11 +168,6 @@ const SECTIONS: Section[] = [
         type: "date",
       },
       { name: "dispatch_target_date", label: "Dispatch Target Date", type: "date" },
-      {
-        name: "dispatch_target_revised_date",
-        label: "Revised Dispatch Target Date",
-        type: "date",
-      },
     ],
   },
 
@@ -300,7 +309,10 @@ export function OrderForm() {
             <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
               {section.fields.map((field) => {
                 const disabled = field.dependsOn
-                  ? (values[field.dependsOn.name] ?? "") !== field.dependsOn.value
+                  ? ((values[field.dependsOn.name] ?? "") === field.dependsOn.value) ===
+                    !field.dependsOn.not
+                    ? false
+                    : true
                   : false;
                 return (
                 <div key={field.name}>

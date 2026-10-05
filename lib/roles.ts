@@ -110,6 +110,7 @@ export function canEditChild(
     | "order_packing_slips"
     | "order_invoices"
     | "order_drawing_revisions"
+    | "order_ready_lots"
 ): boolean {
   // Drawing owns the revision rows; Central Visibility also edits them so it
   // can record approval (the two approval fields are `centralOnly`).
@@ -117,19 +118,16 @@ export function canEditChild(
     return canEditSection(role, "order_drawing") || isCentral(role);
   }
   if (table === "order_boi_items") return canEditSection(role, "order_purchase");
+  // A Spare's readiness lots are Planning's.
+  if (table === "order_ready_lots") return canEditSection(role, "order_planning");
   // The order's payment terms are part of its identity: Central Visibility's.
   if (table === "order_payment_terms") return canEditSection(role, "orders");
   // PIs are Billing's; the invoice-and-despatch cards are Dispatch's.
   if (table === "order_billing_docs") return canEditSection(role, "order_billing");
   if (table === "order_invoices") return canEditSection(role, "order_dispatch");
-  // Packing slips are shared: Planning files the tentative set, Packing the
-  // actual one. Either owner may edit; which rows they see is scoped by kind.
-  if (table === "order_packing_slips") {
-    return (
-      canEditSection(role, "order_planning") ||
-      canEditSection(role, "order_assembly_dispatch")
-    );
-  }
+  // Packing slips are Assembly & Packing's (Planning no longer files a
+  // tentative set).
+  if (table === "order_packing_slips") return canEditSection(role, "order_assembly_dispatch");
   return canEditSection(role, "order_assembly_dispatch");
 }
 

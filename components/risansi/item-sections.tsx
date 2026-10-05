@@ -4,7 +4,10 @@
 // lists — as the forms that own them. Shared by the EC page and the order
 // overview, so a value is edited the same way wherever it is shown.
 
-import { CHILD_FIELDS, ITEM_SECTIONS } from "@/lib/order-schema";
+import {
+  CHILD_FIELDS,
+  ITEM_SECTIONS,
+} from "@/lib/order-schema";
 import {
   canAccessDepartment,
   canCreateOrders,
@@ -109,12 +112,18 @@ export function ItemSections({
                 <EditableSection
                   targetId={itemId}
                   section={section}
-                  data={(detail[
-                    section.table as
-                      | "order_purchase"
-                      | "order_planning"
-                      | "order_assembly_dispatch"
-                  ] as Row | null) ?? null}
+                  // The EC's type rides along: Planning's fields gate on it.
+                  data={{
+                    ...((detail[
+                      section.table as
+                        | "order_purchase"
+                        | "order_planning"
+                        | "order_assembly_dispatch"
+                    ] as Row | null) ?? {}),
+                    item_type: item.item_type,
+                    // A Spare's readiness lots, edited in Planning's form.
+                    ready_lots: detail.order_ready_lots,
+                  }}
                   canEdit={canEditSection(role, section.table)}
                   canEditCentral={central}
                 />
@@ -183,7 +192,15 @@ export function ItemSections({
         const data: Row | null =
           section.table === "order_items"
             ? rawData
-            : { ...(rawData ?? {}), item_type: item.item_type };
+            : {
+                ...(rawData ?? {}),
+                item_type: item.item_type,
+                // A Spare's readiness lots: Planning edits them, Assembly &
+                // Packing records when each was packed.
+                ...(section.table === "order_planning" || section.table === "order_assembly_dispatch"
+                  ? { ready_lots: detail.order_ready_lots }
+                  : {}),
+              };
 
         const documents: DocumentsConfig[] | undefined =
           section.table === "order_qc"

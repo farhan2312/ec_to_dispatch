@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Paperclip, Pencil } from "lucide-react";
 import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
 import {
   canonicalSelectValue,
   dependsOnSatisfied,
+  readyLotsOpen,
   selectOptionsFor,
   withValueRules,
   type OrderField,
@@ -16,6 +17,19 @@ import type { QcDocTable } from "@/lib/orders";
 import type { MarketIntellClient } from "@/lib/market-intell";
 import { QcDocumentsModal } from "./qc-documents-modal";
 import { ClientLookup } from "./client-lookup";
+import { ReadyLotsEditor } from "./ready-lots-editor";
+import {
+  PACKING_LOTS_FIELD,
+  READY_LOTS_FIELD,
+  lotsError,
+  lotsFromRows,
+  lotsSummary,
+  packingError,
+  packingLotsFromRows,
+  type PackingLot,
+  type ReadyLot,
+} from "@/lib/ready-lots";
+import { PackingLotsEditor } from "./packing-lots-editor";
 
 export type DocumentsConfig = {
   table: QcDocTable;
@@ -107,10 +121,26 @@ export function EditableSection({
     Object.fromEntries(section.fields.map((f) => [f.column, seedValue(f, data)]))
   );
 
+  // A Spare's readiness lots live in Planning's form; once there is one, the
+  // status and readiness date are the latest lot's.
+  const spareLots =
+    section.table === "order_planning" &&
+    toInput(data?.item_type).trim().toLowerCase() === "spare";
+  const [lots, setLots] = useState<ReadyLot[]>(() => lotsFromRows(data?.ready_lots));
+  const lotsLead = spareLots ? lotsSummary(editing ? lots : lotsFromRows(data?.ready_lots)) : null;
+
+  // …and Assembly & Packing records when each lot was packed.
+  const spareAssembly =
+    section.table === "order_assembly_dispatch" &&
+    toInput(data?.item_type).trim().toLowerCase() === "spare";
+  const [packLots, setPackLots] = useState<PackingLot[]>(() => packingLotsFromRows(data?.ready_lots));
+
   function startEdit() {
     setValues(
       Object.fromEntries(section.fields.map((f) => [f.column, seedValue(f, data)]))
     );
+    setLots(lotsFromRows(data?.ready_lots));
+    setPackLots(packingLotsFromRows(data?.ready_lots));
     setError(null);
     setEditing(true);
   }
@@ -138,9 +168,29 @@ export function EditableSection({
   }
 
   async function save() {
+    const lotProblem = spareLots ? lotsError(lots) : spareAssembly ? packingError(packLots) : null;
+    if (lotProblem) {
+      setError(lotProblem);
+      return;
+    }
     setSaving(true);
     setError(null);
-    const result = await updateOrderSectionAction(targetId, section.table, values);
+    const lead = spareLots ? lotsSummary(lots) : null;
+    const result = await updateOrderSectionAction(
+      targetId,
+      section.table,
+      spareLots
+        ? {
+            ...values,
+            ...(lead
+              ? { actual_spare_status: lead.status, planning_readiness_date: lead.date }
+              : {}),
+            [READY_LOTS_FIELD]: JSON.stringify(lots),
+          }
+        : spareAssembly
+          ? { ...values, [PACKING_LOTS_FIELD]: JSON.stringify(packLots) }
+          : values
+    );
     setSaving(false);
     if (!result.ok) {
       setError(result.error);
@@ -225,6 +275,13 @@ export function EditableSection({
           "grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
         return (
           <div className="space-y-6">
+            {spareAssembly && (
+              <PackingLotsEditor
+                lots={editing ? packLots : packingLotsFromRows(data?.ready_lots)}
+                onChange={setPackLots}
+                editing={editing}
+              />
+            )}
             {buckets.map((bucket, bi) => (
               <div key={bi}>
                 {bucket.label && (
@@ -237,13 +294,27 @@ export function EditableSection({
                     // readOnly fields are shown here but changed elsewhere —
                     // target dates, for instance, are moved from the Target
                     // Dates panel so every change lands in their history.
+                    // With lots, a Spare's status and readiness date follow
+                    // the latest one.
+                    const fromLots =
+                      !!lotsLead &&
+                      (field.column === "actual_spare_status" ||
+                        field.column === "planning_readiness_date");
                     const fieldEditable =
                       editing &&
+                      !fromLots &&
                       !field.computed &&
                       !field.readOnly &&
                       (!field.centralOnly || canEditCentral);
+                    const lotsHere =
+                      spareLots &&
+                      field.column === "actual_spare_status" &&
+                      (editing
+                        ? lots.length > 0 || readyLotsOpen(values.actual_spare_status)
+                        : lotsFromRows(data?.ready_lots).length > 0);
                     return (
-                      <div key={field.column}>
+                      <Fragment key={field.column}>
+                      <div>
                         <div className="mb-1 flex items-center gap-1.5 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
                           {field.label}
                           {field.centralOnly && !canEditCentral && (
@@ -256,16 +327,29 @@ export function EditableSection({
                               auto
                             </span>
                           )}
+                          {fromLots && (
+                            <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold normal-case text-slate-500">
+                              from lots
+                            </span>
+                          )}
                         </div>
                         {fieldEditable ? (
                           field.type === "select" ? (
                             <select
                               value={values[field.column] ?? ""}
-                              onChange={(e) =>
-                                setValues((prev) =>
-                                  withValueRules(prev, field.column, e.target.value)
-                                )
-                              }
+                              onChange={(e) => {
+                                const next = e.target.value;
+                                setValues((prev) => withValueRules(prev, field.column, next));
+                                // Partial / Fully ready opens Lot 1 with that status.
+                                if (
+                                  spareLots &&
+                                  field.column === "actual_spare_status" &&
+                                  lots.length === 0 &&
+                                  (next === "Partial ready" || next === "Fully ready")
+                                ) {
+                                  setLots([{ status: next, ready_date: "" }]);
+                                }
+                              }}
                               className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
                             >
                               <option value="">—</option>
@@ -298,11 +382,32 @@ export function EditableSection({
                           )
                         ) : (
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px] text-foreground">
-                            <span>{formatDisplay(field, data?.[field.column])}</span>
+                            <span>
+                              {fromLots && lotsLead
+                                ? formatDisplay(
+                                    field,
+                                    field.column === "actual_spare_status"
+                                      ? lotsLead.status
+                                      : lotsLead.date
+                                  )
+                                : formatDisplay(field, data?.[field.column])}
+                            </span>
                             {fieldExtra?.(field)}
                           </div>
                         )}
                       </div>
+                      {lotsHere && (
+                        <div className="col-span-full">
+                          <ReadyLotsEditor
+                            // Fresh each time the form opens, so its lock reads what is saved.
+                            key={editing ? "edit" : "view"}
+                            lots={editing ? lots : lotsFromRows(data?.ready_lots)}
+                            onChange={setLots}
+                            editing={editing}
+                          />
+                        </div>
+                      )}
+                      </Fragment>
                     );
                   })}
                 </div>

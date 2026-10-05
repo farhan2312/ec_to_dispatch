@@ -4,7 +4,12 @@
 // Dispatch — as the forms that own them. Shared by the SO page and the order
 // overview, so a value is edited the same way wherever it is shown.
 
-import { BILLING_DOC_FIELDS, INVOICE_FIELDS, SO_SECTIONS } from "@/lib/order-schema";
+import {
+  BILLING_DOC_FIELDS,
+  CHILD_FIELDS,
+  INVOICE_FIELDS,
+  SO_SECTIONS,
+} from "@/lib/order-schema";
 import { paymentTermsExtra } from "./payment-terms-control";
 import { lockReason } from "@/lib/order-lock";
 import {
@@ -26,15 +31,13 @@ function str(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
-// Header shown at the top of each Dispatch card: the packing-slip
-// context copied from Assembly's actual packing slip. Falls back to a
+// Header shown at the top of each Dispatch card: the SO's packing slip it
+// was raised from — Dispatch works the SO, not its ECs. Falls back to a
 // placeholder when the invoice has no linked slip (should be rare).
 export function invoiceRowHeader(inv: Row): React.ReactNode {
-  const ec = str(inv.ec_no);
   const psn = str(inv.packing_slip_no);
   const qty = str(inv.packing_quantity);
   const parts: string[] = [];
-  if (ec) parts.push(`EC ${ec}`);
   if (psn) parts.push(`Packing Slip ${psn}`);
   if (qty) parts.push(`Qty ${qty}`);
   return parts.length ? parts.join(" · ") : "Awaiting packing slip";
@@ -194,6 +197,34 @@ export function SoSections({
     <>
       {coreSections.map(renderSection)}
       {middle}
+      {/* Assembly & Packing's packing slips belong to the SO, so they are
+          kept here, once, rather than under each EC. */}
+      {canAccessDepartment(role, "order_assembly_dispatch") &&
+        (String(order.market_type ?? "").trim() !== "" ? (
+          <OrderChildList
+            orderId={orderId}
+            table="order_packing_slips"
+            title="Packing slips"
+            fields={CHILD_FIELDS.order_packing_slips}
+            rows={(detail.order_packing_slips ?? []).filter(
+              (r) => String(r.kind ?? "actual") === "actual"
+            )}
+            canEdit={canEditChild(role, "order_packing_slips")}
+            canEditCentral={central}
+            kind="actual"
+            context={{
+              market_type: order.market_type,
+              packing_details_required: order.packing_details_required,
+            }}
+          />
+        ) : (
+          <section className="rounded-xl border border-card-border bg-surface p-6 shadow-sm">
+            <h2 className="font-display text-base font-semibold text-foreground">Packing slips</h2>
+            <p className="mt-1 text-sm text-muted">
+              Set Market Type on this order to record packing slips.
+            </p>
+          </section>
+        ))}
       {otherSections.map(renderSection)}
     </>
   );

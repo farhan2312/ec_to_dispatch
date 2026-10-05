@@ -12,6 +12,8 @@ import {
   ORDER_STATUS_OPTIONS,
   PAYMENT_STATUS_OPTIONS,
   PLANNING_STATUS_VALUES,
+  PUMP_PLANNING_STATUSES,
+  SPARE_PLANNING_STATUSES,
 } from "@/lib/order-schema";
 
 export const DEPT_FILTER_KEYS = [
@@ -54,7 +56,9 @@ const DEPT_STATUSES: Record<DeptFilterKey, string[]> = {
   quality: ["Submitted", PENDING, NOT_APPLICABLE],
   // Whichever of pump/spare/free-text status the EC carries.
   planning: [...PLANNING_STATUS_VALUES, PENDING],
-  assembly: ["Packed", PENDING],
+  // A Spare stands where its latest readiness lot does: ready, then packed.
+  // A Pump is Fully packed once its packing date is in.
+  assembly: ["Partial ready", "Fully ready", "Partially packed", "Fully packed", PENDING],
   // Which one depends on the SO's Bill Type — a Challan order never gets a PI.
   // N/A is the paid-after-receipt case: no PI is due at all.
   billing: ["PI raised", "Challan filed", PENDING, NOT_APPLICABLE],
@@ -76,7 +80,16 @@ export const DEPTS_WITHOUT_PARTY: ReadonlySet<DeptFilterKey> = new Set<DeptFilte
   "assembly",
 ]);
 
-export function statusesFor(dept: DeptFilterKey): string[] {
+/**
+ * A department's statuses. Planning's words differ for a Pump and a Spare, so
+ * with exactly one of those types chosen it offers only that type's.
+ */
+export function statusesFor(dept: DeptFilterKey, types: string[] = []): string[] {
+  if (dept === "planning" && types.length === 1) {
+    const t = types[0].trim().toLowerCase();
+    if (t === "spare") return [...SPARE_PLANNING_STATUSES, PENDING];
+    if (t === "pump" || t === "rolb") return [...PUMP_PLANNING_STATUSES, PENDING];
+  }
   return DEPT_STATUSES[dept];
 }
 

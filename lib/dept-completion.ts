@@ -17,6 +17,14 @@ import {
 import type { OrderTable } from "@/lib/order-schema";
 import type { TargetKey } from "@/lib/target-dates";
 
+
+/**
+ * Whether departments sign their work off by hand ("Complete"). Off for now:
+ * how long each department takes (TAT) will be worked out another way. The
+ * sign-offs already recorded are kept.
+ */
+export const SIGN_OFF_ENABLED = false;
+
 export type DeptKey = DeptFilterKey;
 export { isPerEcDept, DEPT_FILTER_LABELS as DEPT_LABELS };
 

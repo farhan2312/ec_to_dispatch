@@ -29,6 +29,7 @@ import {
   deptInvolvedInOrder,
   saveReadyLots,
   saveLotPacking,
+  listSoEcsForSection,
   applyUsdConversion,
   getOrderStatusState,
   setOrderStatus,
@@ -797,6 +798,55 @@ export async function updateOrderSectionAction(
     console.error("updateOrderSection failed:", error);
     return { ok: false, error: "Could not save changes. Please try again." };
   }
+}
+
+/**
+ * Planning / Assembly & Packing at SO level: one form, written to every EC of
+ * the SO the department works on — each through the same per-EC save, so its
+ * checks, locks, audit and notices are unchanged. A Spare's lots apply by
+ * position (Lot 1, Lot 2…), packing dates likewise. An SO that mixes Pump and
+ * Spare ECs is edited EC by EC, since their forms differ.
+ */
+export async function updateSectionForSoAction(
+  orderId: string,
+  table: string,
+  values: Record<string, string>
+): Promise<UpdateSectionResult> {
+  if (table !== "order_planning" && table !== "order_assembly_dispatch") {
+    return { ok: false, error: "This section is edited EC by EC." };
+  }
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canEditSection(user.role, table as OrderTable)) {
+    return { ok: false, error: "You don't have permission to edit this section." };
+  }
+  const ecs = await listSoEcsForSection(orderId, table as OrderTable);
+  if (ecs.length === 0) return { ok: false, error: "This SO has no ECs to update." };
+  if (new Set(ecs.map((e) => e.spare)).size > 1) {
+    return { ok: false, error: "This SO has both Pump and Spare ECs — edit each EC on its own." };
+  }
+  // Packing dates arrive by position; each EC's own lot ids take them.
+  let packed: string[] | null = null;
+  if (typeof values[PACKING_LOTS_FIELD] === "string") {
+    try {
+      packed = packingLotsFromRows(JSON.parse(values[PACKING_LOTS_FIELD])).map((l) => l.packed_date);
+    } catch {
+      return { ok: false, error: "The packing dates could not be read." };
+    }
+  }
+  for (const ec of ecs) {
+    const v = packed
+      ? {
+          ...values,
+          [PACKING_LOTS_FIELD]: JSON.stringify(
+            ec.lot_ids.map((id, i) => ({ id, packed_date: packed![i] ?? "" }))
+          ),
+        }
+      : values;
+    const res = await updateOrderSectionAction(ec.id, table, v);
+    if (!res.ok) return { ok: false, error: `${ec.ec_no ?? "An EC"}: ${res.error}` };
+  }
+  return { ok: true };
 }
 
 export type ChildActionResult =

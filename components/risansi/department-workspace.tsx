@@ -13,7 +13,7 @@ import {
   Plus,
   X,
 } from "lucide-react";
-import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
+import { updateOrderSectionAction, updateSectionForSoAction } from "@/app/risansi/orders/actions";
 import {
   CHILD_FIELDS,
   readyLotsOpen,
@@ -188,6 +188,9 @@ export function DepartmentWorkspace({
   filterOptions?: OrderListOptions;
 }) {
   const [editRow, setEditRow] = useState<Row | null>(null);
+  // Planning / Assembly & Packing edit a whole SO at once: one form for all
+  // its ECs.
+  const [editSo, setEditSo] = useState<{ orderId: string; head: Row; count: number } | null>(null);
   const [docsPanel, setDocsPanel] = useState<{ row: Row; config: DocumentsConfig } | null>(
     null
   );
@@ -311,6 +314,54 @@ export function DepartmentWorkspace({
   const hasFlatColumns = visibleFields.length > 0 || documents.length > 0;
   // Inside one SO, only the columns that apply to its own ECs — a Spare SO
   // shows no pump-only or pump-and-planning columns.
+  // SO-level editing and summary: Planning and Assembly & Packing.
+  const soEdit = groupBySo && (table === "order_planning" || table === "order_assembly_dispatch");
+  const isSpareRow = (ec: Row) => toInput(ec.item_type).trim().toLowerCase() === "spare";
+  const shortDate = (v: unknown) => {
+    const s = toInput(v).slice(0, 10);
+    if (!s) return "";
+    const d = new Date(s);
+    return Number.isNaN(d.getTime())
+      ? s
+      : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  };
+  /** One EC's status and date as its department reads it. */
+  const ecStatusDate = (ec: Row): { status: string; date: string } => {
+    if (table === "order_planning") {
+      return {
+        status:
+          toInput(ec.actual_spare_status) ||
+          toInput(ec.actual_pump_status) ||
+          toInput(ec.planning_status) ||
+          "Pending",
+        date: shortDate(ec.planning_readiness_date),
+      };
+    }
+    const lots = packingLotsFromRows(ec.ready_lots);
+    const last = lots[lots.length - 1];
+    if (last) {
+      return last.packed_date
+        ? { status: PACKED_FOR[last.status] ?? "Packed", date: `Packed ${shortDate(last.packed_date)}` }
+        : { status: last.status, date: last.ready_date ? `Ready ${shortDate(last.ready_date)}` : "" };
+    }
+    return toInput(ec.actual_packing_date)
+      ? { status: "Fully packed", date: `Packed ${shortDate(ec.actual_packing_date)}` }
+      : { status: "Pending", date: "" };
+  };
+  // Planning and Assembly & Packing edit the SO as one; an EC has its own Edit
+  // only where that can't be done — an SO mixing Pump and Spare ECs.
+  const ecEditFor = (ecs: Row[]) => !soEdit || new Set(ecs.map(isSpareRow)).size > 1;
+  /** The date column's name: what the date is. */
+  const soDateLabel = table === "order_planning" ? "Readiness Date" : "Ready / Packed On";
+  /** The SO's: its ECs' status and date when they agree, "Mixed" when not. */
+  const soSummary = (ecs: Row[]) => {
+    const each = ecs.map(ecStatusDate);
+    const one = (k: "status" | "date") => {
+      const set = new Set(each.map((e) => e[k]));
+      return set.size === 1 ? [...set][0] || "—" : "Mixed";
+    };
+    return { status: one("status"), date: one("date") };
+  };
   const ecContextFor = (ecs: Row[]) =>
     ecContext.filter((f) => !f.dependsOn || ecs.some((ec) => fieldApplies(f, ec)));
   // Assembly & Packing: a Spare's readiness lots, and how far packing has got.
@@ -419,7 +470,8 @@ export function DepartmentWorkspace({
     : "No orders yet.";
 
   const colCount = groupBySo
-    ? 4 + (showParty ? 1 : 0) + soContext.length + 1 // toggle + Sl. + SO + client_name? + context + ECs + chat
+    ? 4 + (showParty ? 1 : 0) + soContext.length + 1 + // toggle + Sl. + SO + client_name? + context + ECs + chat
+      (soEdit ? 2 + (canEdit ? 1 : 0) : 0) // SO status + date + edit
     : 3 +
       (showEcNo ? 1 : 0) +
       (showParty ? 1 : 0) +
@@ -467,7 +519,16 @@ export function DepartmentWorkspace({
                   </th>
                 ))}
                 {groupBySo ? (
-                  <th className="px-4 py-3 text-center normal-case">ECs</th>
+                  <>
+                    <th className="px-4 py-3 text-center normal-case">ECs</th>
+                    {soEdit && (
+                      <>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3 whitespace-nowrap">{soDateLabel}</th>
+                        {canEdit && <th className="px-4 py-3 text-right">Edit</th>}
+                      </>
+                    )}
+                  </>
                 ) : (
                   <>
                     {visibleFields.map((f) => (
@@ -635,6 +696,43 @@ export function DepartmentWorkspace({
                         <td className="px-4 py-3 text-center tabular-nums">
                           {g.ecs.length}
                         </td>
+                        {soEdit && (() => {
+                          const sum = soSummary(g.ecs);
+                          const mixed = new Set(g.ecs.map(isSpareRow)).size > 1;
+                          return (
+                            <>
+                              <td className="px-4 py-3 whitespace-nowrap">{sum.status}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-muted">{sum.date}</td>
+                              {canEdit && (
+                                <td className="px-4 py-3 text-right">
+                                  {mixed || lockReason(table, g.head) ? (
+                                    <span
+                                      className="text-xs text-muted-foreground"
+                                      title={mixed ? "Pump and Spare ECs — edit each EC" : undefined}
+                                    >
+                                      —
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setEditSo({
+                                          orderId: String(g.head.order_id),
+                                          head: g.ecs[0],
+                                          count: g.ecs.length,
+                                        })
+                                      }
+                                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                      Edit SO
+                                    </button>
+                                  )}
+                                </td>
+                              )}
+                            </>
+                          );
+                        })()}
                       </tr>
                       {isOpen && (
                         <tr className="bg-background/40">
@@ -675,7 +773,7 @@ export function DepartmentWorkspace({
                                     {SIGN_OFF_ENABLED && dept && completePerEc && (
                                       <th className="px-3 py-2">Complete</th>
                                     )}
-                                    {canEdit && (
+                                    {canEdit && ecEditFor(g.ecs) && (
                                       <th className="px-3 py-2 text-right">Edit</th>
                                     )}
                                   </tr>
@@ -739,7 +837,7 @@ export function DepartmentWorkspace({
                                           )}
                                         </td>
                                       )}
-                                      {canEdit && (
+                                      {canEdit && ecEditFor(g.ecs) && (
                                         <td className="px-3 py-2 text-right">
                                           <button
                                             type="button"
@@ -870,6 +968,20 @@ export function DepartmentWorkspace({
         />
       </div>
 
+      {editSo && canEdit && (
+        <EditSectionModal
+          orderId={String(editSo.head.id)}
+          soTarget={{ orderId: editSo.orderId, count: editSo.count }}
+          table={table}
+          title={title}
+          fields={fields}
+          readonlyFields={readonlyFields}
+          canEditCentral={canEditCentral}
+          data={editSo.head}
+          onClose={() => setEditSo(null)}
+        />
+      )}
+
       {editRow && canEdit && (
         <EditSectionModal
           orderId={String(editRow.id)}
@@ -926,8 +1038,11 @@ function EditSectionModal({
   data,
   drawingDocCount,
   onClose,
+  soTarget,
 }: {
   orderId: string;
+  /** Set for an SO-level edit: the form's values go to every EC of this SO. */
+  soTarget?: { orderId: string; count: number };
   table: OrderTable;
   title: string;
   fields: OrderField[];
@@ -970,8 +1085,9 @@ function EditSectionModal({
     }
     setSaving(true);
     setError(null);
-    const res = await updateOrderSectionAction(
-      orderId,
+    const res = await (soTarget
+      ? (t: string, v: Record<string, string>) => updateSectionForSoAction(soTarget.orderId, t, v)
+      : (t: string, v: Record<string, string>) => updateOrderSectionAction(orderId, t, v))(
       table,
       spareLots
         ? {
@@ -1015,6 +1131,11 @@ function EditSectionModal({
         <div className="flex items-center justify-between gap-3 pr-8">
           <h2 className="font-display text-lg font-semibold text-foreground">
             {title}
+            {soTarget && (
+              <span className="ml-2 align-middle rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                All {soTarget.count} EC{soTarget.count === 1 ? "" : "s"}
+              </span>
+            )}
           </h2>
           {/* Planning schedules around bought-out receipts, so they can read
               this EC's BOI rows — filled by Central and Purchase, never here.
@@ -1063,7 +1184,11 @@ function EditSectionModal({
         </div>
         <p className="mb-5 text-sm text-muted">
           Order #{String(data.sl_no ?? "—")}
-          {identity ? ` · ${identity}` : ""}
+          {soTarget
+            ? ` · ${toInput(data.so_no)} · saved to every EC of this SO (shown from ${toInput(data.ec_no) || "the first EC"})`
+            : identity
+              ? ` · ${identity}`
+              : ""}
           {showParty && data.client_name ? ` · ${String(data.client_name)}` : ""}
         </p>
 

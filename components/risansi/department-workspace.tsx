@@ -45,7 +45,7 @@ import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import type { OrderListOptions } from "@/lib/orders";
 import { DEPT_VIEWS } from "@/lib/dept-view";
-import { useFocusRow } from "./use-focus-row";
+import { useConsumeFocusParam, useFocusRow } from "./use-focus-row";
 import { lockReason } from "@/lib/order-lock";
 import type { PageResult } from "@/lib/pagination";
 import { QcDocumentsModal } from "./qc-documents-modal";
@@ -244,6 +244,7 @@ export function DepartmentWorkspace({
   }, [focusOrderId, orders]);
 
   const focusClass = useFocusRow([openOrderId, focusOrderId], orders.length > 0);
+  useConsumeFocusParam(queue.page);
 
   function toggleSo(key: string) {
     setExpanded((prev) => {
@@ -355,6 +356,28 @@ export function DepartmentWorkspace({
   const ecEditFor = (ecs: Row[]) => !soEdit || new Set(ecs.map(isSpareRow)).size > 1;
   /** The date column's name: what the date is. */
   const soDateLabel = table === "order_planning" ? "Readiness Date" : "Ready / Packed On";
+  /**
+   * How many days Planning is late on an SO: from the earliest readiness date
+   * among its ECs not yet ready (a Spare Fully ready, a Pump Assembled or
+   * Packed) — the rule its reminders and Overdue filter use. 0 when on time.
+   */
+  const planningOverdueDays = (ecs: Row[]) => {
+    const ready = (ec: Row) =>
+      ["fully ready", "assembled", "packed"].includes(
+        (toInput(ec.actual_spare_status) || toInput(ec.actual_pump_status)).trim().toLowerCase()
+      );
+    const dates = ecs
+      .filter((ec) => !ready(ec))
+      .map((ec) => toInput(ec.planning_readiness_date).slice(0, 10))
+      .filter(Boolean)
+      .sort();
+    if (dates.length === 0) return 0;
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const days = Math.round(
+      (new Date(`${today}T00:00:00Z`).getTime() - new Date(`${dates[0]}T00:00:00Z`).getTime()) / 86_400_000
+    );
+    return days > 0 ? days : 0;
+  };
   /** The SO's: its ECs' status and date when they agree, "Mixed" when not. */
   const soSummary = (ecs: Row[]) => {
     const each = ecs.map(ecStatusDate);
@@ -715,8 +738,7 @@ export function DepartmentWorkspace({
                                     works from the latest. */}
                                 {table === "order_planning" &&
                                 (role === "planning" || role === "central_visibility" || role === "admin") &&
-                                sum.date !== "—" &&
-                                g.ecs.some((ec) => Array.isArray(ec.ready_lots) && (ec.ready_lots as unknown[]).length > 0) ? (
+                                sum.date !== "—" ? (
                                   <ReadyLotHistoryButton
                                     orderId={String(g.head.order_id)}
                                     label={sum.date}
@@ -725,6 +747,14 @@ export function DepartmentWorkspace({
                                 ) : (
                                   sum.date
                                 )}
+                                {table === "order_planning" && (() => {
+                                  const late = planningOverdueDays(g.ecs);
+                                  return late > 0 ? (
+                                    <div className="mt-0.5 text-[11px] font-medium text-rose-600">
+                                      Overdue by {late} day{late === 1 ? "" : "s"}
+                                    </div>
+                                  ) : null;
+                                })()}
                               </td>
                               {canEdit && (
                                 <td className="px-4 py-3 text-right">

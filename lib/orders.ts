@@ -908,10 +908,31 @@ export async function saveLotPacking(
   await recomputeDispatchStatusForItem(itemId);
 }
 
+/**
+ * A change to Planning's status or readiness date on an EC without lots — the
+ * lots keep their own entries. Recorded as lot 0, action 'readiness'.
+ */
+export async function logReadinessChange(
+  itemId: string,
+  prev: { status: string | null; ready_date: string | null },
+  now: { status: string | null; ready_date: string | null },
+  actor: { id: string; role: string }
+): Promise<void> {
+  if (!UUID_RE.test(itemId)) return;
+  if (prev.status === now.status && prev.ready_date === now.ready_date) return;
+  await query(
+    `INSERT INTO order_ready_lot_history
+       (item_id, lot_no, action, status, ready_date, prev_status, prev_ready_date,
+        changed_by, changed_by_role)
+     VALUES ($1, 0, 'readiness', $2, $3, $4, $5, $6, $7)`,
+    [itemId, now.status, now.ready_date, prev.status, prev.ready_date, actor.id, actor.role]
+  );
+}
+
 /** One change to an SO's readiness lots, as the history shows it. */
 export type ReadyLotEvent = {
   lot_no: number;
-  action: "added" | "changed" | "removed" | "recorded";
+  action: "added" | "changed" | "removed" | "readiness" | "recorded";
   status: string | null;
   ready_date: string | null;
   prev_status: string | null;
@@ -958,10 +979,26 @@ export async function listReadyLotHistory(orderId: string): Promise<ReadyLotEven
                              ORDER BY ev.changed_at LIMIT 1) fc ON true
         WHERE NOT EXISTS (SELECT 1 FROM ev WHERE ev.lot_no = x.n AND ev.action = 'added')
         ORDER BY x.n, x.ec_seq
+     ),
+     plain_before AS (
+       -- No lots and nothing recorded yet: where Planning stands now, on the first EC.
+       SELECT 0 AS lot_no, 'recorded'::text AS action,
+              COALESCE(NULLIF(pl.actual_spare_status, ''), NULLIF(pl.actual_pump_status, ''), pl.planning_status) AS status,
+              to_char(pl.planning_readiness_date, 'YYYY-MM-DD') AS ready_date,
+              NULL::text AS prev_status, NULL::text AS prev_ready_date,
+              NULL::text AS changed_by_name, NULL::text AS changed_by_role,
+              COALESCE(pl.updated_at, pl.created_at) AS changed_at
+         FROM order_items it JOIN order_planning pl ON pl.item_id = it.id
+        WHERE it.order_id = $1 AND pl.planning_readiness_date IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM ev)
+          AND NOT EXISTS (SELECT 1 FROM before_history)
+        ORDER BY it.seq
+        LIMIT 1
      )
      SELECT lot_no, action, status, ready_date, prev_status, prev_ready_date,
             changed_by_name, changed_by_role, changed_at::text AS changed_at
-       FROM (SELECT * FROM ev UNION ALL SELECT * FROM before_history) all_ev
+       FROM (SELECT * FROM ev UNION ALL SELECT * FROM before_history
+             UNION ALL SELECT * FROM plain_before) all_ev
       ORDER BY changed_at DESC, lot_no DESC`,
     [orderId]
   );

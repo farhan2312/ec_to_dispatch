@@ -29,6 +29,16 @@ function when(value: string): string {
 /** One history entry as a sentence. */
 function describe(e: ReadyLotEvent): string {
   const lot = `Lot ${e.lot_no}`;
+  // Planning's status / date with no lots.
+  if (e.lot_no === 0) {
+    if (e.action === "recorded") return `${e.status ?? "—"} · ${day(e.ready_date)} — first recorded`;
+    const parts: string[] = [];
+    if (e.prev_status !== e.status) parts.push(`${e.prev_status ?? "—"} → ${e.status ?? "—"}`);
+    else if (e.status) parts.push(e.status);
+    if (e.prev_ready_date !== e.ready_date) parts.push(`${day(e.prev_ready_date)} → ${day(e.ready_date)}`);
+    else parts.push(day(e.ready_date));
+    return parts.join(" · ");
+  }
   switch (e.action) {
     case "added":
       return `${lot} added · ${e.status ?? "—"} · ${day(e.ready_date)}`;
@@ -126,7 +136,7 @@ export function ReadyLotHistoryButton({
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading…
               </p>
             ) : events.length === 0 ? (
-              <p className="text-sm text-muted">No readiness lots on this SO yet.</p>
+              <p className="text-sm text-muted">Nothing recorded on this SO yet.</p>
             ) : (
               <ol className="space-y-2.5">
                 {events.map((e, i) => (

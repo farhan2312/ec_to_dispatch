@@ -2335,3 +2335,9 @@ CREATE TABLE IF NOT EXISTS order_ready_lot_history (
 );
 CREATE INDEX IF NOT EXISTS order_ready_lot_history_item_idx
     ON order_ready_lot_history (item_id, changed_at);
+
+-- The history also keeps Planning's status / readiness date on an EC without
+-- lots (Date awaited, In plan, every Pump status) as action 'readiness', lot 0.
+ALTER TABLE order_ready_lot_history DROP CONSTRAINT IF EXISTS order_ready_lot_history_action_check;
+ALTER TABLE order_ready_lot_history ADD CONSTRAINT order_ready_lot_history_action_check
+    CHECK (action IN ('added', 'changed', 'removed', 'readiness'));

@@ -190,14 +190,14 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     label: DEPT_FILTER_LABELS.planning,
     perEc: true,
     status: (r) => text(r.planning_status) || PENDING,
-    // Any status recorded counts as done — the rule getOrderDeptStatus uses,
-    // and the one the Departments popup shows. ("Completed" was never one of
-    // the values Planning can file, so the old check never matched.)
-    done: (r) => !!text(r.planning_status),
+    // Done once the EC is ready — a Spare Fully ready, a Pump Assembled or
+    // Packed — so a date still open is late once it passes (the rule
+    // Planning's reminders and Overdue filter use).
+    done: (r) => ["fully ready", "assembled", "packed"].includes(text(r.planning_status).toLowerCase()),
     na: never,
     hidden: never,
-    // Planning has no target of its own; it schedules to the dispatch date.
-    target: dispatchTarget,
+    // Planning works to its own readiness date.
+    target: (r) => r.planning_readiness_date,
     hasTarget: true,
   },
   assembly: {

@@ -794,17 +794,53 @@ export async function updateOrderSection(
  */
 export async function saveReadyLots(
   itemId: string,
-  lots: { status: string; ready_date: string }[]
+  lots: { status: string; ready_date: string }[],
+  // Who made the change, for the lots' history.
+  actor?: { id: string; role: string }
 ): Promise<void> {
   if (!UUID_RE.test(itemId)) return;
   await withTransaction(async (c) => {
     // Lot by lot in place, so what Assembly & Packing recorded against a lot
     // (its packing date) stays with it; a lot whose status changes carries
     // its packing status along.
-    const existing = await c.query<{ id: string }>(
-      `SELECT id FROM order_ready_lots WHERE item_id = $1 ORDER BY seq`,
+    const existing = await c.query<{ id: string; status: string | null; ready_date: string | null }>(
+      `SELECT id, status, to_char(ready_date, 'YYYY-MM-DD') AS ready_date
+         FROM order_ready_lots WHERE item_id = $1 ORDER BY seq`,
       [itemId]
     );
+    // What changed, lot by lot, into the history.
+    const log = (
+      lotNo: number,
+      action: "added" | "changed" | "removed",
+      now: { status: string | null; ready_date: string | null },
+      prev: { status: string | null; ready_date: string | null } | null
+    ) =>
+      c.query(
+        `INSERT INTO order_ready_lot_history
+           (item_id, lot_no, action, status, ready_date, prev_status, prev_ready_date,
+            changed_by, changed_by_role)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          itemId,
+          lotNo,
+          action,
+          now.status,
+          now.ready_date,
+          prev?.status ?? null,
+          prev?.ready_date ?? null,
+          actor?.id ?? null,
+          actor?.role ?? null,
+        ]
+      );
+    for (let i = 0; i < Math.max(lots.length, existing.rows.length); i++) {
+      const was = existing.rows[i];
+      const lot = lots[i];
+      if (lot && !was) await log(i + 1, "added", lot, null);
+      else if (!lot && was) await log(i + 1, "removed", was, was);
+      else if (lot && was && (lot.status !== was.status || lot.ready_date !== was.ready_date)) {
+        await log(i + 1, "changed", lot, was);
+      }
+    }
     for (let i = 0; i < lots.length; i++) {
       const lot = lots[i];
       const id = existing.rows[i]?.id;
@@ -870,6 +906,66 @@ export async function saveLotPacking(
     await syncPackedFromLots(c, itemId);
   });
   await recomputeDispatchStatusForItem(itemId);
+}
+
+/** One change to an SO's readiness lots, as the history shows it. */
+export type ReadyLotEvent = {
+  lot_no: number;
+  action: "added" | "changed" | "removed" | "recorded";
+  status: string | null;
+  ready_date: string | null;
+  prev_status: string | null;
+  prev_ready_date: string | null;
+  changed_by_name: string | null;
+  changed_by_role: string | null;
+  changed_at: string;
+};
+
+/**
+ * An SO's readiness-lot history, newest first. Planning edits an SO as one,
+ * so the same change lands on every EC: it is shown once. A lot from before
+ * the history was kept shows as "recorded" when it was made.
+ */
+export async function listReadyLotHistory(orderId: string): Promise<ReadyLotEvent[]> {
+  if (!UUID_RE.test(orderId)) return [];
+  const r = await query<ReadyLotEvent>(
+    `WITH ev AS (
+       SELECT DISTINCT ON (h.lot_no, h.action, h.status, h.ready_date, h.prev_status,
+                           h.prev_ready_date, h.changed_by, date_trunc('minute', h.changed_at))
+              h.lot_no, h.action, h.status, to_char(h.ready_date, 'YYYY-MM-DD') AS ready_date,
+              h.prev_status, to_char(h.prev_ready_date, 'YYYY-MM-DD') AS prev_ready_date,
+              u.full_name AS changed_by_name, h.changed_by_role, h.changed_at
+         FROM order_ready_lot_history h
+         JOIN order_items i ON i.id = h.item_id
+         LEFT JOIN users u ON u.id = h.changed_by
+        WHERE i.order_id = $1
+        ORDER BY h.lot_no, h.action, h.status, h.ready_date, h.prev_status, h.prev_ready_date,
+                 h.changed_by, date_trunc('minute', h.changed_at), h.changed_at
+     ),
+     before_history AS (
+       -- Lots made before their history was kept: one entry each, on the first EC.
+       -- As it stood before its first recorded change, where there is one.
+       SELECT DISTINCT ON (x.n) x.n AS lot_no, 'recorded'::text AS action,
+              COALESCE(fc.prev_status, x.status) AS status,
+              COALESCE(fc.prev_ready_date, to_char(x.ready_date, 'YYYY-MM-DD')) AS ready_date,
+              NULL::text AS prev_status, NULL::text AS prev_ready_date,
+              NULL::text AS changed_by_name, NULL::text AS changed_by_role, x.created_at AS changed_at
+         FROM (SELECT rl.*, row_number() OVER (PARTITION BY rl.item_id ORDER BY rl.seq)::int AS n, it.seq AS ec_seq
+                 FROM order_ready_lots rl JOIN order_items it ON it.id = rl.item_id
+                WHERE it.order_id = $1) x
+         LEFT JOIN LATERAL (SELECT ev.prev_status, ev.prev_ready_date FROM ev
+                             WHERE ev.lot_no = x.n AND ev.action = 'changed'
+                             ORDER BY ev.changed_at LIMIT 1) fc ON true
+        WHERE NOT EXISTS (SELECT 1 FROM ev WHERE ev.lot_no = x.n AND ev.action = 'added')
+        ORDER BY x.n, x.ec_seq
+     )
+     SELECT lot_no, action, status, ready_date, prev_status, prev_ready_date,
+            changed_by_name, changed_by_role, changed_at::text AS changed_at
+       FROM (SELECT * FROM ev UNION ALL SELECT * FROM before_history) all_ev
+      ORDER BY changed_at DESC, lot_no DESC`,
+    [orderId]
+  );
+  return r.rows;
 }
 
 /**
@@ -1525,6 +1621,8 @@ export type OrderOverviewRow = {
   qc_submitted: boolean;
   qc_required: string | null;
   planning_status: string | null;
+  /** Planning's own date for the EC: when it says it will be ready. */
+  planning_readiness_date: string | null;
   // Assembly & Packing is per EC, like the four above it — the Departments
   // popup shows all five side by side, and the pipeline matches it.
   assembly_done: boolean;
@@ -1620,6 +1718,7 @@ const overviewColumns = () => `it.id,
             COALESCE(NULLIF(pl.actual_pump_status, ''),
                      NULLIF(pl.actual_spare_status, ''),
                      NULLIF(pl.planning_status, '')) AS planning_status,
+            to_char(pl.planning_readiness_date, 'YYYY-MM-DD') AS planning_readiness_date,
             (ad.actual_packing_date IS NOT NULL) AS assembly_done,
             CASE WHEN it.id IS NULL THEN NULL ELSE ${ASSEMBLY_STATE_SQL("it")} END AS assembly_state,
             ${SO_PACKED_SQL("o")} AS so_packed,

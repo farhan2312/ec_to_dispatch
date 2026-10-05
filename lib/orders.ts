@@ -2132,6 +2132,29 @@ const READY_TO_DISPATCH = `(${SO_PACKED_SQL("o")}
                             AND ${orderOpenSql("o")})`;
 
 /**
+ * The ECs of an SO that one department works on, in EC order, with their
+ * type and readiness lots (ids by position) — what an SO-level edit in
+ * Planning or Assembly & Packing writes to.
+ */
+export async function listSoEcsForSection(
+  orderId: string,
+  table: OrderTable
+): Promise<{ id: string; ec_no: string | null; spare: boolean; lot_ids: string[] }[]> {
+  if (!UUID_RE.test(orderId)) return [];
+  const r = await query<{ id: string; ec_no: string | null; spare: boolean; lot_ids: string[] }>(
+    `SELECT it.id, it.ec_no, (${spareEcSql("it", "o")}) AS spare,
+            ARRAY(SELECT rl.id::text FROM order_ready_lots rl
+                   WHERE rl.item_id = it.id ORDER BY rl.seq) AS lot_ids
+       FROM order_items it JOIN orders o ON o.id = it.order_id
+      WHERE it.order_id = $1
+        ${table === "order_assembly_dispatch" ? `AND ${SPARE_READY_FOR_ASSEMBLY("it")}` : ""}
+      ORDER BY it.seq`,
+    [orderId]
+  );
+  return r.rows;
+}
+
+/**
  * Where an EC stands for Assembly & Packing. A Spare with readiness lots is
  * its latest lot: "Partial ready" / "Fully ready" until packed, then
  * "Partially packed" / "Fully packed". Otherwise "Fully packed" once the

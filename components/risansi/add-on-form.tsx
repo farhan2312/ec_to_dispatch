@@ -10,7 +10,7 @@ import {
 import {
   ADD_ON_SPARE_FIELDS,
   BOI_ITEM_OPTIONS,
-  ADD_ON_OPTIONAL,
+  isAddOnOptional,
   addOnFieldsFor,
   firstMissingAddOnField,
   selectOptionsFor,
@@ -154,7 +154,7 @@ export function AddOnForm({
                   className="mb-1.5 block text-[13px] font-medium text-brand-label"
                 >
                   {field.label}
-                  {ADD_ON_OPTIONAL.has(field.column) ? (
+                  {isAddOnOptional(orderType, field.column) ? (
                     <span className="font-normal text-muted"> (optional)</span>
                   ) : (
                     <span className="text-danger"> *</span>
@@ -163,7 +163,7 @@ export function AddOnForm({
                 {field.type === "select" ? (
                   <select
                     id={`addon-${field.column}`}
-                    required={!ADD_ON_OPTIONAL.has(field.column)}
+                    required={!isAddOnOptional(orderType, field.column)}
                     value={values[field.column] ?? ""}
                     onChange={(e) =>
                       setValues((v) => ({ ...v, [field.column]: e.target.value }))
@@ -180,7 +180,7 @@ export function AddOnForm({
                 ) : (
                   <input
                     id={`addon-${field.column}`}
-                    required={!ADD_ON_OPTIONAL.has(field.column)}
+                    required={!isAddOnOptional(orderType, field.column)}
                     type={
                       field.type === "date"
                         ? "date"

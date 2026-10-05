@@ -933,6 +933,15 @@ export function addOnFieldsFor(orderType?: string | null): OrderField[] {
 /** Add-On fields that may be left blank; every other one is mandatory. */
 export const ADD_ON_OPTIONAL = new Set<string>(["version"]);
 
+/** A Spare EC needs only its EC No. and EC Date; the rest may be filled later. */
+const SPARE_ADD_ON_REQUIRED = new Set<string>(["ec_no", "ec_date"]);
+
+/** Whether an Add-On field may be left blank on an EC of this order type. */
+export function isAddOnOptional(orderType: string | null | undefined, column: string): boolean {
+  if (orderType === "Spare") return !SPARE_ADD_ON_REQUIRED.has(column);
+  return ADD_ON_OPTIONAL.has(column);
+}
+
 /**
  * The first mandatory Add-On field left blank, or null when the EC is
  * complete.
@@ -942,7 +951,7 @@ export function firstMissingAddOnField(
   values: Record<string, unknown>
 ): OrderField | null {
   for (const f of addOnFieldsFor(orderType)) {
-    if (ADD_ON_OPTIONAL.has(f.column)) continue;
+    if (isAddOnOptional(orderType, f.column)) continue;
     const v = values[f.column];
     if (v === null || v === undefined || String(v).trim() === "") return f;
   }

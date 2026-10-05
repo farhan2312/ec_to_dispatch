@@ -2296,3 +2296,16 @@ UPDATE order_ready_lots rl
   FROM order_assembly_dispatch ad
  WHERE ad.item_id = rl.item_id AND rl.status = 'Fully ready'
    AND ad.actual_packing_date IS NOT NULL AND rl.packed_date IS NULL;
+
+-- A despatch (invoice / challan card) covers one or more of the SO's packing
+-- slips, chosen by Dispatch; a slip goes out on one despatch only.
+CREATE TABLE IF NOT EXISTS order_invoice_slips (
+    invoice_id      UUID NOT NULL REFERENCES order_invoices(id) ON DELETE CASCADE,
+    packing_slip_id UUID NOT NULL REFERENCES order_packing_slips(id) ON DELETE CASCADE,
+    PRIMARY KEY (invoice_id, packing_slip_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS order_invoice_slips_slip_uidx ON order_invoice_slips (packing_slip_id);
+-- The one slip each older card was raised from. Idempotent.
+INSERT INTO order_invoice_slips (invoice_id, packing_slip_id)
+SELECT id, packing_slip_id FROM order_invoices WHERE packing_slip_id IS NOT NULL
+ON CONFLICT DO NOTHING;

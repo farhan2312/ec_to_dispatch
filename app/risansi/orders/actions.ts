@@ -38,7 +38,8 @@ import {
   uncompleteDept,
   updateChildRow,
   updateOrderSection,
-  upsertInvoiceFromPackingSlip,
+  packingSlipReady,
+  createDispatchFromSlips,
   type NewItemInput,
   type NewOrderInput,
   type QcDocTable,
@@ -849,6 +850,42 @@ export async function updateSectionForSoAction(
   return { ok: true };
 }
 
+/**
+ * Dispatch raises a despatch — one invoice / challan card — for the packing
+ * slips it chose on an SO (one or several). Each slip goes out once.
+ */
+export async function createDispatchAction(
+  orderId: string,
+  slipIds: string[]
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canEditChild(user.role, "order_invoices")) {
+    return { ok: false, error: "Only Dispatch can raise a despatch." };
+  }
+  const locked = lockReason("order_invoices", (await lockFactsForOrder(orderId)) as never, user.role);
+  if (locked) return { ok: false, error: locked };
+  try {
+    const res = await createDispatchFromSlips(orderId, slipIds);
+    if ("error" in res) return { ok: false, error: res.error };
+    const label = (await getOrderLabel(orderId)) ?? orderId;
+    await logAudit({
+      actor: { id: user.id, email: user.email, role: user.role },
+      action: "order.update",
+      category: "activity",
+      target: label,
+      details: `Raised a despatch for ${slipIds.length} packing slip(s) on ${label}`,
+      subject: { orderId, soNo: label },
+    });
+    revalidatePath(`/risansi/orders/${orderId}`);
+    revalidatePath("/risansi/departments/dispatch");
+    return { ok: true, id: res.id };
+  } catch (error) {
+    console.error("createDispatch failed:", error);
+    return { ok: false, error: "Could not raise the despatch." };
+  }
+}
+
 export type ChildActionResult =
   // `id` is set by addOrderChildAction, for a caller that fills the row it
   // just created rather than waiting for the list to render it.
@@ -944,20 +981,12 @@ export async function addOrderChildAction(
             )
           )
         : null,
-      // Actual packing slips need an invoice add-on to appear in Billing &
-      // Dispatch the moment Packing clicks Add — don't wait for the first
-      // Save. The invoice's read-only header stays blank until Packing fills
-      // in the slip.
+      // A new slip puts the SO in Dispatch's queue and can move its
+      // dispatch status; Dispatch raises the despatch itself from the slips.
       created && table === "order_packing_slips" && kind === "actual"
-        ? Promise.all([
-            upsertInvoiceFromPackingSlip(created.id),
-            getChildOrderId("order_packing_slips", created.id),
-          ]).then(([, soId]) => {
-            // Refresh the parent SO's detail page too (this action's `orderId`
-            // is the item_id for per-EC children, so the direct revalidate
-            // below only hits the item route).
-            if (soId) revalidatePath(`/risansi/orders/${soId}`);
-          })
+        ? packingSlipReady(created.id).then(() =>
+            revalidatePath(`/risansi/orders/${orderId}`)
+          )
         : null,
     ]);
     revalidatePath(`/risansi/orders/${orderId}`);
@@ -1076,10 +1105,9 @@ export async function updateOrderChildAction(
         await notifyPiCreated(orderId, id, piNoAfter, user.role);
       }
     } else if (tbl === "order_packing_slips" && actualSlipKind === "actual") {
-      // Actual packing slip saved → upsert its matching invoice row so
-      // Dispatch sees a card pre-populated with EC / Packing Slip No. / Qty
-      // (read-only), then tell Dispatch + Central which slip is ready.
-      const ctx = await upsertInvoiceFromPackingSlip(id);
+      // Actual packing slip saved → tell Dispatch + Central which slip is
+      // ready; Dispatch raises the despatch for it (alone or with others).
+      const ctx = await packingSlipReady(id);
       const emitOrderId = soOrderId ?? ctx?.order_id ?? null;
       if (emitOrderId) {
         const soLabel = (await getOrderLabel(emitOrderId)) ?? emitOrderId;

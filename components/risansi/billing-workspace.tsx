@@ -9,6 +9,7 @@ import { lockReason } from "@/lib/order-lock";
 import { PiExcelUpload } from "./pi-excel-upload";
 import { OrderDetailsModal } from "./order-details-modal";
 import { InvoiceLrCell } from "./invoice-lr-cell";
+import { DispatchSlipPicker } from "./dispatch-slip-picker";
 import { invoiceRowHeader } from "./order-detail";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { OrderListFilterBar } from "./order-list-filter-bar";
@@ -298,6 +299,14 @@ export function BillingWorkspace({
                                 orders the "Invoice" phase collects challan
                                 fields instead (bill_type context gates it). */}
                             {mode === "dispatch" && (
+                            <DispatchSlipPicker
+                              orderId={row.id}
+                              slips={(row.packing_slips ?? []) as Row[]}
+                              invoices={(row.invoices ?? []) as Row[]}
+                              canEdit={canEdit}
+                            />
+                            )}
+                            {mode === "dispatch" && (
                             <OrderChildList
                               orderId={row.id}
                               table="order_invoices"
@@ -306,6 +315,7 @@ export function BillingWorkspace({
                               rows={(row.invoices ?? []) as Row[]}
                               canEdit={canEdit}
                               canAdd={false}
+                              canDelete={canEdit}
                               headerAction={
                                 <DeptCompleteCheck
                                   scopeId={String(row.id)}

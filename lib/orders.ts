@@ -489,11 +489,18 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
         COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                   FROM order_billing_docs d WHERE d.order_id = o.id),
                  '[]'::jsonb) AS order_billing_docs,
-        COALESCE((SELECT jsonb_agg((to_jsonb(inv) - 'lr_file_data') ORDER BY inv.seq)
+        COALESCE((SELECT jsonb_agg((to_jsonb(inv) - 'lr_file_data') || jsonb_build_object(
+                    'slips', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                         'id', ps.id, 'packing_slip_no', ps.packing_slip_no,
+                         'packing_slip_date', ps.packing_slip_date, 'quantity', ps.quantity)
+                         ORDER BY ps.seq)
+                       FROM order_invoice_slips l JOIN order_packing_slips ps ON ps.id = l.packing_slip_id
+                      WHERE l.invoice_id = inv.id), '[]'::jsonb)) ORDER BY inv.seq)
                   FROM order_invoices inv WHERE inv.order_id = o.id),
                  '[]'::jsonb) AS order_invoices,
         COALESCE((SELECT jsonb_agg(to_jsonb(ps) || jsonb_build_object(
-                    'ec_no', (SELECT si.ec_no FROM order_items si WHERE si.id = ps.item_id))
+                    'ec_no', (SELECT si.ec_no FROM order_items si WHERE si.id = ps.item_id),
+                    'invoice_id', (SELECT l.invoice_id FROM order_invoice_slips l WHERE l.packing_slip_id = ps.id))
                   ORDER BY ps.seq)
                     FROM order_packing_slips ps WHERE ps.order_id = o.id),
                  '[]'::jsonb) AS order_packing_slips,
@@ -772,6 +779,9 @@ export async function updateOrderSection(
   // change to either side restates it.
   if (table === "orders") {
     await recomputeDispatchStatus(id);
+  } else if (table === "order_assembly_dispatch") {
+    // Packed or not decides Lot vs Fully dispatched.
+    await recomputeDispatchStatusForItem(id);
   }
 }
 
@@ -858,6 +868,7 @@ export async function saveLotPacking(
     }
     await syncPackedFromLots(c, itemId);
   });
+  await recomputeDispatchStatusForItem(itemId);
 }
 
 /**
@@ -1000,9 +1011,24 @@ export async function updateChildRow(
  */
 export async function recomputeDispatchStatus(orderId: string): Promise<void> {
   if (!UUID_RE.test(orderId)) return;
+  // An SO with packing slips is dispatched slip by slip: nothing sent yet is
+  // Pending; everything packed and every slip sent is Fully dispatched;
+  // anything in between — a partly packed SO, or slips still waiting — is a
+  // Lot dispatch. An SO without slips keeps the older reading off its
+  // invoices' quantity and value.
   await query(
     `UPDATE orders o
         SET dispatch_status = CASE
+              WHEN EXISTS (SELECT 1 FROM order_packing_slips s WHERE s.order_id = o.id AND s.kind = 'actual') THEN
+                CASE
+                  WHEN NOT EXISTS (${SENT_SLIPS_SQL("o")}) THEN 'Pending'
+                  WHEN ${SO_FULLY_PACKED_SQL("o")}
+                   AND NOT EXISTS (SELECT 1 FROM order_packing_slips s
+                                    WHERE s.order_id = o.id AND s.kind = 'actual'
+                                      AND NOT EXISTS (${SENT_SLIPS_SQL("o")} AND l.packing_slip_id = s.id))
+                    THEN 'Fully dispatch'
+                  ELSE 'LOT dispatch'
+                END
               WHEN inv.n IS NULL OR inv.n = 0 THEN 'Pending'
               WHEN COALESCE(inv.qty, 0) >= COALESCE(o.total_quantity, 0)
                AND COALESCE(inv.val, 0) >= COALESCE(o.order_value, 0)
@@ -1053,7 +1079,7 @@ export async function recomputeDispatchStatus(orderId: string): Promise<void> {
  * untouched. Returns the SO/EC/slip context (for the follow-on notification)
  * or null if the slip isn't 'actual'.
  */
-export async function upsertInvoiceFromPackingSlip(
+export async function packingSlipReady(
   packingSlipId: string
 ): Promise<{
   order_id: string;
@@ -1068,29 +1094,14 @@ export async function upsertInvoiceFromPackingSlip(
     packing_slip_no: string | null;
     quantity: number | null;
   }>(
-    `WITH src AS (
-       SELECT ps.order_id, ps.item_id,
-              (SELECT it.ec_no FROM order_items it WHERE it.id = ps.item_id) AS ec_no,
-              ps.id AS slip_id, ps.packing_slip_no, ps.quantity
-         FROM order_packing_slips ps
-        WHERE ps.id = $1 AND ps.kind = 'actual'
-     ),
-     up AS (
-       INSERT INTO order_invoices (
-         order_id, item_id, packing_slip_id,
-         ec_no, packing_slip_no, packing_quantity
-       )
-       SELECT order_id, item_id, slip_id,
-              ec_no, packing_slip_no, quantity
-         FROM src
-       ON CONFLICT (packing_slip_id) WHERE packing_slip_id IS NOT NULL DO UPDATE
-         SET ec_no            = EXCLUDED.ec_no,
-             packing_slip_no  = EXCLUDED.packing_slip_no,
-             packing_quantity = EXCLUDED.packing_quantity
-       RETURNING order_id
-     )
-     SELECT up.order_id, src.ec_no, src.packing_slip_no, src.quantity
-       FROM up JOIN src ON src.order_id = up.order_id`,
+    // No card is raised here any more: Dispatch raises its own, choosing the
+    // slips it sends out. The slip only moves the dispatch status (it may
+    // change what "all dispatched" means) and tells Dispatch it is ready.
+    `SELECT ps.order_id,
+            (SELECT it.ec_no FROM order_items it WHERE it.id = ps.item_id) AS ec_no,
+            ps.packing_slip_no, ps.quantity
+       FROM order_packing_slips ps
+      WHERE ps.id = $1 AND ps.kind = 'actual'`,
     [packingSlipId]
   );
   const row = result.rows[0] ?? null;
@@ -1325,7 +1336,10 @@ export async function deleteChildRow(
     if (orderId) await recomputeDispatchStatus(orderId);
     return;
   }
+  // A slip gone changes what "every slip sent" means.
+  const slipOrder = table === "order_packing_slips" ? await getChildOrderId(table, id) : null;
   await query(`DELETE FROM ${table} WHERE id = $1`, [id]);
+  if (slipOrder) await recomputeDispatchStatus(slipOrder);
 }
 
 /**
@@ -1914,6 +1928,8 @@ export type BillingQueueRow = {
   dispatch_status: string | null;
   pi_docs: Row[];
   invoices: Row[];
+  /** The SO's actual packing slips, each with the despatch it went out on. */
+  packing_slips: Row[];
 };
 
 /**
@@ -1946,9 +1962,22 @@ export async function listOrdersForBilling(
             COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                       FROM order_billing_docs d WHERE d.order_id = o.id),
                      '[]'::jsonb) AS pi_docs,
-            COALESCE((SELECT jsonb_agg((to_jsonb(inv) - 'lr_file_data') ORDER BY inv.seq)
+            COALESCE((SELECT jsonb_agg((to_jsonb(inv) - 'lr_file_data') || jsonb_build_object(
+                        'slips', COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                         'id', ps.id, 'packing_slip_no', ps.packing_slip_no,
+                         'packing_slip_date', ps.packing_slip_date, 'quantity', ps.quantity)
+                         ORDER BY ps.seq)
+                       FROM order_invoice_slips l JOIN order_packing_slips ps ON ps.id = l.packing_slip_id
+                      WHERE l.invoice_id = inv.id), '[]'::jsonb)) ORDER BY inv.seq)
                       FROM order_invoices inv WHERE inv.order_id = o.id),
-                     '[]'::jsonb) AS invoices
+                     '[]'::jsonb) AS invoices,
+            COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                        'id', ps.id, 'packing_slip_no', ps.packing_slip_no,
+                        'packing_slip_date', ps.packing_slip_date, 'quantity', ps.quantity,
+                        'invoice_id', (SELECT l.invoice_id FROM order_invoice_slips l WHERE l.packing_slip_id = ps.id))
+                        ORDER BY ps.seq)
+                      FROM order_packing_slips ps WHERE ps.order_id = o.id AND ps.kind = 'actual'),
+                     '[]'::jsonb) AS packing_slips
        FROM orders o
        LEFT JOIN order_billing b ON b.order_id = o.id
       WHERE ($1::uuid[] IS NULL OR o.id = ANY($1))
@@ -2770,13 +2799,18 @@ export async function listOrdersForBillingPage(opts: {
   search: string;
   focusOrderId?: string | null;
   filter?: OrderListFilter;
+  /** Dispatch: only SOs with a packing slip — there is nothing to send before. */
+  onlyPacked?: boolean;
 }): Promise<PageResult<BillingQueueRow>> {
   const { ids, total, page } = await pageOfOrderIds({
     page: opts.page,
     search: opts.search,
     focusOrderId: opts.focusOrderId ?? null,
     // A cancelled or diverted order is no longer Billing's or Dispatch's work.
-    restrict: orderOpenSql("o"),
+    restrict: opts.onlyPacked
+      ? `${orderOpenSql("o")} AND EXISTS (SELECT 1 FROM order_packing_slips ps
+                                           WHERE ps.order_id = o.id AND ps.kind = 'actual')`
+      : orderOpenSql("o"),
     searchable: (term) =>
       `(o.so_no ILIKE ${term} OR o.client_name ILIKE ${term} OR o.sl_no::text ILIKE ${term})`,
     filter: opts.filter,
@@ -3097,6 +3131,72 @@ async function syncTargetColumns(
     orderId,
     dates[dates.length - 1] ?? null,
   ]);
+}
+
+/** A despatch started: its invoice or challan side has something filled in. */
+const INVOICE_STARTED = (i: string) => `(${i}.invoice_no IS NOT NULL OR ${i}.challan_no IS NOT NULL
+      OR ${i}.invoice_date IS NOT NULL OR ${i}.challan_date IS NOT NULL
+      OR ${i}.invoice_value IS NOT NULL OR ${i}.challan_value IS NOT NULL)`;
+
+/** The SO's slips that have gone out: linked to a despatch that has started. */
+const SENT_SLIPS_SQL = (o: string) => `SELECT 1 FROM order_invoice_slips l
+      JOIN order_invoices si ON si.id = l.invoice_id
+     WHERE si.order_id = ${o}.id AND ${INVOICE_STARTED("si")}`;
+
+/** Every EC of the SO is packed (a Spare's last lot Fully packed sets its date too). */
+const SO_FULLY_PACKED_SQL = (o: string) => `(EXISTS (SELECT 1 FROM order_items fi WHERE fi.order_id = ${o}.id)
+      AND NOT EXISTS (SELECT 1 FROM order_items fi
+                       LEFT JOIN order_assembly_dispatch fa ON fa.item_id = fi.id
+                      WHERE fi.order_id = ${o}.id AND fa.actual_packing_date IS NULL))`;
+
+/**
+ * Raise a despatch for some of the SO's packing slips — one invoice / challan
+ * card covering all of them. Each slip must be the SO's, an actual one, and
+ * not already on a despatch. Returns the new card's id, or why not.
+ */
+export async function createDispatchFromSlips(
+  orderId: string,
+  slipIds: string[]
+): Promise<{ id: string } | { error: string }> {
+  if (!UUID_RE.test(orderId)) return { error: "Order not found." };
+  const ids = [...new Set(slipIds)].filter((s) => UUID_RE.test(s));
+  if (ids.length === 0) return { error: "Choose at least one packing slip." };
+  const created = await withTransaction(async (c) => {
+    const ok = await c.query<{ id: string; packing_slip_no: string | null; quantity: number | null }>(
+      `SELECT ps.id, ps.packing_slip_no, ps.quantity FROM order_packing_slips ps
+        WHERE ps.id = ANY($2::uuid[]) AND ps.order_id = $1 AND ps.kind = 'actual'
+          AND NOT EXISTS (SELECT 1 FROM order_invoice_slips l WHERE l.packing_slip_id = ps.id)
+        ORDER BY ps.seq FOR UPDATE`,
+      [orderId, ids]
+    );
+    if (ok.rows.length !== ids.length) return null;
+    const qty = ok.rows.reduce((a, r) => a + (Number(r.quantity) || 0), 0);
+    const inv = await c.query<{ id: string }>(
+      `INSERT INTO order_invoices (order_id, packing_slip_no, packing_quantity)
+       VALUES ($1, $2, $3) RETURNING id`,
+      [
+        orderId,
+        ok.rows.map((r) => r.packing_slip_no).filter(Boolean).join(", ") || null,
+        ok.rows.some((r) => r.quantity != null) ? qty : null,
+      ]
+    );
+    for (const r of ok.rows) {
+      await c.query(`INSERT INTO order_invoice_slips (invoice_id, packing_slip_id) VALUES ($1, $2)`, [
+        inv.rows[0].id,
+        r.id,
+      ]);
+    }
+    return inv.rows[0].id;
+  });
+  if (!created) return { error: "A chosen slip is not this SO's, or is already on a despatch." };
+  await recomputeDispatchStatus(orderId);
+  return { id: created };
+}
+
+/** Restate an SO's dispatch status from one of its ECs. */
+async function recomputeDispatchStatusForItem(itemId: string): Promise<void> {
+  const r = await query<{ order_id: string }>(`SELECT order_id FROM order_items WHERE id = $1`, [itemId]);
+  if (r.rows[0]) await recomputeDispatchStatus(r.rows[0].order_id);
 }
 
 /**

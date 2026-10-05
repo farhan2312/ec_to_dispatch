@@ -58,9 +58,15 @@ export function RemindersPanel({
   reminders,
   showDepartment = false,
   showClient = true,
+  focusInQueue = false,
 }: {
   reminders: ReminderRow[];
   showDepartment?: boolean;
+  /**
+   * On a department's queue: a reminder brings its SO up in the queue
+   * (expanded and highlighted) rather than opening another page.
+   */
+  focusInQueue?: boolean;
   /** Off for departments not shown client details (Planning, Assembly). */
   showClient?: boolean;
 }) {
@@ -146,10 +152,12 @@ export function RemindersPanel({
                   </div>
                 </div>
                 <Link
-                  href={`/risansi/orders/${r.id}`}
+                  href={focusInQueue ? { query: { focus: r.id } } : `/risansi/orders/${r.id}`}
+                  scroll={!focusInQueue}
+                  onClick={() => focusInQueue && setOpen(null)}
                   className="shrink-0 text-sm font-medium text-primary hover:text-primary-hover"
                 >
-                  Open
+                  {focusInQueue ? "Show" : "Open"}
                 </Link>
               </li>
             );

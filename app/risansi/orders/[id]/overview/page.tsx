@@ -25,6 +25,8 @@ export default async function OrderOverviewPage({
   const { id } = await params;
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  // Planning works from its own queue and the SO page, not the whole-order view.
+  if (user.role === "planning") redirect(`/risansi/orders/${id}`);
 
   // Independent reads, so they go together: the SO itself, every EC with each
   // department's row and child lists, the derived status, the sign-offs and

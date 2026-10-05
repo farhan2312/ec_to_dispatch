@@ -45,7 +45,8 @@ export default async function DrawingWorkspacePage({
   // must open on the page that holds it.
   // Which SO a notification link should open on. Without a link this is
   // immediate; everything else below loads side by side.
-  const focusOrderId = await resolveFocusOrderId(thread ?? edit);
+  // A reminder (?focus=) lands on its SO in this queue, like a notification.
+  const focusOrderId = await resolveFocusOrderId(params.focus ?? thread ?? edit);
   const section = SECTION_BY_TABLE.get(TABLE)!;
   const [queue, reminders, filterOptions] = await Promise.all([
     listItemsForSectionPage(
@@ -95,7 +96,7 @@ export default async function DrawingWorkspacePage({
         </div>
       </div>
 
-      <RemindersPanel reminders={reminders} />
+      <RemindersPanel reminders={reminders} focusInQueue />
 
       <DepartmentWorkspace
         completions={completions}

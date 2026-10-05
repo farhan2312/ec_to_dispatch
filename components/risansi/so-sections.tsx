@@ -22,6 +22,7 @@ import type { OrderDetail as OrderDetailData } from "@/lib/orders";
 import { EditableSection } from "./editable-section";
 import { OrderChildList } from "./order-children";
 import { InvoiceLrCell } from "./invoice-lr-cell";
+import { DispatchSlipPicker } from "./dispatch-slip-picker";
 import { targetDateExtra } from "./target-date-control";
 import type { TargetRevision } from "@/lib/target-dates";
 
@@ -31,15 +32,16 @@ function str(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
 }
 
-// Header shown at the top of each Dispatch card: the SO's packing slip it
-// was raised from — Dispatch works the SO, not its ECs. Falls back to a
-// placeholder when the invoice has no linked slip (should be rare).
+// Header shown at the top of each Dispatch card: the SO's packing slips it
+// sends out — Dispatch works the SO, not its ECs. Falls back to a placeholder
+// when the card has no slip on it.
 export function invoiceRowHeader(inv: Row): React.ReactNode {
-  const psn = str(inv.packing_slip_no);
-  const qty = str(inv.packing_quantity);
+  const slips = Array.isArray(inv.slips) ? (inv.slips as Row[]) : [];
+  const psn = slips.length
+    ? slips.map((s) => str(s.packing_slip_no) || "—").join(", ")
+    : str(inv.packing_slip_no);
   const parts: string[] = [];
-  if (psn) parts.push(`Packing Slip ${psn}`);
-  if (qty) parts.push(`Qty ${qty}`);
+  if (psn) parts.push(`Packing Slip${slips.length > 1 ? "s" : ""} ${psn}`);
   return parts.length ? parts.join(" · ") : "Awaiting packing slip";
 }
 
@@ -79,11 +81,19 @@ export function SoSections({
   // fields or the PI list; the invoice cards are Dispatch's).
   const renderSection = (section: (typeof SO_SECTIONS)[number]) => {
     if (section.table === "order_dispatch") {
-      // Dispatch: one invoice-and-despatch card per despatch. The cards are
-      // created by Packing saving an actual packing slip, so there is no Add.
+      // Dispatch: one invoice-and-despatch card per despatch, raised from the
+      // packing slips Dispatch picks above it; deleting a card frees its slips.
       return (
+        <div key={section.key} className="space-y-4">
+        <DispatchSlipPicker
+          orderId={orderId}
+          slips={(detail.order_packing_slips ?? []).filter(
+            (r) => String(r.kind ?? "actual") === "actual"
+          )}
+          invoices={(detail.order_invoices ?? []) as Row[]}
+          canEdit={canEditChild(role, "order_invoices")}
+        />
         <OrderChildList
-          key={section.key}
           orderId={orderId}
           table="order_invoices"
           title="Invoice and dispatch"
@@ -91,6 +101,7 @@ export function SoSections({
           rows={(detail.order_invoices ?? []) as Row[]}
           canEdit={canEditChild(role, "order_invoices")}
           canAdd={false}
+          canDelete={canEditChild(role, "order_invoices")}
           // The parent SO's bill_type decides whether each card shows
           // invoice_* or challan_* fields — pass it as context so per-field
           // dependsOn can gate the correct set.
@@ -107,6 +118,7 @@ export function SoSections({
             ),
           }}
         />
+        </div>
       );
     }
     if (section.table === "order_billing") {

@@ -231,6 +231,8 @@ export function OrderListFilterBar({
           options={ORDER_DATE_FIELDS.filter((f) => {
             if (f.value === "dept_target") return deptTarget;
             if (f.value === "dispatch_target") return !dept;
+            // Completion dates come from sign-offs, which are switched off.
+            if (f.value === "completed_on") return SIGN_OFF_ENABLED;
             return true;
           }).map((f) => ({
             value: f.value,

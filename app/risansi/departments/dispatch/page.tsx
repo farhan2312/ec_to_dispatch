@@ -47,6 +47,8 @@ export default async function DispatchWorkspacePage({
       search: parseQuery(q),
       focusOrderId,
       filter,
+      // Nothing to send before Assembly & Packing files a packing slip.
+      onlyPacked: true,
     }),
     listOrderListOptions(),
   ]);

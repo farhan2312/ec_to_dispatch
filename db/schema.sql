@@ -2316,3 +2316,22 @@ UPDATE order_planning pl SET actual_spare_status = 'Fully ready'
   FROM order_items i
  WHERE i.id = pl.item_id AND lower(btrim(i.item_type)) = 'spare'
    AND pl.actual_spare_status IN ('Ready', 'Packed');
+
+-- Every change to a Spare's readiness lots — a lot added, its status or date
+-- changed, or removed — with who made it and when. Written by the same save
+-- that writes the lots (lib/orders.ts saveReadyLots).
+CREATE TABLE IF NOT EXISTS order_ready_lot_history (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    item_id         UUID NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+    lot_no          INT  NOT NULL,
+    action          TEXT NOT NULL CHECK (action IN ('added', 'changed', 'removed')),
+    status          TEXT,
+    ready_date      DATE,
+    prev_status     TEXT,
+    prev_ready_date DATE,
+    changed_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+    changed_by_role TEXT,
+    changed_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS order_ready_lot_history_item_idx
+    ON order_ready_lot_history (item_id, changed_at);

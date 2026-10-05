@@ -29,6 +29,8 @@ import {
   deptInvolvedInOrder,
   saveReadyLots,
   saveLotPacking,
+  listReadyLotHistory,
+  type ReadyLotEvent,
   listSoEcsForSection,
   applyUsdConversion,
   getOrderStatusState,
@@ -738,7 +740,7 @@ export async function updateOrderSectionAction(
         packing = merged.map((l) => ({ id: l.id, packed_date: l.packed_date }));
       }
       await updateOrderSection(id, tbl, allowedValues);
-      if (lots) await saveReadyLots(id, lots);
+      if (lots) await saveReadyLots(id, lots, { id: user.id, role: user.role });
       if (packing) await saveLotPacking(id, packing);
       const after = before ? await getItemDetail(id) : null;
       const pick = (d: NonNullable<typeof before>) =>
@@ -883,6 +885,26 @@ export async function createDispatchAction(
   } catch (error) {
     console.error("createDispatch failed:", error);
     return { ok: false, error: "Could not raise the despatch." };
+  }
+}
+
+/**
+ * An SO's readiness-lot history — Planning and Central only; Assembly &
+ * Packing work from the latest lots and are not shown how they moved.
+ */
+export async function getReadyLotHistoryAction(
+  orderId: string
+): Promise<{ ok: true; events: ReadyLotEvent[] } | { ok: false; error: string }> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!(isCentral(user.role) || user.role === "planning")) {
+    return { ok: false, error: "Only Planning and Central Visibility see the lot history." };
+  }
+  try {
+    return { ok: true, events: await listReadyLotHistory(orderId) };
+  } catch (error) {
+    console.error("getReadyLotHistory failed:", error);
+    return { ok: false, error: "Could not load the history." };
   }
 }
 

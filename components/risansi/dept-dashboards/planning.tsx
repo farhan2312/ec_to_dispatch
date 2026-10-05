@@ -1,8 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import { SingleSelectFilter } from "../multi-select-filter";
-import { formatDate } from "./dates";
 import {
   DeadlineList,
   DeptStatCards,
@@ -18,19 +15,12 @@ import {
 } from "./use-dept-dashboard";
 
 /**
- * Planning's board. Planning has no deadline of its own — it schedules to the
- * order's dispatch date, which is the one date on the order that gets revised.
- * A revision moves the whole plan, so the original date stays on screen beside
- * it and a filter picks out the orders that have moved.
+ * Planning's board. Planning works to its own readiness date: an EC is late
+ * once that date passes and it is not yet ready (a Spare Fully ready, a Pump
+ * Assembled or Packed) — the same rule as its reminders and Overdue filter.
  */
 export function PlanningDashboard(props: DeptDashboardProps) {
-  const [revised, setRevised] = useState<string | null>(null);
-
-  const d = useDeptDashboard("planning", props, {
-    filter: (r) => !revised || (revised === "Revised") === !!r.dispatch_target_revised_date,
-    active: !!revised,
-    onClear: () => setRevised(null),
-  });
+  const d = useDeptDashboard("planning", props);
   const c = baseColumns(d);
 
   return (
@@ -41,26 +31,12 @@ export function PlanningDashboard(props: DeptDashboardProps) {
         <Panel title="Planning status" wide>
           <StatusBars d={d} />
         </Panel>
-        <Panel title="Next dispatch dates">
+        <Panel title="Next readiness dates">
           <DeadlineList d={d} />
         </Panel>
       </div>
 
-      <FilterBar
-        d={d}
-        extra={
-          <SingleSelectFilter
-            label="Dispatch date"
-            allLabel="Any"
-            options={[
-              { value: "Revised", label: "Revised" },
-              { value: "Original", label: "Not revised" },
-            ]}
-            selected={revised}
-            onChange={setRevised}
-          />
-        }
-      />
+      <FilterBar d={d} />
 
       <WorkTable
         d={d}
@@ -70,25 +46,7 @@ export function PlanningDashboard(props: DeptDashboardProps) {
           c.ec,
           c.zone,
           c.status,
-          // c.target already resolves to the revised date where there is one;
-          // this says what it was before, so a slipped plan is visible.
-          {
-            ...c.target,
-            label: "Dispatch target",
-          },
-          {
-            key: "original",
-            label: "Originally",
-            className: "whitespace-nowrap text-muted",
-            cell: (r) =>
-              r.dispatch_target_revised_date ? (
-                <span className="line-through">
-                  {formatDate(r.dispatch_target_date)}
-                </span>
-              ) : (
-                "—"
-              ),
-          },
+          { ...c.target, label: "Readiness date" },
           c.signOff,
         ]}
         minWidth={1000}

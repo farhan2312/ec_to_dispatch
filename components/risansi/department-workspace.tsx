@@ -26,6 +26,7 @@ import {
 } from "@/lib/order-schema";
 import { OrderChildList } from "./order-children";
 import { SortHeader } from "./sort-header";
+import { ReadyLotHistoryButton } from "./ready-lot-history";
 import { ReadyLotsEditor } from "./ready-lots-editor";
 import {
   PACKING_LOTS_FIELD,
@@ -709,7 +710,22 @@ export function DepartmentWorkspace({
                           return (
                             <>
                               <td className="px-4 py-3 whitespace-nowrap">{sum.status}</td>
-                              <td className="px-4 py-3 whitespace-nowrap text-muted">{sum.date}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-muted">
+                                {/* Planning and Central can see how the lots moved; Assembly
+                                    works from the latest. */}
+                                {table === "order_planning" &&
+                                (role === "planning" || role === "central_visibility" || role === "admin") &&
+                                sum.date !== "—" &&
+                                g.ecs.some((ec) => Array.isArray(ec.ready_lots) && (ec.ready_lots as unknown[]).length > 0) ? (
+                                  <ReadyLotHistoryButton
+                                    orderId={String(g.head.order_id)}
+                                    label={sum.date}
+                                    soLabel={toInput(g.head.so_no) || String(g.head.sl_no ?? "")}
+                                  />
+                                ) : (
+                                  sum.date
+                                )}
+                              </td>
                               {canEdit && (
                                 <td className="px-4 py-3 text-right">
                                   {mixed || lockReason(table, g.head) ? (

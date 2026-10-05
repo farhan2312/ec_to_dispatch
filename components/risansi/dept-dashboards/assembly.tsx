@@ -47,7 +47,6 @@ export function AssemblyDashboard(props: DeptDashboardProps) {
           c.sl,
           c.so,
           c.ec,
-          c.client,
           c.zone,
           c.status,
           { ...c.target, label: "Packing target" },

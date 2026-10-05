@@ -2309,3 +2309,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS order_invoice_slips_slip_uidx ON order_invoice
 INSERT INTO order_invoice_slips (invoice_id, packing_slip_id)
 SELECT id, packing_slip_id FROM order_invoices WHERE packing_slip_id IS NOT NULL
 ON CONFLICT DO NOTHING;
+
+-- "Ready" was renamed "Fully ready" for Spares; a value still saved under the
+-- old word (e.g. from a site not yet updated) reads the new one. Idempotent.
+UPDATE order_planning pl SET actual_spare_status = 'Fully ready'
+  FROM order_items i
+ WHERE i.id = pl.item_id AND lower(btrim(i.item_type)) = 'spare'
+   AND pl.actual_spare_status IN ('Ready', 'Packed');

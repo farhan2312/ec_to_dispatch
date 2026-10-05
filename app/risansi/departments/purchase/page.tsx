@@ -5,6 +5,7 @@ import { getCurrentUser } from "@/lib/session";
 import { canEditChild, canEditSection, reminderDeptForTable } from "@/lib/roles";
 import {
   listItemsForPurchasePage,
+  parseQueueSort,
   resolveFocusOrderId,
   listDeptCompletions,
   listOrderListOptions,
@@ -47,6 +48,7 @@ export default async function PurchaseWorkspacePage({
       page: parsePage(page),
       search: parseQuery(q),
       focusOrderId,
+      sort: parseQueueSort(params.sort),
       filter,
     }),
     listRemindersForDepartment(reminderDeptForTable(TABLE)!),

@@ -7,6 +7,7 @@ import { BOI_ITEM_FIELDS } from "@/lib/order-schema";
 import { isCentral } from "@/lib/roles";
 import { OrderChildList } from "./order-children";
 import { EcDrawingDocsButton } from "./drawing-docs";
+import { SortHeader } from "./sort-header";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import type { OrderListOptions } from "@/lib/orders";
@@ -153,7 +154,7 @@ export function PurchaseWorkspace({
                 <th className="px-4 py-3">Sl.</th>
                 <th className="px-4 py-3">SO No.</th>
                 <th className="px-4 py-3">Chat</th>
-                <th className="px-4 py-3">SO Date</th>
+                <th className="px-4 py-3"><SortHeader label="SO Date" sortKey="so_date" /></th>
                 <th className="px-4 py-3">Order Type</th>
                 <th className="px-4 py-3">BOI</th>
                 <th className="px-4 py-3">LD</th>
@@ -204,10 +205,11 @@ export function PurchaseWorkspace({
                           onClick={() =>
                             setThreadFor({ orderId: String(g.head.order_id), soLabel: g.head.so_no ?? String(g.head.sl_no) })
                           }
-                          className="relative inline-flex h-8 items-center gap-1.5 rounded-lg border border-input-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                          aria-label="Chat"
+                          title="Chat"
+                          className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg border border-input-border text-foreground transition-colors hover:bg-background"
                         >
                           <MessageSquare className="h-3.5 w-3.5" />
-                          Chat
                           {(unreadThreads[String(g.head.order_id)] ?? 0) > 0 && (
                             <span className="absolute -right-1.5 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
                               {unreadThreads[String(g.head.order_id)]}

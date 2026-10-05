@@ -16,7 +16,15 @@ const PLANNING_DUE =
 // overdue — that's alerts.ts) but within a week, and the completing step hasn't
 // happened. The three milestones the business wants — 7 days / 72h / 24h out —
 // map to 7 / 3 / 1 days left, since the target columns are DATE-granular.
-export type ReminderTier = "24h" | "72h" | "7d";
+// Planning's reminders also carry the ones already past ("overdue").
+export type ReminderTier = "overdue" | "24h" | "72h" | "7d";
+
+/**
+ * An EC Planning has made ready: a Spare Fully ready, a Pump Assembled or
+ * Packed. Until then its readiness date is a promise still open.
+ */
+export const PLANNING_READY_SQL = (pl: string) => `lower(btrim(COALESCE(NULLIF(${pl}.actual_spare_status, ''),
+      NULLIF(${pl}.actual_pump_status, ''), ''))) IN ('fully ready', 'assembled', 'packed')`;
 
 export type ReminderRow = {
   id: string;
@@ -96,20 +104,21 @@ const REMINDERS_SQL = `
      )
 
   UNION ALL
-  -- Planning readiness due before dispatch (SO-level target). Planning has no
-  -- target of its own, so it borrows the SO's dispatch target — revised if set.
+  -- Planning works to its own readiness date, one per SO (Planning edits an
+  -- SO as one, so its ECs share it): the earliest date among the ECs not yet
+  -- ready — due within the week, or already past.
   SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.client_name,
          'planning'::text, 'Planning'::text,
-         to_char(${PLANNING_DUE}, 'YYYY-MM-DD'),
-         (${PLANNING_DUE} - ${TODAY_IST})::int
+         to_char(r.due, 'YYYY-MM-DD'),
+         (r.due - ${TODAY_IST})::int
     FROM orders o
-   WHERE ${PLANNING_DUE} >= ${TODAY_IST}
-     AND ${PLANNING_DUE} <= ${TODAY_IST} + 7
-     AND EXISTS (
-       SELECT 1 FROM order_items it
-        LEFT JOIN order_planning pl ON pl.item_id = it.id
-        WHERE it.order_id = o.id AND pl.planning_readiness_date IS NULL
-     )
+    JOIN LATERAL (
+      SELECT min(pl.planning_readiness_date) AS due
+        FROM order_items it JOIN order_planning pl ON pl.item_id = it.id
+       WHERE it.order_id = o.id AND pl.planning_readiness_date IS NOT NULL
+         AND NOT (${PLANNING_READY_SQL("pl")})
+    ) r ON r.due IS NOT NULL
+   WHERE r.due <= ${TODAY_IST} + 7
 
   UNION ALL
   -- Assembly & Packing due to complete, against the packing team's target
@@ -142,6 +151,7 @@ const REMINDERS_SQL = `
 `;
 
 function tierOf(daysLeft: number): ReminderTier {
+  if (daysLeft < 0) return "overdue";
   if (daysLeft <= 1) return "24h";
   if (daysLeft <= 3) return "72h";
   return "7d";

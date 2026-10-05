@@ -12,7 +12,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canSeeEscalations, departmentHrefForRole } from "@/lib/roles";
+import { canSeeEscalations, departmentHrefForRole, canSeeClient } from "@/lib/roles";
 import { ALERTS_PAGE_SIZE, listAlertsPage, type AlertRow } from "@/lib/alerts";
 import {
   listNotificationsPage,
@@ -232,7 +232,13 @@ function alertHref(alert: AlertRow): string {
     : `/risansi/orders/${alert.id}`;
 }
 
-function Escalations({ page }: { page: PageResult<AlertRow> }) {
+function Escalations({
+  page,
+  showClient = true,
+}: {
+  page: PageResult<AlertRow>;
+  showClient?: boolean;
+}) {
   const alerts = page.rows;
   if (page.total === 0) {
     return (
@@ -269,7 +275,7 @@ function Escalations({ page }: { page: PageResult<AlertRow> }) {
                   <p className="truncate text-xs text-muted">
                     #{alert.sl_no} · {alert.so_no ?? "—"}
                     {alert.ec_no ? ` · ${alert.ec_no}` : ""}
-                    {alert.client_name ? ` · ${alert.client_name}` : ""}
+                    {showClient && alert.client_name ? ` · ${alert.client_name}` : ""}
                     {alert.due_date ? ` · due ${formatDate(alert.due_date)}` : ""}
                   </p>
                 </div>
@@ -368,7 +374,7 @@ export default async function NotificationsPage({
           <h2 className="mb-3 mt-8 font-display text-base font-semibold text-foreground">
             Escalations — {alerts.total} active
           </h2>
-          <Escalations page={alerts} />
+          <Escalations page={alerts} showClient={canSeeClient(user.role)} />
         </>
       )}
     </div>

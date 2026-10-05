@@ -186,7 +186,15 @@ export async function listConversations(
   orderId: string,
   viewer: { id: string; role: string }
 ): Promise<ConversationSummary[]> {
-  const peers = peersFor(viewer.role);
+  // A Spare SO is none of Drawing's, Purchase's or Quality's work, so there
+  // is no conversation to hold with them about it.
+  const spare = await query<{ spare: boolean }>(
+    `SELECT lower(btrim(COALESCE(order_type, ''))) = 'spare' AS spare FROM orders WHERE id = $1`,
+    [orderId]
+  );
+  const peers = peersFor(viewer.role).filter(
+    (p) => !(spare.rows[0]?.spare && (p === "drawing" || p === "purchase" || p === "qc"))
+  );
   if (peers.length === 0) return [];
 
   const { param, params } = withRole(viewer, [orderId, viewer.id]);

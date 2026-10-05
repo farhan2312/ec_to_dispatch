@@ -25,6 +25,7 @@ import {
   type OrderTable,
 } from "@/lib/order-schema";
 import { OrderChildList } from "./order-children";
+import { SortHeader } from "./sort-header";
 import { ReadyLotsEditor } from "./ready-lots-editor";
 import {
   PACKING_LOTS_FIELD,
@@ -196,7 +197,7 @@ export function DepartmentWorkspace({
   );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const orders = queue.rows;
-  const { get: getParam, setParams: setUrlParams } = useUrlTable();
+  const { get: getParam } = useUrlTable();
   const [threadFor, setThreadFor] = useState<{
     orderId: string;
     soLabel: string;
@@ -450,10 +451,10 @@ export function DepartmentWorkspace({
         type="button"
         onClick={() => setThreadFor({ orderId, soLabel })}
         aria-label={`Discussion for SO ${soLabel}`}
-        className="relative inline-flex h-8 items-center gap-1.5 rounded-lg border border-input-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+        title="Chat"
+        className="relative inline-flex h-8 w-8 items-center justify-center rounded-lg border border-input-border text-foreground transition-colors hover:bg-background"
       >
         <MessageSquare className="h-3.5 w-3.5" />
-        Chat
         {unread > 0 && (
           <span className="absolute -right-1.5 -top-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white">
             {unread}
@@ -515,7 +516,7 @@ export function DepartmentWorkspace({
                     key={f.column}
                     className="px-3 py-3 whitespace-nowrap text-muted-foreground"
                   >
-                    {f.label}
+                    {f.column === "so_date" ? <SortHeader label={f.label} sortKey="so_date" /> : f.label}
                   </th>
                 ))}
                 {groupBySo ? (
@@ -525,25 +526,8 @@ export function DepartmentWorkspace({
                       <>
                         <th className="px-4 py-3">Status</th>
                         <th className="px-4 py-3 whitespace-nowrap">
-                          {table === "order_planning" ? (
-                            // Click to sort by readiness: soonest first, latest
-                            // first, then back to Sl. No.
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const now = getParam("sort");
-                                setUrlParams({
-                                  sort: now === "readiness" ? "-readiness" : now === "-readiness" ? null : "readiness",
-                                });
-                              }}
-                              className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground"
-                              aria-label="Sort by readiness date"
-                            >
-                              {soDateLabel}
-                              <span aria-hidden className="text-[10px]">
-                                {getParam("sort") === "readiness" ? "▲" : getParam("sort") === "-readiness" ? "▼" : "↕"}
-                              </span>
-                            </button>
+                          {table === "order_planning" || table === "order_assembly_dispatch" ? (
+                            <SortHeader label={soDateLabel} sortKey="readiness" />
                           ) : (
                             soDateLabel
                           )}
@@ -1163,7 +1147,8 @@ function EditSectionModal({
           {/* Planning schedules around bought-out receipts, so they can read
               this EC's BOI rows — filled by Central and Purchase, never here.
               Only worth offering when the SO is actually flagged BOI = Yes. */}
-          {drawingDocCount !== undefined && (
+          {/* A Spare has no drawing, so no drawing documents to read. */}
+          {drawingDocCount !== undefined && toInput(data.item_type).trim().toLowerCase() !== "spare" && (
             <EcDrawingDocsButton
               itemId={orderId}
               label={identity || "This EC"}

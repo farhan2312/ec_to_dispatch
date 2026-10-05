@@ -19,6 +19,7 @@ import {
   spareEcSql,
 } from "@/lib/dept-view";
 import { autoTargets } from "@/lib/target-rules";
+import { PLANNING_READY_SQL } from "@/lib/reminders";
 import type { LockFacts } from "@/lib/order-lock";
 import {
   isPerEcDept,
@@ -2357,6 +2358,14 @@ function ecDonePredicate(dept: DeptFilterKey): string {
  * escalation list chased it.
  */
 function deptOverduePredicate(dept: DeptFilterKey): string {
+  // Planning is late against its own readiness date: an EC whose date has
+  // passed and that is not ready yet.
+  if (dept === "planning") {
+    return `EXISTS (SELECT 1 FROM order_items it JOIN order_planning opl ON opl.item_id = it.id
+                    WHERE it.order_id = o.id
+                      AND opl.planning_readiness_date < ${TODAY_IST}
+                      AND NOT (${PLANNING_READY_SQL("opl")}))`;
+  }
   const column = DEPT_TARGET_COLUMN[dept];
   if (!column) return "FALSE";
   const outstanding = isPerEcDept(dept)
@@ -2720,11 +2729,25 @@ const soAndEcSearch = (term: string) => `(o.so_no ILIKE ${term} OR o.client_name
                          WHERE s.order_id = o.id AND s.ec_no ILIKE ${term}))`;
 
 /** Item-scope department queue, one page of SOs' worth of ECs. */
-/** How a department queue can be sorted besides by Sl. No. */
-export type QueueSort = "readiness" | "-readiness";
+/** How a department queue can be sorted besides by Sl. No. ("-" = latest first). */
+export type QueueSort = "readiness" | "-readiness" | "so_date" | "-so_date";
+
+const QUEUE_SORTS: QueueSort[] = ["readiness", "-readiness", "so_date", "-so_date"];
 
 export function parseQueueSort(value: string | undefined): QueueSort | null {
-  return value === "readiness" || value === "-readiness" ? value : null;
+  return QUEUE_SORTS.includes(value as QueueSort) ? (value as QueueSort) : null;
+}
+
+/** A queue sort as SQL over `o`; undated SOs last, Sl. No. breaking ties. */
+function queueOrderBy(sort: QueueSort | null | undefined): string | undefined {
+  if (!sort) return undefined;
+  const dir = sort.startsWith("-") ? "DESC" : "ASC";
+  const key =
+    sort.replace("-", "") === "readiness"
+      ? `(SELECT max(rpl.planning_readiness_date) FROM order_items s
+           JOIN order_planning rpl ON rpl.item_id = s.id WHERE s.order_id = o.id)`
+      : "o.so_date";
+  return `${key} ${dir} NULLS LAST, o.sl_no ASC`;
 }
 
 export async function listItemsForSectionPage(
@@ -2735,7 +2758,7 @@ export async function listItemsForSectionPage(
     search: string;
     focusOrderId?: string | null;
     filter?: OrderListFilter;
-    /** Planning: by its readiness date (the SO's latest), soonest or latest first. */
+    /** Planning / Assembly: by the readiness date (the SO's latest), soonest or latest first. */
     sort?: QueueSort | null;
   }
 ): Promise<PageResult<Row>> {
@@ -2754,11 +2777,7 @@ export async function listItemsForSectionPage(
         : `${restrict} AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id)`,
     searchable: soAndEcSearch,
     filter: opts.filter,
-    orderBy: opts.sort
-      ? `(SELECT max(rpl.planning_readiness_date) FROM order_items s
-           JOIN order_planning rpl ON rpl.item_id = s.id
-          WHERE s.order_id = o.id) ${opts.sort === "-readiness" ? "DESC" : "ASC"} NULLS LAST, o.sl_no ASC`
-      : undefined,
+    orderBy: queueOrderBy(opts.sort),
   });
 
   const rows = ids.length === 0 ? [] : await listItemsForSection(table, contextColumns, ids);
@@ -2781,12 +2800,14 @@ export async function listOrdersForSectionPage(
     search: string;
     focusOrderId?: string | null;
     filter?: OrderListFilter;
+    sort?: QueueSort | null;
   }
 ): Promise<PageResult<Row>> {
   const { ids, total, page } = await pageOfOrderIds({
     page: opts.page,
     search: opts.search,
     focusOrderId: opts.focusOrderId ?? null,
+    orderBy: queueOrderBy(opts.sort),
     // Accounts is not involved for Challan orders, so they must be out of
     // the count as well as out of the rows.
     restrict: deptForTable(table)
@@ -2797,6 +2818,10 @@ export async function listOrdersForSectionPage(
   });
 
   const rows = ids.length === 0 ? [] : await listOrdersForSection(table, contextColumns, ids);
+  if (opts.sort) {
+    const at = new Map(ids.map((id, i) => [id, i]));
+    rows.sort((a, b) => (at.get(String(a.id)) ?? 0) - (at.get(String(b.id)) ?? 0));
+  }
 
   return pageResult(rows, total, page);
 }
@@ -2807,17 +2832,23 @@ export async function listItemsForPurchasePage(opts: {
   search: string;
   focusOrderId?: string | null;
   filter?: OrderListFilter;
+  sort?: QueueSort | null;
 }): Promise<PageResult<PurchaseQueueRow>> {
   const { ids, total, page } = await pageOfOrderIds({
     page: opts.page,
     search: opts.search,
     focusOrderId: opts.focusOrderId ?? null,
+    orderBy: queueOrderBy(opts.sort),
     restrict: `${deptInvolvementSql("purchase")} AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id)`,
     searchable: soAndEcSearch,
     filter: opts.filter,
   });
 
   const rows = ids.length === 0 ? [] : await listItemsForPurchase(ids);
+  if (opts.sort) {
+    const at = new Map(ids.map((id, i) => [id, i]));
+    rows.sort((a, b) => (at.get(String(a.order_id)) ?? 0) - (at.get(String(b.order_id)) ?? 0));
+  }
 
   return pageResult(rows, total, page);
 }
@@ -2830,11 +2861,13 @@ export async function listOrdersForBillingPage(opts: {
   filter?: OrderListFilter;
   /** Dispatch: only SOs with a packing slip — there is nothing to send before. */
   onlyPacked?: boolean;
+  sort?: QueueSort | null;
 }): Promise<PageResult<BillingQueueRow>> {
   const { ids, total, page } = await pageOfOrderIds({
     page: opts.page,
     search: opts.search,
     focusOrderId: opts.focusOrderId ?? null,
+    orderBy: queueOrderBy(opts.sort),
     // A cancelled or diverted order is no longer Billing's or Dispatch's work.
     restrict: opts.onlyPacked
       ? `${orderOpenSql("o")} AND EXISTS (SELECT 1 FROM order_packing_slips ps
@@ -2846,6 +2879,10 @@ export async function listOrdersForBillingPage(opts: {
   });
 
   const rows = ids.length === 0 ? [] : await listOrdersForBilling(ids);
+  if (opts.sort) {
+    const at = new Map(ids.map((id, i) => [id, i]));
+    rows.sort((a, b) => (at.get(String(a.id)) ?? 0) - (at.get(String(b.id)) ?? 0));
+  }
 
   return pageResult(rows, total, page);
 }

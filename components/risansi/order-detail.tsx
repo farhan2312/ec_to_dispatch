@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { deleteItemAction } from "@/app/risansi/orders/actions";
 import { OrderStatusPanel } from "./order-status-panel";
-import { canCreateOrders } from "@/lib/roles";
+import { canCreateOrders, canSeeClient } from "@/lib/roles";
 import type { OrderDetail as OrderDetailData } from "@/lib/orders";
 import { AddOnForm } from "./add-on-form";
 import { OrderThread } from "./order-thread";
@@ -199,7 +199,7 @@ export function OrderDetail({
             SO · {soLabel}
           </span>
           <h1 className="font-display text-xl font-bold tracking-tight text-foreground">
-            {str(order.client_name) || "Order"}
+            {(canSeeClient(role) && str(order.client_name)) || "Order"}
           </h1>
         </div>
         {/* This page is the forms; the overview is the whole order on one

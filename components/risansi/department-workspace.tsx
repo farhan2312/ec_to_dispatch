@@ -16,6 +16,7 @@ import {
 import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
 import {
   CHILD_FIELDS,
+  readyLotsOpen,
   SECTION_BY_TABLE,
   canonicalSelectValue,
   dependsOnSatisfied,
@@ -24,6 +25,20 @@ import {
   type OrderTable,
 } from "@/lib/order-schema";
 import { OrderChildList } from "./order-children";
+import { ReadyLotsEditor } from "./ready-lots-editor";
+import {
+  PACKING_LOTS_FIELD,
+  READY_LOTS_FIELD,
+  lotsError,
+  lotsFromRows,
+  lotsSummary,
+  packingError,
+  packingLotsFromRows,
+  type PackingLot,
+  type ReadyLot,
+} from "@/lib/ready-lots";
+import { PackingLotsEditor } from "./packing-lots-editor";
+import { PACKED_FOR } from "@/lib/ready-lots";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import type { OrderListOptions } from "@/lib/orders";
@@ -42,6 +57,7 @@ import {
   targetForColumn,
 } from "./target-history-cell";
 import { completionFor, DeptCompleteCheck } from "./dept-complete-check";
+import { SIGN_OFF_ENABLED } from "@/lib/dept-completion";
 import {
   deptForTable,
   isPerEcDept,
@@ -293,6 +309,39 @@ export function DepartmentWorkspace({
   // A section can be purely a child list (Drawing → revisions). Then the flat
   // per-EC table and its Edit button carry nothing, so we skip them entirely.
   const hasFlatColumns = visibleFields.length > 0 || documents.length > 0;
+  // Inside one SO, only the columns that apply to its own ECs — a Spare SO
+  // shows no pump-only or pump-and-planning columns.
+  const ecContextFor = (ecs: Row[]) =>
+    ecContext.filter((f) => !f.dependsOn || ecs.some((ec) => fieldApplies(f, ec)));
+  // Assembly & Packing: a Spare's readiness lots, and how far packing has got.
+  const showLots = (ecs: Row[]) =>
+    table === "order_assembly_dispatch" &&
+    ecs.some((ec) => Array.isArray(ec.ready_lots) && (ec.ready_lots as unknown[]).length > 0);
+  const lotsCell = (ec: Row) => {
+    const lots = packingLotsFromRows(ec.ready_lots);
+    if (lots.length === 0) return "—";
+    const d = (v: string) =>
+      v ? new Date(v).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "";
+    return (
+      <div className="space-y-0.5">
+        {lots.map((l, i) => (
+          <div key={l.id || i} className="whitespace-nowrap text-xs">
+            <span className="font-semibold text-muted-foreground">Lot {i + 1}</span> · {l.status}{" "}
+            {d(l.ready_date)} →{" "}
+            {l.packed_date ? (
+              <span className="font-medium text-foreground">
+                {PACKED_FOR[l.status] ?? "Packed"} {d(l.packed_date)}
+              </span>
+            ) : (
+              <span className="text-amber-700">not packed</span>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+  const fieldsFor = (ecs: Row[]) =>
+    visibleFields.filter((f) => !f.dependsOn || ecs.some((ec) => fieldApplies(f, ec)));
 
   // Item-scope layout: one row per SO (with the SO's readonly context) + a
   // nested EC subtable for that SO's department fields.
@@ -431,7 +480,7 @@ export function DepartmentWorkspace({
                         {doc.label}
                       </th>
                     ))}
-                    {dept && !completePerEc && (
+                    {SIGN_OFF_ENABLED && dept && !completePerEc && (
                   <th className="px-3 py-3">Complete</th>
                 )}
                 {canEdit && <th className="px-4 py-3 text-right">Edit</th>}
@@ -503,7 +552,7 @@ export function DepartmentWorkspace({
                         </button>
                       </td>
                     ))}
-                    {dept && !completePerEc && (
+                    {SIGN_OFF_ENABLED && dept && !completePerEc && (
                       <td className="px-3 py-3">
                         {completeCell(
                           String(order.id),
@@ -596,7 +645,10 @@ export function DepartmentWorkspace({
                                 <thead>
                                   <tr className="text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                                     <th className="px-3 py-2">EC No.</th>
-                                    {ecContext.map((f) => (
+                                    {showLots(g.ecs) && (
+                                      <th className="px-3 py-2 whitespace-nowrap">Readiness lots</th>
+                                    )}
+                                    {ecContextFor(g.ecs).map((f) => (
                                       <th
                                         key={f.column}
                                         className="px-3 py-2 whitespace-nowrap"
@@ -604,7 +656,7 @@ export function DepartmentWorkspace({
                                         {f.label}
                                       </th>
                                     ))}
-                                    {visibleFields.map((f) => (
+                                    {fieldsFor(g.ecs).map((f) => (
                                       <th
                                         key={f.column}
                                         className="px-3 py-2 whitespace-nowrap"
@@ -620,7 +672,7 @@ export function DepartmentWorkspace({
                                         {doc.label}
                                       </th>
                                     ))}
-                                    {dept && completePerEc && (
+                                    {SIGN_OFF_ENABLED && dept && completePerEc && (
                                       <th className="px-3 py-2">Complete</th>
                                     )}
                                     {canEdit && (
@@ -638,15 +690,18 @@ export function DepartmentWorkspace({
                                       <td className="px-3 py-2 whitespace-nowrap font-medium">
                                         {toInput(ec.ec_no) || "—"}
                                       </td>
-                                      {ecContext.map((f) => (
+                                      {showLots(g.ecs) && (
+                                        <td className="px-3 py-2">{lotsCell(ec)}</td>
+                                      )}
+                                      {ecContextFor(g.ecs).map((f) => (
                                         <td
                                           key={f.column}
                                           className="px-3 py-2 whitespace-nowrap text-muted"
                                         >
-                                          {formatValue(f, ec[f.column])}
+                                          {fieldApplies(f, ec) ? formatValue(f, ec[f.column]) : "—"}
                                         </td>
                                       ))}
-                                      {visibleFields.map((f) => (
+                                      {fieldsFor(g.ecs).map((f) => (
                                         <td
                                           key={f.column}
                                           className="px-3 py-2 whitespace-nowrap"
@@ -676,7 +731,7 @@ export function DepartmentWorkspace({
                                           </button>
                                         </td>
                                       ))}
-                                      {dept && completePerEc && (
+                                      {SIGN_OFF_ENABLED && dept && completePerEc && (
                                         <td className="px-3 py-2">
                                           {completeCell(
                                             String(ec.id),
@@ -706,6 +761,31 @@ export function DepartmentWorkspace({
                             <div className="px-4 py-3">
                               {/* Sections with a per-EC child list (Planning /
                                   Packing → packing slips) render it per EC. */}
+                              {section?.soChild && (
+                                <div className="mt-4 space-y-4">
+                                  {section.soChild.gate &&
+                                  toInput(g.head[section.soChild.gate.column]).trim() === "" ? (
+                                    <p className="text-xs text-muted">
+                                      Set Market Type on this order to record packing slips.
+                                    </p>
+                                  ) : (
+                                    <OrderChildList
+                                      orderId={String(g.head.order_id)}
+                                      table={section.soChild.table}
+                                      title={section.soChild.title}
+                                      fields={CHILD_FIELDS[section.soChild.table]}
+                                      rows={(g.head.so_child_rows ?? []) as Row[]}
+                                      canEdit={canEdit}
+                                      canEditCentral={canEditCentral}
+                                      kind={section.soChild.kind}
+                                      context={{
+                                        market_type: g.head.market_type,
+                                        packing_details_required: g.head.packing_details_required,
+                                      }}
+                                    />
+                                  )}
+                                </div>
+                              )}
                               {childTable && (
                                 <div className="mt-4 space-y-4">
                                   {!childGateOkFor(g.head) ? (
@@ -738,6 +818,8 @@ export function DepartmentWorkspace({
                                               toInput(ec.ec_no) || String(ec.id)
                                             )}
                                         </div>
+                                        {/* A Spare's readiness first: it is what
+                                            the packing that follows depends on. */}
                                         <OrderChildList
                                           orderId={String(ec.id)}
                                           table={childTable}
@@ -868,12 +950,41 @@ function EditSectionModal({
   const [showOrder, setShowOrder] = useState(false);
   const [showPis, setShowPis] = useState(false);
   const [showBoi, setShowBoi] = useState(false);
+  // A Spare's readiness lots live in Planning's form; once there is one, the
+  // status and readiness date are the latest lot's.
+  const spareLots =
+    table === "order_planning" && toInput(data.item_type).trim().toLowerCase() === "spare";
+  const [lots, setLots] = useState<ReadyLot[]>(() => lotsFromRows(data.ready_lots));
+  const lotsLead = spareLots ? lotsSummary(lots) : null;
+  // …and Assembly & Packing records when each lot was packed.
+  const spareAssembly =
+    table === "order_assembly_dispatch" && toInput(data.item_type).trim().toLowerCase() === "spare";
+  const [packLots, setPackLots] = useState<PackingLot[]>(() => packingLotsFromRows(data.ready_lots));
 
   async function save(e: FormEvent) {
     e.preventDefault();
+    const lotProblem = spareLots ? lotsError(lots) : spareAssembly ? packingError(packLots) : null;
+    if (lotProblem) {
+      setError(lotProblem);
+      return;
+    }
     setSaving(true);
     setError(null);
-    const res = await updateOrderSectionAction(orderId, table, values);
+    const res = await updateOrderSectionAction(
+      orderId,
+      table,
+      spareLots
+        ? {
+            ...values,
+            ...(lotsLead
+              ? { actual_spare_status: lotsLead.status, planning_readiness_date: lotsLead.date }
+              : {}),
+            [READY_LOTS_FIELD]: JSON.stringify(lots),
+          }
+        : spareAssembly
+          ? { ...values, [PACKING_LOTS_FIELD]: JSON.stringify(packLots) }
+          : values
+    );
     setSaving(false);
     if (!res.ok) {
       setError(res.error);
@@ -960,7 +1071,9 @@ function EditSectionModal({
             the per-EC context — no need to split them here. */}
         {readonlyFields.length > 0 && (
           <div className="mb-5 grid grid-cols-1 gap-x-6 gap-y-3 rounded-xl bg-background/60 p-4 sm:grid-cols-2">
-            {readonlyFields.map((f) => (
+            {readonlyFields
+              .filter((f) => dependsOnSatisfied(f, (col) => toInput(data[col])))
+              .map((f) => (
               <div key={f.column}>
                 <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                   {f.label}
@@ -981,6 +1094,9 @@ function EditSectionModal({
           )}
 
           <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+            {spareAssembly && (
+              <PackingLotsEditor lots={packLots} onChange={setPackLots} editing />
+            )}
             {fields.map((field) => {
               // Cascade: a dependsOn'd field (e.g. billing docs gated on the
               // order's bill_type) is hidden entirely when its condition, read
@@ -992,6 +1108,33 @@ function EditSectionModal({
                 )
               ) {
                 return null;
+              }
+              // A Spare with lots: its status and readiness date follow the
+              // latest lot, and the lots sit right under the status.
+              if (
+                lotsLead &&
+                (field.column === "actual_spare_status" || field.column === "planning_readiness_date")
+              ) {
+                return (
+                  <Fragment key={field.column}>
+                    <div>
+                      <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium text-brand-label">
+                        {field.label}
+                        <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500">
+                          from lots
+                        </span>
+                      </label>
+                      <div className="flex h-10 items-center px-1 text-[14px] text-foreground">
+                        {field.column === "actual_spare_status"
+                          ? lotsLead.status || "—"
+                          : formatValue(field, lotsLead.date)}
+                      </div>
+                    </div>
+                    {field.column === "actual_spare_status" && (
+                      <ReadyLotsEditor lots={lots} onChange={setLots} editing />
+                    )}
+                  </Fragment>
+                );
               }
               // Computed and (for non-central users) centralOnly fields are
               // shown read-only rather than as inputs.
@@ -1011,16 +1154,27 @@ function EditSectionModal({
                 );
               }
               return (
-                <div key={field.column}>
+                <Fragment key={field.column}>
+                <div>
                   <label className="mb-1.5 block text-[13px] font-medium text-brand-label">
                     {field.label}
                   </label>
                   {field.type === "select" ? (
                     <select
                       value={values[field.column] ?? ""}
-                      onChange={(e) =>
-                        setValues((v) => ({ ...v, [field.column]: e.target.value }))
-                      }
+                      onChange={(e) => {
+                        const next = e.target.value;
+                        setValues((v) => ({ ...v, [field.column]: next }));
+                        // Partial / Fully ready opens Lot 1 with that status.
+                        if (
+                          spareLots &&
+                          field.column === "actual_spare_status" &&
+                          lots.length === 0 &&
+                          (next === "Partial ready" || next === "Fully ready")
+                        ) {
+                          setLots([{ status: next, ready_date: "" }]);
+                        }
+                      }}
                       className={`${inputClass} cursor-pointer`}
                     >
                       <option value="">—</option>
@@ -1049,6 +1203,13 @@ function EditSectionModal({
                     />
                   )}
                 </div>
+                {/* Partial / Fully ready with no lot yet: the lots open here. */}
+                {spareLots &&
+                  field.column === "actual_spare_status" &&
+                  readyLotsOpen(values.actual_spare_status) && (
+                    <ReadyLotsEditor lots={lots} onChange={setLots} editing />
+                  )}
+                </Fragment>
               );
             })}
           </div>

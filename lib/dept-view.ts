@@ -204,7 +204,7 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     key: "assembly",
     label: DEPT_FILTER_LABELS.assembly,
     perEc: true,
-    status: (r) => (r.assembly_done ? "Packed" : PENDING),
+    status: (r) => r.assembly_state || (r.assembly_done ? "Fully packed" : PENDING),
     done: (r) => r.assembly_done,
     na: never,
     hidden: never,

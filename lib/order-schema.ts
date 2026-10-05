@@ -30,7 +30,10 @@ export type OrderField = {
   // (AND-ed). A condition passes when the column equals `value`, or — when
   // `value` is a list — matches any entry (e.g. Transporter Name applies to
   // both "Transport" and "By BUS" delivery modes).
-  dependsOn?: { column: string; value: string | string[] }[];
+  // `not` turns the gate round: the field applies unless the column holds
+  // one of the values (e.g. every order type but Spare) — so a blank still
+  // shows it.
+  dependsOn?: { column: string; value: string | string[]; not?: boolean }[];
   // When true, only Central Visibility / Admin may edit this field; the owning
   // department sees it read-only (e.g. LD in the Planning section).
   centralOnly?: boolean;
@@ -77,17 +80,9 @@ export const PUMP_TYPE_OPTIONS = opts(["PCP", "MMP", "RBL", "OLB"]);
 // Bill Type (SO-level) — decides which billing document fields apply to each
 // PI: Tax Invoice → PI No./Date/Value; Challan → Challan No./Date/Value + FR.
 export const BILL_TYPE_OPTIONS = opts(["Tax Invoice", "Challan"]);
+// Whether the order is billed, or an FR — which carries no quotation or PO.
+export const BILL_MODE_OPTIONS = opts(["Billing", "FR"]);
 // FR (financial reconciliation) reason for a Challan.
-/** Why an order is late, at SO level. */
-export const MASTER_DELAY_REASON_OPTIONS = opts([
-  "Hold by Client",
-  "Payment",
-  "BOI",
-  "Drawing Issue",
-  "Part Issue",
-  "Other Reason",
-]);
-
 export const FR_REASON_OPTIONS = opts([
   "Wrong supply",
   "Short supply",
@@ -109,15 +104,20 @@ export const BOI_ITEM_OPTIONS = opts([
 // Planning records status on one of three columns (pump, spare, or the free
 // text one); these are the values its two selects offer, deduped, for anything
 // that needs the vocabulary rather than the fields.
-export const PLANNING_STATUS_VALUES = [
+/** Where a Pump EC stands in Planning (Actual Pump Status). */
+export const PUMP_PLANNING_STATUSES = [
   "Date awaited",
   "EC under preparation",
   "Partial assembled",
-  "Partial ready",
   "In plan",
   "Assembled",
-  "Ready",
   "Packed",
+];
+/** Where a Spare EC stands in Planning (Actual Spare Status). */
+export const SPARE_PLANNING_STATUSES = ["Date awaited", "Partial ready", "In plan", "Fully ready"];
+/** Every Planning status, Pump and Spare together — the queue's Status filter. */
+export const PLANNING_STATUS_VALUES = [
+  ...new Set([...PUMP_PLANNING_STATUSES, ...SPARE_PLANNING_STATUSES]),
 ];
 
 export const DISPATCH_STATUS_OPTIONS = opts([
@@ -178,6 +178,17 @@ export type OrderSection = {
   // files 'tentative', Packing files 'actual'), this pins which rows the
   // section sees and what new rows are created as.
   childKind?: string;
+  /**
+   * An SO-level list kept by an EC-level department: Assembly & Packing's
+   * packing slips belong to the SO, not to each EC. Shown once per SO — in
+   * the department's queue, and on the SO page / overview.
+   */
+  soChild?: {
+    table: ChildTable;
+    title: string;
+    kind?: string;
+    gate?: { column: string; present: true };
+  };
 };
 
 export const ORDER_SECTIONS: OrderSection[] = [
@@ -206,6 +217,14 @@ export const ORDER_SECTIONS: OrderSection[] = [
         options: ORDER_TYPE_OPTIONS,
         group: "Purchase Order",
       },
+      // Billed, or an FR. An FR has no quotation or purchase order behind it.
+      {
+        column: "bill_mode",
+        label: "Bill Mode",
+        type: "select",
+        options: BILL_MODE_OPTIONS,
+        group: "Purchase Order",
+      },
       {
         column: "bill_type",
         label: "Bill Type",
@@ -213,9 +232,12 @@ export const ORDER_SECTIONS: OrderSection[] = [
         options: BILL_TYPE_OPTIONS,
         group: "Purchase Order",
       },
-      { column: "quotation_no", label: "Quotation No.", type: "text", group: "Purchase Order" },
-      { column: "po_no", label: "Purchase Order Number", type: "text", group: "Purchase Order" },
-      { column: "customer_po_date", label: "Purchase Order Date", type: "date", group: "Purchase Order" },
+      // An FR stands on a complaint instead.
+      { column: "complaint_no", label: "Complaint No.", type: "text", dependsOn: [{ column: "bill_mode", value: "FR" }], group: "Purchase Order" },
+      { column: "complaint_date", label: "Complaint Date", type: "date", dependsOn: [{ column: "bill_mode", value: "FR" }], group: "Purchase Order" },
+      { column: "quotation_no", label: "Quotation No.", type: "text", dependsOn: [{ column: "bill_mode", value: "FR", not: true }], group: "Purchase Order" },
+      { column: "po_no", label: "Purchase Order Number", type: "text", dependsOn: [{ column: "bill_mode", value: "FR", not: true }], group: "Purchase Order" },
+      { column: "customer_po_date", label: "Purchase Order Date", type: "date", dependsOn: [{ column: "bill_mode", value: "FR", not: true }], group: "Purchase Order" },
       {
         column: "order_value",
         label: "Purchase/Sales Order Value (without GST)",
@@ -251,13 +273,17 @@ export const ORDER_SECTIONS: OrderSection[] = [
       },
       { column: "so_no", label: "Sales Order Number", type: "text", group: "Purchase Order" },
       { column: "so_date", label: "Sales Order Date", type: "date", group: "Purchase Order" },
-      { column: "total_quantity", label: "Sales Order Total Quantity", type: "int", min: 0, group: "Purchase Order" },
+      // A Spare order is counted by value, not by a total quantity.
+      { column: "total_quantity", label: "Sales Order Total Quantity", type: "int", min: 0, dependsOn: [{ column: "order_type", value: "Spare", not: true }], group: "Purchase Order" },
 
       // Terms & Conditions — customer requirements + freight/packing + commercial
       // terms rolled into one section. Visible read-only to Billing.
       // BOI (bought-out items) flag — Purchase sees it read-only and, when Yes,
       // adds the individual BOI items per EC.
-      { column: "boi", label: "BOI", type: "select", options: YES_NO, group: "Terms & Conditions" },
+      // A Spare order has no bought-out items and no quality documents: it is
+      // supplied as it is, so Purchase and Quality (and Drawing) have no work
+      // on it. Both read No for a Spare — see withValueRules.
+      { column: "boi", label: "BOI", type: "select", options: YES_NO, dependsOn: [{ column: "order_type", value: "Spare", not: true }], group: "Terms & Conditions" },
       // Whether the customer requires packing details for this order.
       {
         column: "packing_details_required",
@@ -273,6 +299,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
         label: "Quality Required",
         type: "select",
         options: YES_NO,
+        dependsOn: [{ column: "order_type", value: "Spare", not: true }],
         group: "Terms & Conditions",
       },
       {
@@ -334,7 +361,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
       // Target dates (per SO — the same target applies across every EC on
       // this order). Set by Central Visibility at intake; departments see them
       // read-only in their workspaces.
-      { column: "drg_target_date", label: "Target Date for Drawing", type: "date", readOnly: true, group: "Target Dates" },
+      { column: "drg_target_date", label: "Target Date for Drawing", type: "date", readOnly: true, dependsOn: [{ column: "order_type", value: "Spare", not: true }], group: "Target Dates" },
       // Purchase target is only meaningful when BOI = Yes (there's nothing
       // for Purchase to do otherwise).
       {
@@ -361,25 +388,9 @@ export const ORDER_SECTIONS: OrderSection[] = [
         readOnly: true,
         group: "Target Dates",
       },
+      // Holds the latest value; earlier ones are in its history.
       { column: "dispatch_target_date", label: "Dispatch Target Date", type: "date", readOnly: true, group: "Target Dates" },
-      {
-        column: "dispatch_target_revised_date",
-        label: "Revised Dispatch Target Date",
-        type: "date",
-        readOnly: true,
-        group: "Target Dates",
-      },
 
-      // The order's own record: why it is late, and any note Central keeps
-      // on it (a hold, where assembly stands).
-      {
-        column: "master_reason_of_delay",
-        label: "Master Reason of Delay",
-        type: "select",
-        options: MASTER_DELAY_REASON_OPTIONS,
-        group: "Remarks",
-      },
-      { column: "so_remarks", label: "Remarks", type: "text", group: "Remarks" },
 
       // --- Everything below is commented out, not deleted: the orders table
       // was trimmed to Client + Purchase Order Details columns only, and
@@ -547,6 +558,14 @@ export const ORDER_SECTIONS: OrderSection[] = [
       // "Packing Details Required" in Purchase Order Details.)
       // Filled by Planning. (Purchase target date moved to the SO — Central
       // Visibility sets it in Purchase Order Details.)
+      // A Spare starts from where it stands.
+      {
+        column: "actual_spare_status",
+        label: "Actual Spare Status",
+        type: "select",
+        options: opts(SPARE_PLANNING_STATUSES),
+        dependsOn: [{ column: "item_type", value: "Spare" }],
+      },
       // Readiness remarks — one field per item type, gated so only the
       // relevant one shows on an EC.
       {
@@ -561,44 +580,31 @@ export const ORDER_SECTIONS: OrderSection[] = [
         type: "text",
         dependsOn: [{ column: "item_type", value: "Spare" }],
       },
-      { column: "planning_readiness_date", label: "Readiness Date Rcvd from Planning", type: "date" },
-      { column: "planning_status", label: "Planning Status", type: "text" },
+      // No readiness date to give while a Spare's date is still awaited.
+      {
+        column: "planning_readiness_date",
+        label: "Readiness Date Rcvd from Planning",
+        type: "date",
+        dependsOn: [{ column: "actual_spare_status", value: "Date awaited", not: true }],
+      },
+      // A Spare is ready or it isn't: no planning status, assembly or
+      // assembled quantity to plan for it.
+      { column: "planning_status", label: "Planning Status", type: "text", dependsOn: [{ column: "item_type", value: "Spare", not: true }] },
       {
         column: "actual_pump_status",
         label: "Actual Pump Status",
         type: "select",
-        options: opts([
-          "Date awaited",
-          "EC under preparation",
-          "Partial assembled",
-          "In plan",
-          "Assembled",
-          "Packed",
-        ]),
+        options: opts(PUMP_PLANNING_STATUSES),
         dependsOn: [{ column: "item_type", value: PUMP_LIKE }],
       },
-      {
-        column: "actual_spare_status",
-        label: "Actual Spare Status",
-        type: "select",
-        options: opts([
-          "Date awaited",
-          "EC under preparation",
-          "Partial ready",
-          "In plan",
-          "Ready",
-          "Packed",
-        ]),
-        dependsOn: [{ column: "item_type", value: "Spare" }],
-      },
-      { column: "assembled_packed_qty", label: "Assembled / Packed Qty", type: "text" },
+      { column: "assembled_packed_qty", label: "Assembled / Packed Qty", type: "text", dependsOn: [{ column: "item_type", value: "Spare", not: true }] },
 
       // Assembly is planned for every item type; packing only for pumps — a
       // spare is ready or it isn't, there's no separate packing stage to plan.
       // Assembly Date is what Assembly & Packing works to, so it's mirrored
       // read-only into their workspace and notifies them when it's set.
-      { column: "assembly_date", label: "Assembly Date", type: "date" },
-      { column: "assembly_remarks", label: "Assembly Remarks", type: "text" },
+      { column: "assembly_date", label: "Assembly Date", type: "date", dependsOn: [{ column: "item_type", value: "Spare", not: true }] },
+      { column: "assembly_remarks", label: "Assembly Remarks", type: "text", dependsOn: [{ column: "item_type", value: "Spare", not: true }] },
       {
         column: "packing_date",
         label: "Packing Date",
@@ -612,13 +618,8 @@ export const ORDER_SECTIONS: OrderSection[] = [
         dependsOn: [{ column: "item_type", value: PUMP_LIKE }],
       },
     ],
-    // Planning files the TENTATIVE packing slips for each EC. Available as soon
-    // as the SO has a Market Type (Domestic/Export) — at that point only the
-    // slip no. + date fields are exposed. Full detail (box/marking/weights)
-    // gates on Packing Details Required = Yes via per-field dependsOn.
-    childTable: "order_packing_slips",
-    childGate: { column: "market_type", present: true },
-    childKind: "tentative",
+    // (Planning no longer files tentative packing slips; only Assembly &
+    // Packing records the actual ones.)
   },
   {
     key: "assembly_dispatch",
@@ -629,17 +630,23 @@ export const ORDER_SECTIONS: OrderSection[] = [
       // (Documents-required field removed — replaced by SO-level "Packing
       // Details Required"; Target Date for Dispatch Team moved to the SO's
       // Target Dates — both in Purchase Order Details / Order details.)
-      { column: "final_packing_dispatch_date", label: "Final Date for Packing & Dispatch", type: "date" },
-      { column: "actual_packing_date", label: "Actual Material Packing Date", type: "date" },
+      // A Spare is packed lot by lot against Planning's readiness lots (see
+      // lib/ready-lots.ts); its packing date follows them.
+      { column: "final_packing_dispatch_date", label: "Final Date for Packing & Dispatch", type: "date", dependsOn: [{ column: "item_type", value: "Spare", not: true }] },
+      { column: "actual_packing_date", label: "Actual Material Packing Date", type: "date", dependsOn: [{ column: "item_type", value: "Spare", not: true }] },
       { column: "delay_remarks", label: "Remarks / Reason of Delay", type: "text" },
       // (Dispatch Status is no longer hand-entered — it's derived on the SO
       // from invoiced quantity/value vs the SO's own. See recomputeDispatchStatus.)
     ],
-    // Packing files the ACTUAL packing slips for each EC. Same gating as
-    // Planning's tentative set — see above.
-    childTable: "order_packing_slips",
-    childGate: { column: "market_type", present: true },
-    childKind: "actual",
+    // Packing files the ACTUAL packing slips — one list per SO, not per EC.
+    // Available once the SO has a Market Type; the detail columns gate on
+    // Packing Details Required = Yes.
+    soChild: {
+      table: "order_packing_slips",
+      title: "Packing slips",
+      kind: "actual",
+      gate: { column: "market_type", present: true },
+    },
   },
   {
     // Dispatch: last in the order, after Assembly & Packing has packed. Its
@@ -709,7 +716,8 @@ export type ChildTable =
   | "order_billing_docs"
   | "order_packing_slips"
   | "order_invoices"
-  | "order_drawing_revisions";
+  | "order_drawing_revisions"
+  | "order_ready_lots";
 
 // A packing slip under an EC. Planning files the tentative set, Packing files
 // the actual set (same shape, different `kind` — see PACKING_SLIP_KINDS).
@@ -848,9 +856,10 @@ export function dependsOnSatisfied(
   const norm = (s: string) => (s ?? "").trim().toLowerCase();
   return field.dependsOn.every((d) => {
     const current = norm(read(d.column));
-    return Array.isArray(d.value)
+    const match = Array.isArray(d.value)
       ? d.value.some((v) => norm(v) === current)
       : norm(d.value) === current;
+    return d.not ? !match : match;
   });
 }
 
@@ -907,6 +916,11 @@ export function withValueRules<T extends Record<string, unknown>>(
   if (column === "bill_type" && value === "Challan") {
     next.order_value = "0";
     next.order_currency = "INR";
+  }
+  // A Spare has no bought-out items and no quality documents.
+  if (column === "order_type" && value === "Spare") {
+    next.boi = "No";
+    next.qc_required = "No";
   }
   return next as T;
 }
@@ -991,6 +1005,23 @@ export const BILLING_DOC_FIELDS: OrderField[] = [
   { column: "pi_date", label: "PI Date", type: "date" },
   { column: "pi_value", label: "PI Value", type: "number" },
 ];
+
+/**
+ * A Spare's readiness, lot by lot — up to READY_LOT_LIMIT of them, once its
+ * Actual Spare Status is Partial ready or Fully ready. Planning records them;
+ * Assembly & Packing reads them to know what can be packed.
+ */
+export const READY_LOT_LIMIT = 3;
+export const READY_LOT_STATUSES = ["Partial ready", "Fully ready"];
+export const READY_LOT_FIELDS: OrderField[] = [
+  { column: "status", label: "Status", type: "select", options: opts(READY_LOT_STATUSES) },
+  { column: "ready_date", label: "Date", type: "date" },
+];
+
+/** Whether a Spare EC's status opens its readiness lots. */
+export function readyLotsOpen(actualSpareStatus: unknown): boolean {
+  return READY_LOT_STATUSES.includes(String(actualSpareStatus ?? "").trim());
+}
 
 export const LOT_FIELDS: OrderField[] = [
   { column: "lot_no", label: "Lot No.", type: "text" },
@@ -1132,6 +1163,7 @@ export const CHILD_FIELDS: Record<ChildTable, OrderField[]> = {
   order_billing_docs: BILLING_DOC_FIELDS,
   order_packing_slips: PACKING_SLIP_FIELDS,
   order_invoices: INVOICE_FIELDS,
+  order_ready_lots: READY_LOT_FIELDS,
 };
 
 // SO-level context every department sees read-only, so each team knows when
@@ -1191,17 +1223,20 @@ export const ASSEMBLY_CONTEXT_FIELDS: OrderField[] = [
   },
   // Planning schedules the assembly; Assembly & Packing works to that date, so
   // it's mirrored here read-only (they're also notified when it's set).
+  // A Spare has no assembly to plan: it is packed against its readiness lots.
   {
     column: "assembly_date",
     label: "Assembly Date",
     type: "date",
     from: "order_planning",
+    dependsOn: [{ column: "item_type", value: "Spare", not: true }],
   },
   {
     column: "assembly_remarks",
     label: "Assembly Remarks",
     type: "text",
     from: "order_planning",
+    dependsOn: [{ column: "item_type", value: "Spare", not: true }],
   },
 ];
 
@@ -1210,11 +1245,6 @@ export const ASSEMBLY_CONTEXT_FIELDS: OrderField[] = [
 export const PLANNING_CONTEXT_FIELDS: OrderField[] = [
   ...SO_CONTEXT_FIELDS,
   { column: "dispatch_target_date", label: "Dispatch Target Date", type: "date" },
-  {
-    column: "dispatch_target_revised_date",
-    label: "Revised Dispatch Target Date",
-    type: "date",
-  },
   // Liquidated damages and the bought-out flag drive how Planning schedules an
   // SO — an LD date is a hard deadline, and BOI = Yes means waiting on Purchase.
   { column: "ld", label: "LD", type: "select", options: YES_NO },

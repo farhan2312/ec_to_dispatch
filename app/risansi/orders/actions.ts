@@ -27,6 +27,8 @@ import {
   completeDept,
   deleteLatestTargetRevision,
   deptInvolvedInOrder,
+  saveReadyLots,
+  saveLotPacking,
   applyUsdConversion,
   getOrderStatusState,
   setOrderStatus,
@@ -78,6 +80,15 @@ import {
   type TargetRevision,
 } from "@/lib/target-dates";
 import { logAudit } from "@/lib/audit";
+import {
+  PACKING_LOTS_FIELD,
+  READY_LOTS_FIELD,
+  lotsError,
+  lotsFromRows,
+  packingError,
+  packingLotsFromRows,
+  type ReadyLot,
+} from "@/lib/ready-lots";
 import { getUsdInrRate } from "@/lib/settings";
 import { lockReason } from "@/lib/order-lock";
 import {
@@ -688,7 +699,45 @@ export async function updateOrderSectionAction(
       const before = await getItemDetail(id);
       const itemLock = lockReason(tbl, before?.order as never, user.role);
       if (itemLock) return { ok: false, error: itemLock };
+      // A Spare's readiness lots ride along with Planning's form.
+      let lots: ReadyLot[] | null = null;
+      const lotsJson = allowedValues[READY_LOTS_FIELD];
+      if (tbl === "order_planning" && typeof lotsJson === "string") {
+        try {
+          lots = lotsFromRows(JSON.parse(lotsJson));
+        } catch {
+          return { ok: false, error: "The readiness lots could not be read." };
+        }
+        const problem = lotsError(lots);
+        if (problem) return { ok: false, error: problem };
+        if (lots.length > 0 && String(before?.item.item_type ?? "").trim().toLowerCase() !== "spare") {
+          return { ok: false, error: "Readiness lots are for Spare ECs only." };
+        }
+      }
+      // …and their packing dates ride along with Assembly & Packing's.
+      let packing: { id: string; packed_date: string }[] | null = null;
+      const packingJson = allowedValues[PACKING_LOTS_FIELD];
+      if (tbl === "order_assembly_dispatch" && typeof packingJson === "string") {
+        let sent: unknown;
+        try {
+          sent = JSON.parse(packingJson);
+        } catch {
+          return { ok: false, error: "The packing dates could not be read." };
+        }
+        // Checked against the lots as saved: only this EC's, each date on or
+        // after the day its lot was ready.
+        const saved = packingLotsFromRows(before?.order_ready_lots);
+        const byId = new Map(
+          packingLotsFromRows(sent).map((l) => [l.id, l.packed_date])
+        );
+        const merged = saved.map((l) => ({ ...l, packed_date: byId.get(l.id) ?? l.packed_date }));
+        const problem = packingError(merged);
+        if (problem) return { ok: false, error: problem };
+        packing = merged.map((l) => ({ id: l.id, packed_date: l.packed_date }));
+      }
       await updateOrderSection(id, tbl, allowedValues);
+      if (lots) await saveReadyLots(id, lots);
+      if (packing) await saveLotPacking(id, packing);
       const after = before ? await getItemDetail(id) : null;
       const pick = (d: NonNullable<typeof before>) =>
         tbl === "order_items"
@@ -697,8 +746,22 @@ export async function updateOrderSectionAction(
       const current = after ?? before;
       const soNo = current ? String(current.order.so_no ?? `#${current.order.sl_no}`) : null;
       const ecNo = current ? ((current.item.ec_no as string | null) ?? null) : null;
-      const changes =
+      const fieldChanges =
         before && after ? describeChanges(section.fields, pick(before), pick(after)) : null;
+      // The lots, when they changed: "Lot 1 Partial ready 05-10-2026; Lot 2 …".
+      const dmy = (d: string) => d.split("-").reverse().join("-");
+      const lotText = (rows: unknown) =>
+        packingLotsFromRows(rows)
+          .map(
+            (l, i) =>
+              `Lot ${i + 1} ${l.status} ${dmy(l.ready_date)}${l.packed_date ? ` · packed ${dmy(l.packed_date)}` : ""}`
+          )
+          .join("; ") || "none";
+      const lotsChange =
+        (lots || packing) && before && after && lotText(before.order_ready_lots) !== lotText(after.order_ready_lots)
+          ? `Readiness lots: ${lotText(after.order_ready_lots)}`
+          : null;
+      const changes = [fieldChanges, lotsChange].filter(Boolean).join("; ") || null;
       await logAudit({
         actor: { id: user.id, email: user.email, role: user.role },
         action: "order.update",
@@ -753,6 +816,7 @@ const CHILD_TABLES_SET: Record<ChildTable, true> = {
   order_packing_slips: true,
   order_invoices: true,
   order_drawing_revisions: true,
+  order_ready_lots: true,
 };
 const CHILD_TABLES: readonly ChildTable[] = Object.keys(
   CHILD_TABLES_SET
@@ -813,6 +877,9 @@ export async function addOrderChildAction(
   if (addLock) return { ok: false, error: addLock };
   try {
     const created = await addChildRow(table as ChildTable, orderId, kind);
+    if (!created && table === "order_ready_lots") {
+      return { ok: false, error: "A Spare takes at most 3 readiness lots." };
+    }
     // Once the row exists, its audit line and — for an actual packing slip —
     // its invoice add-on don't depend on each other, so they run together.
     // Both are awaited before the Add answers.
@@ -878,7 +945,6 @@ export async function updateOrderChildAction(
   // violation and the notification is silently dropped.
   const isPerEc =
     tbl === "order_boi_items" ||
-    tbl === "order_packing_slips" ||
     tbl === "order_drawing_revisions";
 
   // Everything read before the write, read together: none of these depends on
@@ -967,10 +1033,10 @@ export async function updateOrderChildAction(
       const emitOrderId = soOrderId ?? ctx?.order_id ?? null;
       if (emitOrderId) {
         const soLabel = (await getOrderLabel(emitOrderId)) ?? emitOrderId;
-        const ec = ctx?.ec_no ? `EC ${ctx.ec_no}` : "EC";
+        const ec = ctx?.ec_no ? ` · EC ${ctx.ec_no}` : "";
         const psn = ctx?.packing_slip_no ?? "";
         const qty = ctx?.quantity != null ? ` · Qty ${ctx.quantity}` : "";
-        const detail = `${soLabel} · ${ec}${psn ? ` · Packing Slip ${psn}` : ""}${qty}`;
+        const detail = `${soLabel}${ec}${psn ? ` · Packing Slip ${psn}` : ""}${qty}`;
         // Packed and ready to invoice: that is Dispatch's work now.
         const dispatchRoles = ["dispatch"];
         // Only Mitali (central_visibility) herself is self-muted; admin acting

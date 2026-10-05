@@ -20,6 +20,7 @@ import {
   presetRange,
 } from "@/lib/order-list-filter";
 import type { OrderListOptions } from "@/lib/orders";
+import { SIGN_OFF_ENABLED } from "@/lib/dept-completion";
 
 /** Every parameter the filter owns — what "Clear all" empties. */
 const FILTER_KEYS = [
@@ -114,14 +115,22 @@ export function OrderListFilterBar({
           selected={filter.markets}
           onChange={(next) => setParams({ market: next })}
         />
+        </>
+        )}
+        {/* Pump or Spare — every queue, since a department's work differs by type. */}
         <MultiSelectFilter
           label="Type"
           options={options.types}
           selected={filter.types}
-          onChange={(next) => setParams({ type: next })}
+          onChange={(next) => {
+            // A Planning status is a Pump word or a Spare word: drop one the
+            // new type does not have.
+            const keep =
+              activeDept && filter.deptStatus &&
+              statusesFor(activeDept, next).includes(filter.deptStatus);
+            setParams({ type: next, dstatus: keep ? filter.deptStatus : null });
+          }}
         />
-        </>
-        )}
         {!dept && (
         <SingleSelectFilter
           label="Department"
@@ -157,13 +166,14 @@ export function OrderListFilterBar({
           label="Status"
           allLabel="Any status"
           disabled={!activeDept}
-          options={(activeDept ? statusesFor(activeDept) : []).map((v) => ({
+          options={(activeDept ? statusesFor(activeDept, filter.types) : []).map((v) => ({
             value: v,
             label: v,
           }))}
           selected={filter.deptStatus}
           onChange={(next) => setParams({ dstatus: next })}
         />
+        {SIGN_OFF_ENABLED && (
         <SingleSelectFilter
           label="Completion"
           allLabel="Any"
@@ -172,6 +182,7 @@ export function OrderListFilterBar({
           selected={filter.signOff}
           onChange={(next) => setParams({ signoff: next })}
         />
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

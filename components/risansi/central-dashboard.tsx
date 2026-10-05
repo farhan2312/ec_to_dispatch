@@ -459,7 +459,7 @@ const EC_DEPTS: {
     done: (r) => r.assembly_done,
     chip: (r) => (
       <Chip
-        value={r.assembly_done ? "Packed" : null}
+        value={r.assembly_done ? "Fully packed" : r.assembly_state && r.assembly_state !== "Pending" ? r.assembly_state : null}
         tone={r.assembly_done ? "green" : "neutral"}
       />
     ),

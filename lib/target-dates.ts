@@ -60,7 +60,6 @@ export const TARGET_DATES: TargetDate[] = [
     key: "dispatch",
     label: "Dispatch Target Date",
     column: "dispatch_target_date",
-    revisedColumn: "dispatch_target_revised_date",
     hint: "Dispatch — Planning schedules to this date too",
   },
 ];

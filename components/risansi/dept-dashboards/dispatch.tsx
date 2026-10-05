@@ -27,12 +27,9 @@ export function DispatchDashboard(props: DeptDashboardProps) {
   const d = useDeptDashboard("dispatch", props);
   const c = baseColumns(d);
 
-  // Ready but not gone: Assembly has packed at least one EC and the order is
-  // not yet fully dispatched. The pipeline's own status vocabulary decides
-  // "gone"; `assembly_done` is the packing date Assembly records.
-  const readyNotGone = d.mine.filter(
-    (r) => r.assembly_done && !d.view.done(r)
-  ).length;
+  // Ready but not gone: the SO is packed (a packing slip filed, or an EC
+  // packed) and not yet fully dispatched. Dispatch works the SO, not its ECs.
+  const readyNotGone = d.mine.filter((r) => r.so_packed && !d.view.done(r)).length;
 
   return (
     <div>
@@ -68,7 +65,7 @@ export function DispatchDashboard(props: DeptDashboardProps) {
           c.client,
           c.zone,
           textColumn("bill", "Bill type", (r) => r.bill_type),
-          textColumn("packed", "Packed", (r) => (r.assembly_done ? "Yes" : "—")),
+          textColumn("packed", "Packed", (r) => (r.so_packed ? "Yes" : "—")),
           c.target,
           c.status,
           c.signOff,

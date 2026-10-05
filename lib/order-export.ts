@@ -194,11 +194,10 @@ const ORDER_COPY_FIELD: OrderField = {
   type: "text",
 };
 
-// The app prints EC / Packing Slip No. / Qty as the invoice card's header
-// rather than as form fields, so INVOICE_FIELDS omits them — but they are what
-// says which EC an invoice covers. Dispatch also uploads the LR copy here.
+// The app prints Packing Slip No. / Qty as the invoice card's header rather
+// than as form fields, so INVOICE_FIELDS omits them — but they are what says
+// which of the SO's slips an invoice covers. Dispatch also uploads the LR here.
 const INVOICE_EXPORT_FIELDS: OrderField[] = [
-  { column: "ec_no", label: "EC No. (invoiced)", type: "text" },
   { column: "packing_slip_no", label: "Packing Slip No.", type: "text" },
   { column: "packing_quantity", label: "Packing Qty", type: "int" },
   ...INVOICE_FIELDS,
@@ -270,6 +269,10 @@ function collect(orders: OrderExportRow[]) {
     for (const t of so.order_payment_terms) terms.push({ ...key, source: t });
     for (const d of so.order_billing_docs) pis.push({ ...key, source: d });
     for (const inv of so.order_invoices) invoices.push({ ...key, source: inv });
+    // Packing slips sit on the SO; an older one still names its EC.
+    for (const ps of so.order_packing_slips) {
+      slips.push({ ...key, ecNo: text(ps.ec_no) || null, source: ps });
+    }
 
     for (const item of so.items) {
       const ecNo = text(item.item.ec_no);
@@ -284,9 +287,6 @@ function collect(orders: OrderExportRow[]) {
         revisions.push({ ...ecKey, source: rv });
       }
       for (const b of item.order_boi_items) boi.push({ ...ecKey, source: b });
-      for (const ps of item.order_packing_slips) {
-        slips.push({ ...ecKey, source: ps });
-      }
       for (const q of item.order_qc_documents) {
         qcDocs.push({ ...ecKey, source: { ...q, list: "Quality output" } });
       }

@@ -64,7 +64,7 @@ function appliesSql(f: OrderField): string {
   return f.dependsOn
     .map((d) => {
       const values = Array.isArray(d.value) ? d.value : [d.value];
-      return `lower(btrim(coalesce(o.${d.column}::text, ''))) IN (${values
+      return `lower(btrim(coalesce(o.${d.column}::text, ''))) ${d.not ? "NOT IN" : "IN"} (${values
         .map((v) => lit(v.trim().toLowerCase()))
         .join(", ")})`;
     })

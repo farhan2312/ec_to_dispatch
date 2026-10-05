@@ -18,6 +18,8 @@ export const ORDER_DATE_FIELDS = [
   // is judged against. Which column that is depends on the department — see
   // DEPT_TARGET_COLUMN — so it is chosen by meaning, not by column name.
   { value: "dept_target", label: "Target date" },
+  // Planning's own date: when it says an EC will be ready.
+  { value: "readiness", label: "Readiness date" },
   { value: "dispatch_target", label: "Dispatch target" },
   { value: "so_date", label: "SO date" },
   { value: "ec_date", label: "EC date" },
@@ -81,8 +83,8 @@ export type OrderListFilter = {
   /** Order type on the SO, or the item type on any of its ECs. */
   types: string[];
   dept: DeptFilterKey | null;
-  /** Only with a department — a status is that department's own word. */
-  deptStatus: string | null;
+  /** Only with a department — its own words; any of them matches. */
+  deptStatuses: string[];
   /** Only with a department — whose sign-off it is. */
   signOff: SignOff | null;
   dateField: OrderDateField;
@@ -135,9 +137,7 @@ export function parseOrderListFilter(
   const dept = (DEPT_FILTER_KEYS as readonly string[]).includes(deptRaw ?? "")
     ? (deptRaw as DeptFilterKey)
     : null;
-  const status = dept
-    ? (statusesFor(dept).find((s) => s === get("dstatus")) ?? null)
-    : null;
+  const statuses = dept ? list(get("dstatus")).filter((s) => statusesFor(dept).includes(s)) : [];
   const signOffRaw = get("signoff");
   const signOff =
     dept && SIGN_OFF_OPTIONS.some((o) => o.value === signOffRaw)
@@ -150,7 +150,11 @@ export function parseOrderListFilter(
   // "Their target" needs a department to belong to; without one it names no
   // column, so it falls back rather than matching nothing.
   const dateField: OrderDateField =
-    dateFieldRaw === "dept_target" && !dept ? "dispatch_target" : dateFieldRaw;
+    dateFieldRaw === "dept_target" && !dept
+      ? "dispatch_target"
+      : dateFieldRaw === "readiness" && dept !== "planning"
+        ? (dept ? "so_date" : "dispatch_target")
+        : dateFieldRaw;
 
   // Picked backwards, the two dates still mean the span between them.
   let from = date(get("from"));
@@ -164,7 +168,7 @@ export function parseOrderListFilter(
     markets: list(get("market")),
     types: list(get("type")),
     dept,
-    deptStatus: status,
+    deptStatuses: statuses,
     signOff,
     dateField,
     from,
@@ -201,7 +205,7 @@ export function orderListFilterParams(f: OrderListFilter): URLSearchParams {
   if (f.dept) p.set("dept", f.dept);
   if (f.overdue) p.set("overdue", "1");
   if (f.ready) p.set("ready", "1");
-  if (f.deptStatus) p.set("dstatus", f.deptStatus);
+  if (f.deptStatuses.length) p.set("dstatus", f.deptStatuses.join(","));
   if (f.signOff) p.set("signoff", f.signOff);
   if (f.from || f.to) {
     p.set("datefield", f.dateField);
@@ -224,7 +228,7 @@ export function describeOrderListFilter(f: OrderListFilter): string {
   if (f.dept) {
     const signed = SIGN_OFF_OPTIONS.find((o) => o.value === f.signOff)?.label;
     parts.push(
-      [DEPT_FILTER_LABELS[f.dept], f.deptStatus, signed?.toLowerCase()]
+      [DEPT_FILTER_LABELS[f.dept], f.deptStatuses.join(" / "), signed?.toLowerCase()]
         .filter(Boolean)
         .join(" · ")
     );
@@ -255,7 +259,11 @@ export function parseDeptFilter(
     // all (Billing, Accounts), when the order's own date is the useful one.
     // An explicit choice still wins.
     if (key === "datefield" && dept) {
-      return get(key) ?? (DEPT_VIEWS[dept].hasTarget ? "dept_target" : "so_date");
+      // Planning reads by its readiness date rather than a target.
+      return (
+        get(key) ??
+        (dept === "planning" ? "readiness" : DEPT_VIEWS[dept].hasTarget ? "dept_target" : "so_date")
+      );
     }
     return get(key);
   });

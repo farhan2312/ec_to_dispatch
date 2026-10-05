@@ -196,7 +196,7 @@ export function DepartmentWorkspace({
   );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const orders = queue.rows;
-  const { get: getParam } = useUrlTable();
+  const { get: getParam, setParams: setUrlParams } = useUrlTable();
   const [threadFor, setThreadFor] = useState<{
     orderId: string;
     soLabel: string;
@@ -524,7 +524,30 @@ export function DepartmentWorkspace({
                     {soEdit && (
                       <>
                         <th className="px-4 py-3">Status</th>
-                        <th className="px-4 py-3 whitespace-nowrap">{soDateLabel}</th>
+                        <th className="px-4 py-3 whitespace-nowrap">
+                          {table === "order_planning" ? (
+                            // Click to sort by readiness: soonest first, latest
+                            // first, then back to Sl. No.
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const now = getParam("sort");
+                                setUrlParams({
+                                  sort: now === "readiness" ? "-readiness" : now === "-readiness" ? null : "readiness",
+                                });
+                              }}
+                              className="inline-flex items-center gap-1 uppercase tracking-wide hover:text-foreground"
+                              aria-label="Sort by readiness date"
+                            >
+                              {soDateLabel}
+                              <span aria-hidden className="text-[10px]">
+                                {getParam("sort") === "readiness" ? "▲" : getParam("sort") === "-readiness" ? "▼" : "↕"}
+                              </span>
+                            </button>
+                          ) : (
+                            soDateLabel
+                          )}
+                        </th>
                         {canEdit && <th className="px-4 py-3 text-right">Edit</th>}
                       </>
                     )}

@@ -13,11 +13,14 @@ export function MultiSelectFilter({
   options,
   selected,
   onChange,
+  allLabel,
 }: {
   label: string;
   options: string[];
   selected: string[];
   onChange: (next: string[]) => void;
+  /** What it reads with nothing picked; "All <label>s" by default. */
+  allLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -48,7 +51,7 @@ export function MultiSelectFilter({
 
   const summary =
     selected.length === 0
-      ? `All ${label.toLowerCase()}s`
+      ? (allLabel ?? `All ${label.toLowerCase()}s`)
       : selected.length === 1
         ? selected[0]
         : `${selected.length} selected`;

@@ -125,10 +125,11 @@ export function OrderListFilterBar({
           onChange={(next) => {
             // A Planning status is a Pump word or a Spare word: drop one the
             // new type does not have.
-            const keep =
-              activeDept && filter.deptStatus &&
-              statusesFor(activeDept, next).includes(filter.deptStatus);
-            setParams({ type: next, dstatus: keep ? filter.deptStatus : null });
+            const allowed = activeDept ? statusesFor(activeDept, next) : [];
+            setParams({
+              type: next,
+              dstatus: filter.deptStatuses.filter((s) => allowed.includes(s)),
+            });
           }}
         />
         {!dept && (
@@ -141,11 +142,9 @@ export function OrderListFilterBar({
             // A status is one department's word; keep it only if the new
             // department has it too. Sign-off belongs to a department, so it
             // goes when the department does.
-            const status =
-              next && filter.deptStatus &&
-              statusesFor(next as DeptFilterKey).includes(filter.deptStatus)
-                ? filter.deptStatus
-                : null;
+            const status = next
+              ? filter.deptStatuses.filter((s) => statusesFor(next as DeptFilterKey).includes(s))
+              : [];
             const keepsTarget =
               next && DEPT_VIEWS[next as DeptFilterKey].hasTarget;
             setParams({
@@ -162,17 +161,16 @@ export function OrderListFilterBar({
           }}
         />
         )}
-        <SingleSelectFilter
-          label="Status"
-          allLabel="Any status"
-          disabled={!activeDept}
-          options={(activeDept ? statusesFor(activeDept, filter.types) : []).map((v) => ({
-            value: v,
-            label: v,
-          }))}
-          selected={filter.deptStatus}
-          onChange={(next) => setParams({ dstatus: next })}
-        />
+        {/* Any of several statuses — "Partial ready" and "Fully ready" together. */}
+        {activeDept && (
+          <MultiSelectFilter
+            label="Status"
+            allLabel="Any status"
+            options={statusesFor(activeDept, filter.types)}
+            selected={filter.deptStatuses}
+            onChange={(next) => setParams({ dstatus: next })}
+          />
+        )}
         {SIGN_OFF_ENABLED && (
         <SingleSelectFilter
           label="Completion"
@@ -222,14 +220,24 @@ export function OrderListFilterBar({
         )}
         <SingleSelectFilter
           label="Date"
-          allLabel={dept ? (hasTarget ? targetLabel : "SO date") : "Dispatch target"}
+          allLabel={
+            dept === "planning"
+              ? "Readiness date"
+              : dept
+                ? hasTarget
+                  ? targetLabel
+                  : "SO date"
+                : "Dispatch target"
+          }
           // A department has no use for somebody else's target; inside its own
           // queue it keeps its own, the order's own dates, and when work was
           // completed. Elsewhere "Target date" appears only once a department
           // is chosen — and only one that works to a date — since otherwise it
           // names no column at all.
           options={ORDER_DATE_FIELDS.filter((f) => {
-            if (f.value === "dept_target") return deptTarget;
+            // Planning reads by its readiness date, not a target.
+            if (f.value === "dept_target") return deptTarget && activeDept !== "planning";
+            if (f.value === "readiness") return activeDept === "planning";
             if (f.value === "dispatch_target") return !dept;
             // Completion dates come from sign-offs, which are switched off.
             if (f.value === "completed_on") return SIGN_OFF_ENABLED;
@@ -240,11 +248,14 @@ export function OrderListFilterBar({
           }))}
           selected={filter.dateField}
           onChange={(next) => {
-            const fallback = dept
-              ? hasTarget
-                ? "dept_target"
-                : "so_date"
-              : "dispatch_target";
+            const fallback =
+              dept === "planning"
+                ? "readiness"
+                : dept
+                  ? hasTarget
+                    ? "dept_target"
+                    : "so_date"
+                  : "dispatch_target";
             setParams({ datefield: next === fallback ? null : next });
           }}
         />

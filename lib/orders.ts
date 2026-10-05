@@ -2433,7 +2433,10 @@ function orderListClauses(
                                WHERE s.order_id = o.id
                                  AND TRIM(COALESCE(s.item_type, '')) = ANY(${t}::text[])))`);
   }
-  if (f.dept && f.deptStatus) clauses.push(deptStatusPredicate(f.dept, f.deptStatus));
+  if (f.dept && f.deptStatuses.length) {
+    const dept = f.dept;
+    clauses.push(`(${f.deptStatuses.map((s) => deptStatusPredicate(dept, s)).join(" OR ")})`);
+  }
   if (f.dept && f.signOff) clauses.push(signOffPredicate(f.dept, f.signOff));
   if (f.dept && f.overdue) clauses.push(deptOverduePredicate(f.dept));
   // Packed by Assembly & Packing and not yet gone: Dispatch's own shortlist.
@@ -2455,7 +2458,10 @@ function orderListClauses(
       clauses.push(column ? range(column) : "FALSE");
     } else if (f.dateField === "so_date") clauses.push(range("o.so_date"));
     else if (f.dateField === "dispatch_target") clauses.push(range("o.dispatch_target_date"));
-    else if (f.dateField === "ec_date") {
+    else if (f.dateField === "readiness") {
+      clauses.push(`EXISTS (SELECT 1 FROM order_items s JOIN order_planning rpl ON rpl.item_id = s.id
+                             WHERE s.order_id = o.id AND ${range("rpl.planning_readiness_date")})`);
+    } else if (f.dateField === "ec_date") {
       clauses.push(`EXISTS (SELECT 1 FROM order_items s
                              WHERE s.order_id = o.id AND ${range("s.ec_date")})`);
     } else {
@@ -2662,6 +2668,8 @@ async function pageOfOrderIds(opts: {
    * the queue already has the same term, matched against its own columns.
    */
   filter?: OrderListFilter;
+  /** The queue's order, as SQL over `o`; Sl. No. when not given. */
+  orderBy?: string;
 }): Promise<{ ids: string[]; total: number; page: number }> {
   const search = opts.search ? likePattern(opts.search) : null;
   const facets = opts.filter
@@ -2683,7 +2691,8 @@ async function pageOfOrderIds(opts: {
   // all (wrong department, or filtered out by the current search) — then we
   // just honour the requested page.
   let requested = opts.page;
-  if (opts.focusOrderId && UUID_RE.test(opts.focusOrderId)) {
+  // (The rank is by Sl. No.; in a queue sorted otherwise the page asked for stands.)
+  if (!opts.orderBy && opts.focusOrderId && UUID_RE.test(opts.focusOrderId)) {
     const rank = await query<{ n: string }>(
       `SELECT count(*) AS n FROM orders o ${where}
          AND o.sl_no <= (SELECT sl_no FROM orders WHERE id = ${own(2)})`,
@@ -2696,7 +2705,7 @@ async function pageOfOrderIds(opts: {
 
   const ids = await query<{ id: string }>(
     `SELECT o.id FROM orders o ${where}
-      ORDER BY o.sl_no ASC
+      ORDER BY ${opts.orderBy ?? "o.sl_no ASC"}
       LIMIT ${own(2)} OFFSET ${own(3)}`,
     [...facets.params, search, PAGE_SIZE, offsetFor(page)]
   );
@@ -2711,6 +2720,13 @@ const soAndEcSearch = (term: string) => `(o.so_no ILIKE ${term} OR o.client_name
                          WHERE s.order_id = o.id AND s.ec_no ILIKE ${term}))`;
 
 /** Item-scope department queue, one page of SOs' worth of ECs. */
+/** How a department queue can be sorted besides by Sl. No. */
+export type QueueSort = "readiness" | "-readiness";
+
+export function parseQueueSort(value: string | undefined): QueueSort | null {
+  return value === "readiness" || value === "-readiness" ? value : null;
+}
+
 export async function listItemsForSectionPage(
   table: OrderTable,
   contextColumns: ContextColumn[],
@@ -2719,6 +2735,8 @@ export async function listItemsForSectionPage(
     search: string;
     focusOrderId?: string | null;
     filter?: OrderListFilter;
+    /** Planning: by its readiness date (the SO's latest), soonest or latest first. */
+    sort?: QueueSort | null;
   }
 ): Promise<PageResult<Row>> {
   // A department does not see an order it has nothing to do with (QC when
@@ -2736,9 +2754,20 @@ export async function listItemsForSectionPage(
         : `${restrict} AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id)`,
     searchable: soAndEcSearch,
     filter: opts.filter,
+    orderBy: opts.sort
+      ? `(SELECT max(rpl.planning_readiness_date) FROM order_items s
+           JOIN order_planning rpl ON rpl.item_id = s.id
+          WHERE s.order_id = o.id) ${opts.sort === "-readiness" ? "DESC" : "ASC"} NULLS LAST, o.sl_no ASC`
+      : undefined,
   });
 
   const rows = ids.length === 0 ? [] : await listItemsForSection(table, contextColumns, ids);
+  // Keep the page's SO order (the rows come back by Sl. No.); an SO's ECs
+  // stay in their own order.
+  if (opts.sort) {
+    const at = new Map(ids.map((id, i) => [id, i]));
+    rows.sort((a, b) => (at.get(String(a.order_id)) ?? 0) - (at.get(String(b.order_id)) ?? 0));
+  }
 
   return pageResult(rows, total, page);
 }
@@ -3494,9 +3523,10 @@ function pipelineRowWhere(f: OrderListFilter): { where: string; params: unknown[
   // An EC is read by its own item type, falling back to the order's.
   if (f.types.length) clauses.push(facet("COALESCE(it.item_type, o.order_type)", f.types));
 
-  if (f.dept && f.deptStatus) {
+  if (f.dept && f.deptStatuses.length) {
+    const dept = f.dept;
     clauses.push(
-      isPerEcDept(f.dept) ? `(${ecState(f.dept, f.deptStatus)})` : `(${soState(f.dept, f.deptStatus)})`
+      `(${f.deptStatuses.map((s) => isPerEcDept(dept) ? `(${ecState(dept, s)})` : `(${soState(dept, s)})`).join(" OR ")})`
     );
   }
   // This row's own sign-off: its EC's for a per-EC department, its SO's else.
@@ -3526,6 +3556,10 @@ function pipelineRowWhere(f: OrderListFilter): { where: string; params: unknown[
     } else if (f.dateField === "so_date") clauses.push(range("o.so_date"));
     else if (f.dateField === "dispatch_target") clauses.push(range("o.dispatch_target_date"));
     else if (f.dateField === "ec_date") clauses.push(range("it.ec_date"));
+    else if (f.dateField === "readiness") {
+      clauses.push(`EXISTS (SELECT 1 FROM order_planning rpl
+                             WHERE rpl.item_id = it.id AND ${range("rpl.planning_readiness_date")})`);
+    }
     else {
       // Completed on: the chosen department's sign-off on this row, or with
       // none chosen, any sign-off on this EC or its SO.

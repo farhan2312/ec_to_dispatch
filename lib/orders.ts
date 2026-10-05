@@ -2065,7 +2065,7 @@ export type BillingQueueRow = {
   dispatch_status: string | null;
   pi_docs: Row[];
   invoices: Row[];
-  /** The SO's actual packing slips, each with the despatch it went out on. */
+  /** The SO's actual packing slips, each with the dispatch it went out on. */
   packing_slips: Row[];
 };
 
@@ -3335,12 +3335,12 @@ async function syncTargetColumns(
   ]);
 }
 
-/** A despatch started: its invoice or challan side has something filled in. */
+/** A dispatch started: its invoice or challan side has something filled in. */
 const INVOICE_STARTED = (i: string) => `(${i}.invoice_no IS NOT NULL OR ${i}.challan_no IS NOT NULL
       OR ${i}.invoice_date IS NOT NULL OR ${i}.challan_date IS NOT NULL
       OR ${i}.invoice_value IS NOT NULL OR ${i}.challan_value IS NOT NULL)`;
 
-/** The SO's slips that have gone out: linked to a despatch that has started. */
+/** The SO's slips that have gone out: linked to a dispatch that has started. */
 const SENT_SLIPS_SQL = (o: string) => `SELECT 1 FROM order_invoice_slips l
       JOIN order_invoices si ON si.id = l.invoice_id
      WHERE si.order_id = ${o}.id AND ${INVOICE_STARTED("si")}`;
@@ -3352,9 +3352,9 @@ const SO_FULLY_PACKED_SQL = (o: string) => `(EXISTS (SELECT 1 FROM order_items f
                       WHERE fi.order_id = ${o}.id AND fa.actual_packing_date IS NULL))`;
 
 /**
- * Raise a despatch for some of the SO's packing slips — one invoice / challan
+ * Raise a dispatch for some of the SO's packing slips — one invoice / challan
  * card covering all of them. Each slip must be the SO's, an actual one, and
- * not already on a despatch. Returns the new card's id, or why not.
+ * not already on a dispatch. Returns the new card's id, or why not.
  */
 export async function createDispatchFromSlips(
   orderId: string,
@@ -3390,7 +3390,7 @@ export async function createDispatchFromSlips(
     }
     return inv.rows[0].id;
   });
-  if (!created) return { error: "A chosen slip is not this SO's, or is already on a despatch." };
+  if (!created) return { error: "A chosen slip is not this SO's, or is already on a dispatch." };
   await recomputeDispatchStatus(orderId);
   return { id: created };
 }

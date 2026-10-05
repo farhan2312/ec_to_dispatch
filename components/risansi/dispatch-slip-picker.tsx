@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Loader2, Truck } from "lucide-react";
-import { createDispatchAction } from "@/app/risansi/orders/actions";
+import { Truck } from "lucide-react";
+import { dispatchStage } from "@/lib/dispatch-steps";
+import { DispatchWizard } from "./dispatch-wizard";
 
 type Row = Record<string, unknown>;
 
@@ -19,42 +19,34 @@ function formatDate(value: unknown): string {
 }
 
 /**
- * The SO's packing slips as Dispatch sees them: which have gone out on a
- * despatch and which are waiting. Tick one or more waiting slips and raise a
- * despatch — one invoice / challan card for all of them.
+ * The SO's packing slips as Dispatch sees them: which dispatch each went on
+ * and how far it has got, and which are waiting. Tick one or more waiting
+ * slips and New dispatch opens the step-by-step pop-up for them.
  */
 export function DispatchSlipPicker({
   orderId,
   slips,
   invoices,
+  billType,
   canEdit,
 }: {
   orderId: string;
   slips: Row[];
-  /** The SO's despatch cards, in order — to say which one a slip went out on. */
+  /** The SO's dispatches, in order — which one a slip went on, and its stage. */
   invoices: Row[];
+  billType: unknown;
   canEdit: boolean;
 }) {
-  const router = useRouter();
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [raising, setRaising] = useState(false);
 
   const cardNo = new Map(invoices.map((inv, i) => [str(inv.id), i + 1]));
+  const cardOf = new Map(invoices.map((inv) => [str(inv.id), inv]));
   const waiting = slips.filter((s) => !str(s.invoice_id));
-
-  async function raise() {
-    setSaving(true);
-    setError(null);
-    const res = await createDispatchAction(orderId, [...picked]);
-    setSaving(false);
-    if (!res.ok) {
-      setError(res.error);
-      return;
-    }
-    setPicked(new Set());
-    router.refresh();
-  }
+  const pickedLabel = slips
+    .filter((s) => picked.has(str(s.id)))
+    .map((s) => str(s.packing_slip_no) || "—")
+    .join(", ");
 
   return (
     <section className="rounded-xl border border-card-border bg-surface p-4 shadow-sm">
@@ -64,22 +56,21 @@ export function DispatchSlipPicker({
           <p className="text-xs text-muted">
             {slips.length === 0
               ? "No packing slip yet."
-              : `${slips.length - waiting.length} of ${slips.length} on a despatch · tick the slips going out together, then raise one despatch for them.`}
+              : `${slips.length - waiting.length} of ${slips.length} on a dispatch · tick the slips going out together, then raise one dispatch for them.`}
           </p>
         </div>
         {canEdit && waiting.length > 0 && (
           <button
             type="button"
-            onClick={raise}
-            disabled={picked.size === 0 || saving}
+            onClick={() => setRaising(true)}
+            disabled={picked.size === 0}
             className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-50"
           >
-            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Truck className="h-3.5 w-3.5" />}
+            <Truck className="h-3.5 w-3.5" />
             New dispatch{picked.size > 0 ? ` (${picked.size} slip${picked.size === 1 ? "" : "s"})` : ""}
           </button>
         )}
       </div>
-      {error && <p className="mb-2 text-xs text-danger">{error}</p>}
       {slips.length > 0 && (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -121,7 +112,7 @@ export function DispatchSlipPicker({
                     <td className="px-2 py-1.5 whitespace-nowrap">
                       {on ? (
                         <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                          On despatch #{cardNo.get(on) ?? "?"}
+                          #{cardNo.get(on) ?? "?"} · {cardOf.get(on) ? dispatchStage(cardOf.get(on)!, billType) : "On a dispatch"}
                         </span>
                       ) : (
                         <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
@@ -135,6 +126,19 @@ export function DispatchSlipPicker({
             </tbody>
           </table>
         </div>
+      )}
+      {raising && (
+        <DispatchWizard
+          orderId={orderId}
+          billType={billType}
+          invoice={null}
+          slipIds={[...picked]}
+          slipsLabel={`Packing Slip${picked.size > 1 ? "s" : ""} ${pickedLabel}`}
+          onClose={() => {
+            setRaising(false);
+            setPicked(new Set());
+          }}
+        />
       )}
     </section>
   );

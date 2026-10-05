@@ -7,7 +7,6 @@
 import {
   BILLING_DOC_FIELDS,
   CHILD_FIELDS,
-  INVOICE_FIELDS,
   SO_SECTIONS,
 } from "@/lib/order-schema";
 import { paymentTermsExtra } from "./payment-terms-control";
@@ -21,8 +20,8 @@ import {
 import type { OrderDetail as OrderDetailData } from "@/lib/orders";
 import { EditableSection } from "./editable-section";
 import { OrderChildList } from "./order-children";
-import { InvoiceLrCell } from "./invoice-lr-cell";
 import { DispatchSlipPicker } from "./dispatch-slip-picker";
+import { DispatchList } from "./dispatch-list";
 import { targetDateExtra } from "./target-date-control";
 import type { TargetRevision } from "@/lib/target-dates";
 
@@ -81,7 +80,7 @@ export function SoSections({
   // fields or the PI list; the invoice cards are Dispatch's).
   const renderSection = (section: (typeof SO_SECTIONS)[number]) => {
     if (section.table === "order_dispatch") {
-      // Dispatch: one invoice-and-despatch card per despatch, raised from the
+      // Dispatch: one invoice-and-dispatch card per dispatch, raised from the
       // packing slips Dispatch picks above it; deleting a card frees its slips.
       return (
         <div key={section.key} className="space-y-4">
@@ -91,33 +90,18 @@ export function SoSections({
             (r) => String(r.kind ?? "actual") === "actual"
           )}
           invoices={(detail.order_invoices ?? []) as Row[]}
+          billType={order.bill_type}
           canEdit={canEditChild(role, "order_invoices")}
         />
-        <OrderChildList
-          orderId={orderId}
-          table="order_invoices"
-          title="Invoice and dispatch"
-          fields={INVOICE_FIELDS}
-          rows={(detail.order_invoices ?? []) as Row[]}
-          canEdit={canEditChild(role, "order_invoices")}
-          canAdd={false}
-          canDelete={canEditChild(role, "order_invoices")}
-          // The parent SO's bill_type decides whether each card shows
-          // invoice_* or challan_* fields — pass it as context so per-field
-          // dependsOn can gate the correct set.
-          context={{ bill_type: order.bill_type }}
-          rowHeader={invoiceRowHeader}
-          renderExtra={{
-            label: "LR Attachment",
-            render: (inv) => (
-              <InvoiceLrCell
-                row={inv}
-                orderId={orderId}
-                canEdit={canEditChild(role, "order_invoices")}
-              />
-            ),
-          }}
-        />
+        <section className="rounded-xl border border-card-border bg-surface p-4 shadow-sm">
+          <h3 className="mb-3 font-display text-sm font-semibold text-foreground">Dispatches</h3>
+          <DispatchList
+            orderId={orderId}
+            invoices={(detail.order_invoices ?? []) as Row[]}
+            billType={order.bill_type}
+            canEdit={canEditChild(role, "order_invoices")}
+          />
+        </section>
         </div>
       );
     }

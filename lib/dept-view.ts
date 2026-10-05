@@ -37,7 +37,7 @@ export type DeptView = {
    * The order is none of this department's business at all: off its queue,
    * its dashboard, and its URLs. Stronger than `na` — an order can be N/A
    * and still belong to the department, the way a paid-after-receipt order
-   * still gets its despatch recorded by Dispatch.
+   * still gets its dispatch recorded by Dispatch.
    */
   hidden: (row: OrderOverviewRow) => boolean;
   /** The date it is judged against, if it has one. */

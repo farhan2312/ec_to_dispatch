@@ -14,7 +14,7 @@ export const ROLE_LABELS = {
   qc: "Quality",
   assembly: "Assembly & Packing",
   // Dispatch is its own department, after Assembly & Packing: it invoices what
-  // has been packed and records the despatch. The role named `dispatch` used to
+  // has been packed and records the dispatch. The role named `dispatch` used to
   // be the packing team — see the guarded rename in db/schema.sql.
   dispatch: "Dispatch",
 } as const;
@@ -130,7 +130,7 @@ export function canEditChild(
   if (table === "order_ready_lots") return canEditSection(role, "order_planning");
   // The order's payment terms are part of its identity: Central Visibility's.
   if (table === "order_payment_terms") return canEditSection(role, "orders");
-  // PIs are Billing's; the invoice-and-despatch cards are Dispatch's.
+  // PIs are Billing's; the invoice-and-dispatch cards are Dispatch's.
   if (table === "order_billing_docs") return canEditSection(role, "order_billing");
   if (table === "order_invoices") return canEditSection(role, "order_dispatch");
   // Packing slips are Assembly & Packing's (Planning no longer files a

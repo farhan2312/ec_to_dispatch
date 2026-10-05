@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 /**
  * Scroll a deep-linked row into view and flash a ring around it.
@@ -42,4 +43,28 @@ export function useFocusRow(ids: (string | undefined | null)[], ready: boolean) 
     id != null && id === flashing
       ? "ring-2 ring-inset ring-primary/70 bg-primary/[0.06]"
       : "";
+}
+
+/**
+ * A reminder's ?focus= is used once: it picks the page holding the SO and
+ * brings the SO up. Left in the address it would keep forcing that page, so
+ * paging would seem to do nothing — so it is dropped, keeping the page it
+ * landed on.
+ */
+export function useConsumeFocusParam(page: number) {
+  const router = useRouter();
+  const params = useSearchParams();
+  const focus = params.get("focus");
+  useEffect(() => {
+    if (!focus) return;
+    const t = setTimeout(() => {
+      const next = new URLSearchParams(params.toString());
+      next.delete("focus");
+      if (page > 1) next.set("page", String(page));
+      else next.delete("page");
+      const qs = next.toString();
+      router.replace(qs ? `?${qs}` : "?", { scroll: false });
+    }, 400);
+    return () => clearTimeout(t);
+  }, [focus, page, params, router]);
 }

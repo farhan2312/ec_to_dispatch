@@ -29,6 +29,7 @@ import {
   deptInvolvedInOrder,
   saveReadyLots,
   saveLotPacking,
+  logReadinessChange,
   listReadyLotHistory,
   type ReadyLotEvent,
   listSoEcsForSection,
@@ -743,6 +744,19 @@ export async function updateOrderSectionAction(
       if (lots) await saveReadyLots(id, lots, { id: user.id, role: user.role });
       if (packing) await saveLotPacking(id, packing);
       const after = before ? await getItemDetail(id) : null;
+      // Planning's status / readiness date on an EC without lots joins the
+      // readiness history (the lots record their own changes).
+      if (tbl === "order_planning" && before && after && !(lots && lots.length > 0)) {
+        const read = (d: NonNullable<typeof before>) => {
+          const pl = (d.order_planning ?? {}) as Record<string, unknown>;
+          const s = (v: unknown) => (v == null || String(v).trim() === "" ? null : String(v).trim());
+          return {
+            status: s(pl.actual_spare_status) ?? s(pl.actual_pump_status) ?? s(pl.planning_status),
+            ready_date: s(pl.planning_readiness_date)?.slice(0, 10) ?? null,
+          };
+        };
+        await logReadinessChange(id, read(before), read(after), { id: user.id, role: user.role });
+      }
       const pick = (d: NonNullable<typeof before>) =>
         tbl === "order_items"
           ? d.item

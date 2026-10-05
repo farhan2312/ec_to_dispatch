@@ -12,7 +12,7 @@ import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import type { OrderListOptions } from "@/lib/orders";
 import { DEPT_VIEWS } from "@/lib/dept-view";
-import { useFocusRow } from "./use-focus-row";
+import { useConsumeFocusParam, useFocusRow } from "./use-focus-row";
 import type { PageResult } from "@/lib/pagination";
 import { OrderThreadModal } from "./order-thread-modal";
 import { completionFor, DeptCompleteCheck } from "./dept-complete-check";
@@ -103,6 +103,7 @@ export function PurchaseWorkspace({
   }, [openItemId]);
 
   const focusClass = useFocusRow([openItemId, focusOrderId], rows.length > 0);
+  useConsumeFocusParam(queue.page);
 
   function toggle(key: string) {
     setExpanded((prev) => {

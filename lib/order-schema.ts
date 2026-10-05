@@ -138,7 +138,7 @@ export const ORDER_STATUS_OPTIONS = opts([
   "Diverted",
 ]);
 
-// --- Dispatch: despatch/docket vocabularies ---------------------------------
+// --- Dispatch: dispatch/docket vocabularies ---------------------------------
 export const DELIVERY_TYPE_OPTIONS = opts(["Door delivery", "Godown delivery"]);
 export const DELIVERY_MODE_OPTIONS = opts([
   "Transport",
@@ -650,9 +650,9 @@ export const ORDER_SECTIONS: OrderSection[] = [
   },
   {
     // Dispatch: last in the order, after Assembly & Packing has packed. Its
-    // work is the invoice-and-despatch cards (order_invoices) — invoice or
+    // work is the invoice-and-dispatch cards (order_invoices) — invoice or
     // challan, transporter and vehicle, docket and charges, the LR — one per
-    // despatch. Raising them is what moves the SO's dispatch status, which is
+    // dispatch. Raising them is what moves the SO's dispatch status, which is
     // derived from them rather than typed (see recomputeDispatchStatus).
     key: "dispatch",
     title: "Dispatch",
@@ -840,6 +840,7 @@ export const INVOICE_FIELDS: OrderField[] = [
   { column: "so_freight_terms", label: "SO Freight Terms", type: "text", group: "Docket" },
   { column: "delivery_charges", label: "Delivery Charges", type: "number", group: "Docket" },
   { column: "other_charges", label: "Other Charges", type: "number", group: "Docket" },
+  { column: "lr_link", label: "LR Link (SharePoint)", type: "text", group: "Docket" },
 ];
 
 /**

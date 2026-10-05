@@ -3,15 +3,14 @@
 import { Fragment, useEffect, useState } from "react";
 import { ChevronDown, ClipboardList, MessageSquare, Plus } from "lucide-react";
 import type { BillingQueueRow } from "@/lib/orders";
-import { BILLING_DOC_FIELDS, INVOICE_FIELDS } from "@/lib/order-schema";
+import { BILLING_DOC_FIELDS } from "@/lib/order-schema";
 import { OrderChildList } from "./order-children";
 import { lockReason } from "@/lib/order-lock";
 import { PiExcelUpload } from "./pi-excel-upload";
 import { OrderDetailsModal } from "./order-details-modal";
-import { InvoiceLrCell } from "./invoice-lr-cell";
 import { DispatchSlipPicker } from "./dispatch-slip-picker";
+import { DispatchList } from "./dispatch-list";
 import { SortHeader } from "./sort-header";
-import { invoiceRowHeader } from "./order-detail";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import type { OrderListOptions } from "@/lib/orders";
@@ -62,7 +61,7 @@ export function BillingWorkspace({
   queue: PageResult<BillingQueueRow>;
   /**
    * Which department's screen this is. "billing" shows the PI list (the
-   * Operation card); "dispatch" shows the invoice-and-despatch cards, which
+   * Operation card); "dispatch" shows the invoice-and-dispatch cards, which
    * is the work that happens after Assembly & Packing.
    */
   mode?: "billing" | "dispatch";
@@ -295,8 +294,8 @@ export function BillingWorkspace({
                               />
                             )}
 
-                            {/* Dispatch — invoice, despatch and docket
-                                details, one card per despatch. The SO's
+                            {/* Dispatch — invoice, dispatch and docket
+                                details, one card per dispatch. The SO's
                                 dispatch status derives from these. For Challan
                                 orders the "Invoice" phase collects challan
                                 fields instead (bill_type context gates it). */}
@@ -305,46 +304,17 @@ export function BillingWorkspace({
                               orderId={row.id}
                               slips={(row.packing_slips ?? []) as Row[]}
                               invoices={(row.invoices ?? []) as Row[]}
+                              billType={row.bill_type}
                               canEdit={canEdit}
                             />
                             )}
                             {mode === "dispatch" && (
-                            <OrderChildList
-                              orderId={row.id}
-                              table="order_invoices"
-                              title="Invoice and dispatch"
-                              fields={INVOICE_FIELDS}
-                              rows={(row.invoices ?? []) as Row[]}
-                              canEdit={canEdit}
-                              canAdd={false}
-                              canDelete={canEdit}
-                              headerAction={
-                                <DeptCompleteCheck
-                                  scopeId={String(row.id)}
-                                  dept="dispatch"
-                                  label={`${row.so_no ?? row.sl_no ?? ""} · Dispatch`}
-                                  completion={completionFor(
-                                    completions,
-                                    "dispatch",
-                                    String(row.id),
-                                    false
-                                  )}
-                                  canEdit={canEdit}
-                                />
-                              }
-                              context={{ bill_type: row.bill_type }}
-                              rowHeader={invoiceRowHeader}
-                              renderExtra={{
-                                label: "LR Attachment",
-                                render: (inv) => (
-                                  <InvoiceLrCell
-                                    row={inv}
-                                    orderId={row.id}
-                                    canEdit={canEdit}
-                                  />
-                                ),
-                              }}
-                            />
+                              <DispatchList
+                                orderId={row.id}
+                                invoices={(row.invoices ?? []) as Row[]}
+                                billType={row.bill_type}
+                                canEdit={canEdit}
+                              />
                             )}
                           </div>
                         </td>

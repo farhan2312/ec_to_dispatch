@@ -73,7 +73,7 @@ export default async function DispatchWorkspacePage({
           </h1>
           <p className="text-sm text-muted">
             What leaves the works, once Assembly &amp; Packing has packed it: an
-            invoice (or challan) card per despatch, its transporter and vehicle,
+            invoice (or challan) card per dispatch, its transporter and vehicle,
             the docket and charges, and the LR. The order&apos;s dispatch status
             follows from these.
           </p>

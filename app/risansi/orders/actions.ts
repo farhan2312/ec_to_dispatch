@@ -867,7 +867,7 @@ export async function updateSectionForSoAction(
 }
 
 /**
- * Dispatch raises a despatch — one invoice / challan card — for the packing
+ * Dispatch raises a dispatch — one invoice / challan card — for the packing
  * slips it chose on an SO (one or several). Each slip goes out once.
  */
 export async function createDispatchAction(
@@ -877,7 +877,7 @@ export async function createDispatchAction(
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
   if (!canEditChild(user.role, "order_invoices")) {
-    return { ok: false, error: "Only Dispatch can raise a despatch." };
+    return { ok: false, error: "Only Dispatch can raise a dispatch." };
   }
   const locked = lockReason("order_invoices", (await lockFactsForOrder(orderId)) as never, user.role);
   if (locked) return { ok: false, error: locked };
@@ -890,7 +890,7 @@ export async function createDispatchAction(
       action: "order.update",
       category: "activity",
       target: label,
-      details: `Raised a despatch for ${slipIds.length} packing slip(s) on ${label}`,
+      details: `Raised a dispatch for ${slipIds.length} packing slip(s) on ${label}`,
       subject: { orderId, soNo: label },
     });
     revalidatePath(`/risansi/orders/${orderId}`);
@@ -898,7 +898,7 @@ export async function createDispatchAction(
     return { ok: true, id: res.id };
   } catch (error) {
     console.error("createDispatch failed:", error);
-    return { ok: false, error: "Could not raise the despatch." };
+    return { ok: false, error: "Could not raise the dispatch." };
   }
 }
 
@@ -1018,7 +1018,7 @@ export async function addOrderChildAction(
           )
         : null,
       // A new slip puts the SO in Dispatch's queue and can move its
-      // dispatch status; Dispatch raises the despatch itself from the slips.
+      // dispatch status; Dispatch raises the dispatch itself from the slips.
       created && table === "order_packing_slips" && kind === "actual"
         ? packingSlipReady(created.id).then(() =>
             revalidatePath(`/risansi/orders/${orderId}`)
@@ -1142,7 +1142,7 @@ export async function updateOrderChildAction(
       }
     } else if (tbl === "order_packing_slips" && actualSlipKind === "actual") {
       // Actual packing slip saved → tell Dispatch + Central which slip is
-      // ready; Dispatch raises the despatch for it (alone or with others).
+      // ready; Dispatch raises the dispatch for it (alone or with others).
       const ctx = await packingSlipReady(id);
       const emitOrderId = soOrderId ?? ctx?.order_id ?? null;
       if (emitOrderId) {
@@ -1165,7 +1165,7 @@ export async function updateOrderChildAction(
         });
       }
     } else if (tbl === "order_invoices") {
-      // A despatch recorded → Central Visibility, and Accounts, whose
+      // A dispatch recorded → Central Visibility, and Accounts, whose
       // receivable starts at the invoice.
       if (soOrderId) {
         const soLabel = (await getOrderLabel(soOrderId)) ?? soOrderId;

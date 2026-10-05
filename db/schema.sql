@@ -1285,7 +1285,7 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS packing_details_required TEXT;
 -- SO's Client Type is Export, and are what the Billing team downloads.
 --
 -- Invoices: Dispatch captures three phases on one row — invoice details,
--- despatch details (delivery type/mode + mode-specific fields), and docket/LR
+-- dispatch details (delivery type/mode + mode-specific fields), and docket/LR
 -- details (incl. an LR attachment). An SO can have many invoices (lot-wise).
 -- ===========================================================================
 
@@ -1324,7 +1324,7 @@ CREATE TABLE IF NOT EXISTS order_invoices (
     invoice_date      DATE,
     invoice_value     NUMERIC(14,2),
     invoice_quantity  INTEGER,
-    -- Phase 2 — despatch details.
+    -- Phase 2 — dispatch details.
     delivery_type     TEXT,   -- Door delivery / Godown delivery
     delivery_mode     TEXT,   -- Transport / Direct Vehicle / By BUS / By Courier
     transporter_name  TEXT,
@@ -2022,7 +2022,7 @@ END $$;
 -- order_dispatch
 -- ===========================================================================
 -- The Dispatch department's own SO-level row. The work itself is the invoice
--- list (order_invoices, one card per despatch), which hangs off this section;
+-- list (order_invoices, one card per dispatch), which hangs off this section;
 -- this table carries what belongs to the order as a whole, and gives the
 -- department a table to own — nav and permissions are keyed off ownership.
 CREATE TABLE IF NOT EXISTS order_dispatch (
@@ -2030,7 +2030,7 @@ CREATE TABLE IF NOT EXISTS order_dispatch (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
--- It briefly carried a remarks field. Nobody fills one: the despatch details
+-- It briefly carried a remarks field. Nobody fills one: the dispatch details
 -- live on the cards, so the section has no fields of its own — the table is
 -- what nav and permissions key off, exactly as order_billing is for the PI list.
 ALTER TABLE order_dispatch DROP COLUMN IF EXISTS remarks;
@@ -2233,6 +2233,9 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS so_remarks TEXT;
 
 -- A challan's own quantity, so a Challan order can read as fully dispatched.
 ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS challan_quantity INTEGER;
+-- The LR copy is kept on SharePoint; Dispatch pastes its link on the Docket &
+-- LR step (the old file upload, lr_file_*, is no longer offered).
+ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS lr_link TEXT;
 
 -- Bill Mode: Billing, or FR — an FR carries no quotation or purchase order.
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS bill_mode TEXT;
@@ -2297,8 +2300,8 @@ UPDATE order_ready_lots rl
  WHERE ad.item_id = rl.item_id AND rl.status = 'Fully ready'
    AND ad.actual_packing_date IS NOT NULL AND rl.packed_date IS NULL;
 
--- A despatch (invoice / challan card) covers one or more of the SO's packing
--- slips, chosen by Dispatch; a slip goes out on one despatch only.
+-- A dispatch (invoice / challan card) covers one or more of the SO's packing
+-- slips, chosen by Dispatch; a slip goes out on one dispatch only.
 CREATE TABLE IF NOT EXISTS order_invoice_slips (
     invoice_id      UUID NOT NULL REFERENCES order_invoices(id) ON DELETE CASCADE,
     packing_slip_id UUID NOT NULL REFERENCES order_packing_slips(id) ON DELETE CASCADE,

@@ -196,12 +196,11 @@ const ORDER_COPY_FIELD: OrderField = {
 
 // The app prints Packing Slip No. / Qty as the invoice card's header rather
 // than as form fields, so INVOICE_FIELDS omits them — but they are what says
-// which of the SO's slips an invoice covers. Dispatch also uploads the LR here.
+// which of the SO's slips an invoice covers.
 const INVOICE_EXPORT_FIELDS: OrderField[] = [
   { column: "packing_slip_no", label: "Packing Slip No.", type: "text" },
   { column: "packing_quantity", label: "Packing Qty", type: "int" },
   ...INVOICE_FIELDS,
-  { column: "lr_file_name", label: "LR Copy (file)", type: "text" },
 ];
 
 // Quality keeps two per-EC upload lists: its own certificates and reports, and
@@ -334,7 +333,7 @@ function collect(orders: OrderExportRow[]) {
     },
     {
       name: "Invoices",
-      about: "Dispatch's invoice and despatch cards, one per despatch, per SO.",
+      about: "Dispatch's invoice and dispatch cards, one per dispatch, per SO.",
       perEc: false,
       fields: INVOICE_EXPORT_FIELDS,
       rows: invoices,

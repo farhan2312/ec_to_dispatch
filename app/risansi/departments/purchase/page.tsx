@@ -42,7 +42,8 @@ export default async function PurchaseWorkspacePage({
   // A notification links to an EC (item id) or an SO; open the page that holds it.
   // Which SO a notification link should open on. Without a link this is
   // immediate; everything else below loads side by side.
-  const focusOrderId = await resolveFocusOrderId(thread ?? edit);
+  // A reminder (?focus=) lands on its SO in this queue, like a notification.
+  const focusOrderId = await resolveFocusOrderId(params.focus ?? thread ?? edit);
   const [queue, reminders, filterOptions] = await Promise.all([
     listItemsForPurchasePage({
       page: parsePage(page),
@@ -84,7 +85,7 @@ export default async function PurchaseWorkspacePage({
         </div>
       </div>
 
-      <RemindersPanel reminders={reminders} />
+      <RemindersPanel reminders={reminders} focusInQueue />
 
       <PurchaseWorkspace
         completions={completions}

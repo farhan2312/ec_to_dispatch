@@ -51,7 +51,8 @@ export default async function QcWorkspacePage({
   // must open on the page that holds it.
   // Which SO a notification link should open on. Without a link this is
   // immediate; everything else below loads side by side.
-  const focusOrderId = await resolveFocusOrderId(thread ?? edit);
+  // A reminder (?focus=) lands on its SO in this queue, like a notification.
+  const focusOrderId = await resolveFocusOrderId(params.focus ?? thread ?? edit);
   // QC fills its own submission fields; Required QC Documents / Target Date
   // stay centralOnly (Mitali fills those, read-only to QC — see order-schema.ts).
   const canEdit = canEditSection(user.role, TABLE);
@@ -107,7 +108,7 @@ export default async function QcWorkspacePage({
         </div>
       </div>
 
-      <RemindersPanel reminders={reminders} />
+      <RemindersPanel reminders={reminders} focusInQueue />
 
       <DepartmentWorkspace
         completions={completions}

@@ -204,6 +204,7 @@ export function OrderDetail({
         </div>
         {/* This page is the forms; the overview is the whole order on one
             page, its ECs and every department's state included. */}
+        {role !== "planning" && (
         <Link
           href={`/risansi/orders/${orderId}/overview`}
           className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-input-border px-3 text-sm font-medium text-foreground transition-colors hover:bg-background"
@@ -211,6 +212,7 @@ export function OrderDetail({
           <LayoutGrid className="h-3.5 w-3.5" />
           Full overview
         </Link>
+        )}
       </div>
 
       {/* The order status — a banner once it is cancelled or diverted — and,

@@ -751,6 +751,10 @@ export async function updateOrderSectionAction(
         if (problem) return { ok: false, error: problem };
         packing = merged.map((l) => ({ id: l.id, packed_date: l.packed_date }));
       }
+      if (lots && lots.length > 0) {
+        delete allowedValues.actual_spare_status;
+        delete allowedValues.planning_readiness_date;
+      }
       await updateOrderSection(id, tbl, allowedValues);
       if (lots) await saveReadyLots(id, lots, { id: user.id, role: user.role });
       if (packing) await saveLotPacking(id, packing);

@@ -84,8 +84,11 @@ function soLines(rows: Row[]): SoLine[] {
         ? uniq[0]
         : `Mixed (${uniq.map((s) => `${statuses.filter((x) => x === s).length} ${s}`).join(", ")})`;
     const dates = [...new Set(ecs.map((ec) => str(ec.planning_readiness_date).slice(0, 10)).filter(Boolean))].sort();
+    // A Fully ready EC without its own date shows the one it had, and from when.
+    const dateStatus = [...new Set(ecs.map((ec) => str(ec.readiness_date_status)).filter(Boolean))];
     const readiness =
-      dates.length === 0 ? "" : dates.length === 1 ? day(dates[0]) : `${day(dates[0])} – ${day(dates[dates.length - 1])}`;
+      (dates.length === 0 ? "" : dates.length === 1 ? day(dates[0]) : `${day(dates[0])} – ${day(dates[dates.length - 1])}`) +
+      (dates.length && dateStatus.length === 1 ? ` (${dateStatus[0]})` : "");
     const types = [...new Set(ecs.map((ec) => str(ec.item_type) || str(head.order_type)).filter(Boolean))];
 
     // Lots, once per SO when its ECs share them; remarks likewise.

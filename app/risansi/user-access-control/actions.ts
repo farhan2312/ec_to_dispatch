@@ -115,7 +115,9 @@ export async function addUserAction(
   try {
     await createUser(
       { fullName, email, password: input.password, role: input.role as Role },
-      "approved"
+      "approved",
+      // The admin typed a temporary password: the user sets their own on first sign-in.
+      { mustChangePassword: true }
     );
     await logAudit({
       actor: { id: admin.id, email: admin.email, role: admin.role },

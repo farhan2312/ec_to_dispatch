@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   // here rather than posted as ids, since the table only holds the page on
   // screen.
   const params = req.nextUrl.searchParams;
-  const filter = parseOrderListFilter((key) => params.get(key) ?? undefined);
+  const filter = parseOrderListFilter((key) => params.get(key) ?? undefined, { noDispatchTarget: true });
   const filtered = isOrderListFiltered(filter);
   const ids = filtered ? await listOrderIdsMatching(filter) : undefined;
 

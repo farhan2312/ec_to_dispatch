@@ -17,6 +17,9 @@ export const ROLE_LABELS = {
   // has been packed and records the dispatch. The role named `dispatch` used to
   // be the packing team — see the guarded rename in db/schema.sql.
   dispatch: "Dispatch",
+  // Creates SOs (form or Excel) and fills their Client and Purchase Order
+  // details; Central Visibility does the rest. Sees nothing beyond those.
+  order_making: "Order Making",
 } as const;
 
 export type Role = keyof typeof ROLE_LABELS;
@@ -26,6 +29,7 @@ export const ALL_ROLES = Object.keys(ROLE_LABELS) as Role[];
 // Roles selectable when requesting access. `central_visibility` grants
 // cross-department access; `admin` also manages users.
 export const REQUESTABLE_ROLES: Role[] = [
+  "order_making",
   "operations",
   "accounts",
   "drawing",
@@ -73,9 +77,28 @@ export function canAccessDepartment(role: string, table: OrderTable): boolean {
   return canEditSection(role, table);
 }
 
-/** Only Admin and Central Visibility may create orders (form or Excel import). */
+/**
+ * Admin, Central Visibility and Order Making create orders (form or Excel
+ * import). Order Making's go in with their Client and Purchase Order details
+ * only — see ORDER_MAKING_GROUPS.
+ */
 export function canCreateOrders(role: string): boolean {
+  return role === "admin" || role === "central_visibility" || role === "order_making";
+}
+
+/** Bulk Excel import of orders: Admin and Central Visibility only. */
+export function canImportOrders(role: string): boolean {
   return role === "admin" || role === "central_visibility";
+}
+
+/** Order Making's own role: an SO's Client and Purchase Order details, nothing more. */
+export function isOrderMaking(role: string): boolean {
+  return role === "order_making";
+}
+
+/** Who opens the Order Making page: that department, and Central Visibility / Admin. */
+export function canAccessOrderMaking(role: string): boolean {
+  return isOrderMaking(role) || isCentral(role);
 }
 
 /** Payment holds escalate to Central Visibility (and Admin). */
@@ -200,6 +223,7 @@ export function reminderDeptForTable(table: OrderTable): ReminderDept | null {
 
 // Each department role's workspace page (mirrors the sidebar's DEPARTMENT_NAV).
 const DEPARTMENT_HREF: Partial<Record<Role, string>> = {
+  order_making: "/risansi/departments/order-making",
   operations: "/risansi/departments/billing",
   accounts: "/risansi/departments/accounts",
   drawing: "/risansi/departments/drawing",

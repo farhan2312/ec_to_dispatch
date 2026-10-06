@@ -28,6 +28,7 @@ import {
   type DeptFilterKey,
 } from "@/lib/dept-status";
 import { FIELD_FILTER_FIELDS, NOT_SET, type OrderListFilter, type SignOff } from "@/lib/order-list-filter";
+import { sharedFacets, type OrderMakingFilter } from "@/lib/order-making-filter";
 import { appliesSql, filledSql } from "@/lib/order-gaps";
 import {
   PAGE_SIZE,
@@ -42,6 +43,7 @@ import {
   CHILD_FIELDS,
   READY_LOT_LIMIT,
   coerceField,
+  ORDER_MAKING_FIELDS,
   SECTION_BY_TABLE,
   type ChildTable,
   type OrderTable,
@@ -2853,6 +2855,8 @@ export async function listOrderListOptions(): Promise<OrderListOptions> {
 export async function listOrdersPage(opts: {
   page: number;
   filter: OrderListFilter;
+  /** Sl. No. or SO date; newest Sl. No. first when not given. */
+  sort?: QueueSort | null;
 }): Promise<PageResult<OrderListRow> & { options: OrderListOptions }> {
   const { where, params } = orderListWhere(opts.filter);
   const limit = `$${params.length + 1}`;
@@ -2908,7 +2912,7 @@ export async function listOrdersPage(opts: {
          SELECT order_id, COUNT(*) AS cnt FROM order_items GROUP BY order_id
        ) ic ON ic.order_id = o.id
       ${where}
-      ORDER BY o.sl_no ASC
+      ORDER BY ${queueOrderBy(opts.sort) ?? "o.sl_no DESC"}
       LIMIT ${limit} OFFSET ${offset}`,
       [...params, PAGE_SIZE, offsetFor(page)]
     ))();
@@ -2997,7 +3001,7 @@ async function pageOfOrderIds(opts: {
    * the queue already has the same term, matched against its own columns.
    */
   filter?: OrderListFilter;
-  /** The queue's order, as SQL over `o`; Sl. No. when not given. */
+  /** The queue's order, as SQL over `o`; newest Sl. No. first when not given. */
   orderBy?: string;
   /** Every matching SO rather than one page — for a printed report. */
   all?: boolean;
@@ -3026,7 +3030,7 @@ async function pageOfOrderIds(opts: {
   if (!opts.orderBy && opts.focusOrderId && UUID_RE.test(opts.focusOrderId)) {
     const rank = await query<{ n: string }>(
       `SELECT count(*) AS n FROM orders o ${where}
-         AND o.sl_no <= (SELECT sl_no FROM orders WHERE id = ${own(2)})`,
+         AND o.sl_no >= (SELECT sl_no FROM orders WHERE id = ${own(2)})`,
       [...facets.params, search, opts.focusOrderId]
     );
     const n = Number(rank.rows[0]?.n ?? 0);
@@ -3036,7 +3040,7 @@ async function pageOfOrderIds(opts: {
 
   const ids = await query<{ id: string }>(
     `SELECT o.id FROM orders o ${where}
-      ORDER BY ${opts.orderBy ?? "o.sl_no ASC"}
+      ORDER BY ${opts.orderBy ?? "o.sl_no DESC"}
       LIMIT ${own(2)} OFFSET ${own(3)}`,
     [...facets.params, search, opts.all ? REPORT_LIMIT : PAGE_SIZE, opts.all ? 0 : offsetFor(page)]
   );
@@ -3050,29 +3054,102 @@ const soAndEcSearch = (term: string) => `(o.so_no ILIKE ${term} OR o.client_name
              OR EXISTS (SELECT 1 FROM order_items s
                          WHERE s.order_id = o.id AND s.ec_no ILIKE ${term}))`;
 
+export type OrderMakingRow = Record<string, unknown> & {
+  id: string;
+  sl_no: number;
+  /** Client / Purchase Order fields that apply and are still blank. */
+  missing: string[];
+};
+
+/**
+ * Order Making's page: one page of SOs, newest first — only their Client and
+ * Purchase Order details, and which of those are still blank (where they
+ * apply: no PO on an FR order). `missingOnly` keeps the ones still lacking.
+ */
+export async function listOrdersForOrderMaking(opts: {
+  page: number;
+  search: string;
+  filter: OrderMakingFilter;
+}): Promise<PageResult<OrderMakingRow>> {
+  const f = opts.filter;
+  const own = ORDER_MAKING_FIELDS.filter((x) => !x.computed);
+  const missingSql = `array_remove(ARRAY[
+      ${own.map((x) => `CASE WHEN (${appliesSql(x)}) AND NOT (${filledSql(x)}) THEN ${lit(x.label)} END`).join(",\n      ")}
+    ]::text[], NULL)`;
+  // Order Making's own facets. Values are checked against fixed lists or as
+  // ISO dates before they get here, and still go in quoted.
+  const clauses = [orderOpenSql("o")];
+  if (f.missingOnly) clauses.push(`cardinality(${missingSql}) > 0`);
+  if (f.billTypes.length) {
+    const types = f.billTypes.filter((t) => t !== NOT_SET);
+    const any: string[] = [];
+    if (types.length) any.push(`TRIM(COALESCE(o.bill_type, '')) IN (${types.map(lit).join(", ")})`);
+    if (f.billTypes.includes(NOT_SET)) any.push(`NULLIF(TRIM(o.bill_type), '') IS NULL`);
+    clauses.push(`(${any.join(" OR ")})`);
+  }
+  if (f.dateField === "po_date") {
+    if (f.from) clauses.push(`o.customer_po_date >= ${lit(f.from)}::date`);
+    if (f.to) clauses.push(`o.customer_po_date <= ${lit(f.to)}::date`);
+  }
+  const dir = f.sort?.startsWith("-") ? "DESC" : "ASC";
+  const orderBy =
+    f.sort === "so_date" || f.sort === "-so_date"
+      ? `o.so_date ${dir} NULLS LAST, o.sl_no DESC`
+      : f.sort === "sl"
+        ? "o.sl_no ASC"
+        : "o.sl_no DESC";
+  const { ids, total, page } = await pageOfOrderIds({
+    page: opts.page,
+    search: opts.search,
+    restrict: clauses.join(" AND "),
+    searchable: (term) =>
+      `(o.so_no ILIKE ${term} OR o.client_name ILIKE ${term} OR o.client_code ILIKE ${term}
+        OR o.po_no ILIKE ${term} OR o.sl_no::text ILIKE ${term})`,
+    filter: sharedFacets(f),
+    orderBy,
+  });
+  if (ids.length === 0) return pageResult([], total, page);
+  const cols = ORDER_MAKING_FIELDS.map((f) =>
+    f.type === "date" ? `to_char(o.${f.column}, 'YYYY-MM-DD') AS ${f.column}` : `o.${f.column}`
+  ).join(", ");
+  const r = await query<OrderMakingRow>(
+    `SELECT o.id, o.sl_no::int AS sl_no, ${cols}, ${missingSql} AS missing
+       FROM orders o WHERE o.id = ANY($1::uuid[])`,
+    [ids]
+  );
+  const at = new Map(ids.map((id, i) => [id, i]));
+  r.rows.sort((a, b) => (at.get(a.id) ?? 0) - (at.get(b.id) ?? 0));
+  return pageResult(r.rows, total, page);
+}
+
 /** The most SOs a printed queue report carries. */
 const REPORT_LIMIT = 2000;
 
 /** Item-scope department queue, one page of SOs' worth of ECs. */
-/** How a department queue can be sorted besides by Sl. No. ("-" = latest first). */
-export type QueueSort = "readiness" | "-readiness" | "so_date" | "-so_date";
+/**
+ * How a queue (or the orders list) can be sorted ("-" = latest first). With
+ * none chosen it runs newest Sl. No. first.
+ */
+export type QueueSort = "sl" | "-sl" | "readiness" | "-readiness" | "so_date" | "-so_date";
 
-const QUEUE_SORTS: QueueSort[] = ["readiness", "-readiness", "so_date", "-so_date"];
+const QUEUE_SORTS: QueueSort[] = ["sl", "-sl", "readiness", "-readiness", "so_date", "-so_date"];
 
 export function parseQueueSort(value: string | undefined): QueueSort | null {
   return QUEUE_SORTS.includes(value as QueueSort) ? (value as QueueSort) : null;
 }
 
-/** A queue sort as SQL over `o`; undated SOs last, Sl. No. breaking ties. */
+/** A queue sort as SQL over `o`; undated SOs last, newest Sl. No. breaking ties. */
 function queueOrderBy(sort: QueueSort | null | undefined): string | undefined {
   if (!sort) return undefined;
+  if (sort === "sl") return "o.sl_no ASC";
+  if (sort === "-sl") return "o.sl_no DESC";
   const dir = sort.startsWith("-") ? "DESC" : "ASC";
   const key =
     sort.replace("-", "") === "readiness"
       ? `(SELECT max(rpl.planning_readiness_date) FROM order_items s
            JOIN order_planning rpl ON rpl.item_id = s.id WHERE s.order_id = o.id)`
       : "o.so_date";
-  return `${key} ${dir} NULLS LAST, o.sl_no ASC`;
+  return `${key} ${dir} NULLS LAST, o.sl_no DESC`;
 }
 
 export async function listItemsForSectionPage(
@@ -3111,7 +3188,7 @@ export async function listItemsForSectionPage(
   const rows = ids.length === 0 ? [] : await listItemsForSection(table, contextColumns, ids);
   // Keep the page's SO order (the rows come back by Sl. No.); an SO's ECs
   // stay in their own order.
-  if (opts.sort) {
+  {
     const at = new Map(ids.map((id, i) => [id, i]));
     rows.sort((a, b) => (at.get(String(a.order_id)) ?? 0) - (at.get(String(b.order_id)) ?? 0));
   }
@@ -3146,7 +3223,7 @@ export async function listOrdersForSectionPage(
   });
 
   const rows = ids.length === 0 ? [] : await listOrdersForSection(table, contextColumns, ids);
-  if (opts.sort) {
+  {
     const at = new Map(ids.map((id, i) => [id, i]));
     rows.sort((a, b) => (at.get(String(a.id)) ?? 0) - (at.get(String(b.id)) ?? 0));
   }
@@ -3173,7 +3250,7 @@ export async function listItemsForPurchasePage(opts: {
   });
 
   const rows = ids.length === 0 ? [] : await listItemsForPurchase(ids);
-  if (opts.sort) {
+  {
     const at = new Map(ids.map((id, i) => [id, i]));
     rows.sort((a, b) => (at.get(String(a.order_id)) ?? 0) - (at.get(String(b.order_id)) ?? 0));
   }
@@ -3208,7 +3285,7 @@ export async function listOrdersForBillingPage(opts: {
   });
 
   const rows = ids.length === 0 ? [] : await listOrdersForBilling(ids);
-  if (opts.sort) {
+  {
     const at = new Map(ids.map((id, i) => [id, i]));
     rows.sort((a, b) => (at.get(String(a.id)) ?? 0) - (at.get(String(b.id)) ?? 0));
   }

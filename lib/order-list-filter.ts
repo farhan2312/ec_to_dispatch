@@ -169,8 +169,14 @@ function date(value: string | undefined): string | null {
  * the chosen department actually has.
  */
 export function parseOrderListFilter(
-  get: (key: string) => string | undefined
+  get: (key: string) => string | undefined,
+  /**
+   * The orders list dates by SO date, not by dispatch target: there the
+   * dispatch target is not offered, and the default is the SO date.
+   */
+  opts: { noDispatchTarget?: boolean } = {}
 ): OrderListFilter {
+  const fallbackDate: OrderDateField = opts.noDispatchTarget ? "so_date" : "dispatch_target";
   const deptRaw = get("dept");
   const dept = (DEPT_FILTER_KEYS as readonly string[]).includes(deptRaw ?? "")
     ? (deptRaw as DeptFilterKey)
@@ -182,16 +188,19 @@ export function parseOrderListFilter(
       ? (signOffRaw as SignOff)
       : null;
   const fieldRaw = get("datefield");
-  const dateFieldRaw = ORDER_DATE_FIELDS.some((f) => f.value === fieldRaw)
-    ? (fieldRaw as OrderDateField)
-    : "dispatch_target";
+  const dateFieldRaw =
+    ORDER_DATE_FIELDS.some((f) => f.value === fieldRaw) &&
+    !(opts.noDispatchTarget && fieldRaw === "dispatch_target")
+      ? (fieldRaw as OrderDateField)
+      : fallbackDate;
   // "Their target" needs a department to belong to; without one it names no
-  // column, so it falls back rather than matching nothing.
+  // column, so it falls back rather than matching nothing. Dispatch's own
+  // target is the dispatch target, which its queue no longer dates by.
   const dateField: OrderDateField =
-    dateFieldRaw === "dept_target" && !dept
-      ? "dispatch_target"
+    dateFieldRaw === "dept_target" && (!dept || dept === "dispatch")
+      ? (dept ? "so_date" : fallbackDate)
       : dateFieldRaw === "readiness" && dept !== "planning" && dept !== "assembly"
-        ? (dept ? "so_date" : "dispatch_target")
+        ? (dept ? "so_date" : fallbackDate)
         : dateFieldRaw;
 
   // Picked backwards, the two dates still mean the span between them.
@@ -216,7 +225,8 @@ export function parseOrderListFilter(
     dateField,
     from,
     to,
-    overdue: get("overdue") === "1",
+    // Dispatch is not chased against its dispatch target any more.
+    overdue: get("overdue") === "1" && dept !== "dispatch",
     ready: get("ready") === "1",
     field,
     // Only where the controls are shown — a hidden filter would narrow
@@ -319,7 +329,8 @@ export function describeOrderListFilter(f: OrderListFilter): string {
  */
 export function parseDeptFilter(
   get: (key: string) => string | undefined,
-  dept: DeptFilterKey | null
+  dept: DeptFilterKey | null,
+  opts: { noDispatchTarget?: boolean } = {}
 ): OrderListFilter {
   return parseOrderListFilter((key) => {
     if (key === "dept") return dept ?? get(key);
@@ -331,9 +342,13 @@ export function parseDeptFilter(
       // Planning reads by its readiness date rather than a target.
       return (
         get(key) ??
-        (dept === "planning" ? "readiness" : DEPT_VIEWS[dept].hasTarget ? "dept_target" : "so_date")
+        (dept === "planning"
+          ? "readiness"
+          : DEPT_VIEWS[dept].hasTarget && dept !== "dispatch"
+            ? "dept_target"
+            : "so_date")
       );
     }
     return get(key);
-  });
+  }, opts);
 }

@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
-import { canCreateOrders } from "@/lib/roles";
+import { canImportOrders } from "@/lib/roles";
 import { TEMPLATE_HEADERS } from "@/lib/order-import-headers";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 /** Empty daily-import workbook — just the header row, styled and sized. */
 export async function GET() {
   const user = await getCurrentUser();
-  if (!user || !canCreateOrders(user.role)) {
+  if (!user || !canImportOrders(user.role)) {
     return new NextResponse("Not authorized", { status: 403 });
   }
 

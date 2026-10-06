@@ -1,5 +1,6 @@
 import {
   Bug,
+  FilePlus2,
   CalendarClock,
   ClipboardCheck,
   ClipboardList,
@@ -29,6 +30,13 @@ export const PRIMARY_NAV: NavItem[] = [
 ];
 
 export const DEPARTMENT_NAV: DeptNavItem[] = [
+  {
+    // First in the flow: the SO is created here, with its client and PO.
+    label: "Order Making",
+    href: "/risansi/departments/order-making",
+    icon: FilePlus2,
+    table: "orders",
+  },
   {
     label: "Billing & Operations",
     href: "/risansi/departments/billing",

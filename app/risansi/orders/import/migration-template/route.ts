@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
-import { canCreateOrders } from "@/lib/roles";
+import { canImportOrders } from "@/lib/roles";
 import { buildMigrationTemplate } from "@/lib/migration-template";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   const user = await getCurrentUser();
-  if (!user || !canCreateOrders(user.role)) {
+  if (!user || !canImportOrders(user.role)) {
     return new NextResponse("Not authorized", { status: 403 });
   }
 

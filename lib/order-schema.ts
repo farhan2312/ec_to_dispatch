@@ -672,6 +672,19 @@ export const SECTION_BY_TABLE = new Map<OrderTable, OrderSection>(
 // SO-level sections (keyed by order_id) shown on the order "Open" detail;
 // item-level sections (keyed by item_id) shown on an EC's detail page.
 export const SO_SECTIONS = ORDER_SECTIONS.filter((s) => s.scope === "so");
+
+/**
+ * Order Making fills an SO's Client and Purchase Order details — those groups
+ * of the Order details form, the same columns Central Visibility edits.
+ */
+export const ORDER_MAKING_GROUPS = ["Client", "Purchase Order"];
+export const ORDER_MAKING_FIELDS: OrderField[] = (
+  ORDER_SECTIONS.find((s) => s.table === "orders")?.fields ?? []
+).filter((f) => ORDER_MAKING_GROUPS.includes(f.group ?? ""));
+/** The ones Order Making types into — not the worked-out INR value or rate. */
+export const ORDER_MAKING_EDITABLE: OrderField[] = ORDER_MAKING_FIELDS.filter(
+  (f) => !f.computed && !f.readOnly
+);
 export const ITEM_SECTIONS = ORDER_SECTIONS.filter((s) => s.scope === "item");
 
 /**

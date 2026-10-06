@@ -190,7 +190,7 @@ export function parseOrderListFilter(
   const dateField: OrderDateField =
     dateFieldRaw === "dept_target" && !dept
       ? "dispatch_target"
-      : dateFieldRaw === "readiness" && dept !== "planning"
+      : dateFieldRaw === "readiness" && dept !== "planning" && dept !== "assembly"
         ? (dept ? "so_date" : "dispatch_target")
         : dateFieldRaw;
 

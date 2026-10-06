@@ -1215,7 +1215,6 @@ export const SO_CONTEXT_FIELDS: OrderField[] = [
 export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
   ...SO_CONTEXT_FIELDS,
   { column: "payment_terms", label: "Payment Terms", type: "text" },
-  { column: "payment_terms_remarks", label: "Payment Terms Remarks", type: "text" },
 ];
 
 

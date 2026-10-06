@@ -61,7 +61,7 @@ const DEPT_STATUSES: Record<DeptFilterKey, string[]> = {
   assembly: ["Partial ready", "Fully ready", "Partially packed", "Fully packed", PENDING],
   // Which one depends on the SO's Bill Type — a Challan order never gets a PI.
   // N/A is the paid-after-receipt case: no PI is due at all.
-  billing: ["PI raised", "Challan filed", PENDING, NOT_APPLICABLE],
+  billing: ["PI raised", PENDING, NOT_APPLICABLE],
   accounts: [...values(PAYMENT_STATUS_OPTIONS), PENDING, NOT_APPLICABLE],
   // "Pending" is itself a stored dispatch status, so it covers both a blank
   // column and an explicit Pending rather than appearing twice.

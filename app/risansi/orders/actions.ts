@@ -54,6 +54,7 @@ import {
   ORDER_STATUS_OPTIONS,
   SECTION_BY_TABLE,
   firstMissingAddOnField,
+  paymentTermsText,
   type ChildTable,
   type OrderTable,
 } from "@/lib/order-schema";
@@ -275,7 +276,12 @@ export async function getOrderCoreAction(
   const user = await getCurrentUser();
   if (!user) return null;
   const detail = await getOrderDetail(orderId);
-  return detail?.order ?? null;
+  if (!detail) return null;
+  // The terms live in their lines; the popup reads them as one.
+  return {
+    ...detail.order,
+    payment_terms: paymentTermsText(detail.order_payment_terms, detail.order.payment_terms) || null,
+  };
 }
 
 export type CreateItemResult =

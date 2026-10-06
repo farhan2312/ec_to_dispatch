@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import { getOrderCoreAction } from "@/app/risansi/orders/actions";
-import { SECTION_BY_TABLE } from "@/lib/order-schema";
+import { SECTION_BY_TABLE, dependsOnSatisfied } from "@/lib/order-schema";
 import { formatDisplay } from "./editable-section";
 
 const CORE = SECTION_BY_TABLE.get("orders")!;
@@ -67,7 +67,15 @@ export function OrderDetailsModal({
           <p className="py-10 text-sm text-muted">Order not found.</p>
         ) : (
           <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
-            {CORE.fields.map((field) => (
+            {/* Only what applies, as the form shows it: a Spare has no total
+                quantity, BOI or Quality; an FR order no quotation or PO. */}
+            {CORE.fields
+              .filter((field) =>
+                dependsOnSatisfied(field, (c) =>
+                  order[c] === null || order[c] === undefined ? "" : String(order[c])
+                )
+              )
+              .map((field) => (
               <div key={field.column}>
                 <div className="mb-1 text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
                   {field.label}

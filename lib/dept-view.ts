@@ -225,7 +225,8 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     // No PI on a paid-after-receipt order. Billing keeps the order on their
     // screens all the same — the bill type and its terms are theirs.
     na: paidAfterReceipt,
-    hidden: never,
+    // A Challan order is not Billing's: no PI, and the challan is Dispatch's.
+    hidden: (r) => same(r.bill_type, "challan"),
     target: () => null,
     hasTarget: false,
   },
@@ -304,6 +305,8 @@ function deptOwnInvolvementSql(dept: DeptKey, alias: string): string {
       return `lower(coalesce(${alias}.boi, '')) = 'yes'`;
     case "quality":
       return `lower(coalesce(${alias}.qc_required, '')) <> 'no'`;
+    // A Challan order has no PI and no A/R: its challan is filed by Dispatch.
+    case "billing":
     case "accounts":
       return `lower(coalesce(${alias}.bill_type, '')) <> 'challan'`;
     default:

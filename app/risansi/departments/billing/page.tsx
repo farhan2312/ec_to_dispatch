@@ -73,9 +73,9 @@ export default async function BillingWorkspacePage({
             Billing &amp; Operations
           </h1>
           <p className="text-sm text-muted">
-            Add one or more PIs per SO and fill their document fields
-            (PI No./Date/Value for Tax Invoice, or Challan No./Date/Value + FR
-            Reason for Challan). Payment fields are filled by Accounts.
+            Add one or more PIs per SO and fill their document fields (PI
+            No./Date/Value). Challan orders are not listed here — Dispatch
+            files their challans. Payment fields are filled by Accounts.
           </p>
         </div>
       </div>

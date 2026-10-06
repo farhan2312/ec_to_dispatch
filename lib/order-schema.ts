@@ -993,6 +993,27 @@ export function isAfterReceiptOnly(
   );
 }
 
+/**
+ * An SO's payment terms in one line — "30% Advance + 70% After Receipt, 45
+ * days" — from its term lines, or the terms as written on an older SO that
+ * has no lines.
+ */
+export function paymentTermsText(
+  lines: { term?: unknown; percent?: unknown; days?: unknown }[] | null | undefined,
+  written?: unknown
+): string {
+  const blank = (v: unknown) => v === null || v === undefined || String(v).trim() === "";
+  const parts = (lines ?? [])
+    .map((l) => {
+      const head = [blank(l.percent) ? "" : `${Number(l.percent)}%`, String(l.term ?? "").trim()]
+        .filter(Boolean)
+        .join(" ");
+      return head && !blank(l.days) ? `${head}, ${Number(l.days)} days` : head;
+    })
+    .filter(Boolean);
+  return parts.length ? parts.join(" + ") : String(written ?? "").trim();
+}
+
 export const PAYMENT_TERM_FIELDS: OrderField[] = [
   {
     column: "term",

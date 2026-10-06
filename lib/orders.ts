@@ -27,7 +27,7 @@ import {
   PENDING,
   type DeptFilterKey,
 } from "@/lib/dept-status";
-import { FIELD_FILTER_FIELDS, type OrderListFilter, type SignOff } from "@/lib/order-list-filter";
+import { FIELD_FILTER_FIELDS, NOT_SET, type OrderListFilter, type SignOff } from "@/lib/order-list-filter";
 import { appliesSql, filledSql } from "@/lib/order-gaps";
 import {
   PAGE_SIZE,
@@ -1829,7 +1829,7 @@ const overviewColumns = () => `it.id,
             CASE WHEN it.id IS NULL THEN NULL ELSE ${ASSEMBLY_STATE_SQL("it")} END AS assembly_state,
             ${SO_PACKED_SQL("o")} AS so_packed,
             ${DISPATCH_STATUS} AS dispatch_status,
-            o.payment_terms,
+            ${PAYMENT_TERMS_SQL("o")} AS payment_terms,
             ${AFTER_RECEIPT_ONLY} AS after_receipt_only,
             to_char(o.drg_target_date, 'YYYY-MM-DD') AS drg_target_date,
             to_char(o.purchase_target_date, 'YYYY-MM-DD') AS purchase_target_date,
@@ -1952,6 +1952,9 @@ export async function listOrdersForSection(
       if (from === "orders" && DROPPED_ORDER_COLUMNS.has(f.column)) {
         return `, NULL::${contextTypeCast(f.type)} AS ${f.column}`;
       }
+      if (from === "orders" && f.column === "payment_terms") {
+        return `, ${PAYMENT_TERMS_SQL("o")} AS payment_terms`;
+      }
       let alias: string;
       if (from === "orders") alias = "o";
       else if (from === table) alias = "d";
@@ -2021,6 +2024,9 @@ export async function listItemsForSection(
   const contextSelects = contextColumns
     .map((f) => {
       const from = f.from ?? "order_items";
+      if (from === "orders" && f.column === "payment_terms") {
+        return `, ${PAYMENT_TERMS_SQL("o")} AS payment_terms`;
+      }
       let alias: string;
       if (from === "orders") alias = "o";
       else if (from === "order_items") alias = "it";
@@ -2154,7 +2160,7 @@ export async function listOrdersForBilling(
             o.order_type,
             o.client_name,
             o.bill_type,
-            o.payment_terms,
+            ${PAYMENT_TERMS_SQL("o")} AS payment_terms,
             ${AFTER_RECEIPT_ONLY} AS after_receipt_only,
             o.freight_terms,
             o.packing_requirement,
@@ -2436,6 +2442,24 @@ const NO_DRG = spareEcSql("it", "o");
 // terms — every line counted from receipt, and at least one line — which is
 // the SQL twin of isAfterReceiptOnly. A line with no term chosen yet counts
 // against, since the terms are not fully stated.
+/**
+ * The SO's payment terms in one line, from its term lines — the prose column
+ * is no longer typed into — falling back to the terms as written on an older
+ * SO. Same wording as paymentTermsText.
+ */
+const PAYMENT_TERMS_SQL = (a: string) => `COALESCE(
+  (SELECT string_agg(
+            concat_ws(' ',
+              CASE WHEN ptx.percent IS NOT NULL
+                   THEN rtrim(rtrim(ptx.percent::text, '0'), '.') || '%' END,
+              NULLIF(TRIM(ptx.term), ''))
+            || CASE WHEN ptx.days IS NOT NULL THEN ', ' || ptx.days || ' days' ELSE '' END,
+            ' + ' ORDER BY ptx.seq)
+     FROM order_payment_terms ptx
+    WHERE ptx.order_id = ${a}.id
+      AND (NULLIF(TRIM(ptx.term), '') IS NOT NULL OR ptx.percent IS NOT NULL)),
+  NULLIF(TRIM(${a}.payment_terms), ''))`;
+
 const AFTER_RECEIPT_ONLY = `(EXISTS (SELECT 1 FROM order_payment_terms pt
                                       WHERE pt.order_id = o.id)
                             AND NOT EXISTS (SELECT 1 FROM order_payment_terms pt
@@ -2638,6 +2662,30 @@ function orderListClauses(
   if (f.zones.length) clauses.push(facet("o.zone", f.zones));
   if (f.reps.length) clauses.push(facet("o.reps", f.reps));
   if (f.markets.length) clauses.push(facet("o.market_type", f.markets));
+  // How the SO is paid: any of the chosen terms among its lines, or "Not set"
+  // — no term lines and no terms written out either.
+  if (f.paymentTerms.length) {
+    const terms = f.paymentTerms.filter((t) => t !== NOT_SET);
+    const any: string[] = [];
+    if (terms.length) {
+      any.push(`EXISTS (SELECT 1 FROM order_payment_terms ptf
+                         WHERE ptf.order_id = o.id
+                           AND TRIM(COALESCE(ptf.term, '')) = ANY(${p(terms)}::text[]))`);
+    }
+    if (f.paymentTerms.includes(NOT_SET)) {
+      any.push(`(NOT EXISTS (SELECT 1 FROM order_payment_terms ptf
+                              WHERE ptf.order_id = o.id AND NULLIF(TRIM(ptf.term), '') IS NOT NULL)
+                AND NULLIF(TRIM(o.payment_terms), '') IS NULL)`);
+    }
+    clauses.push(`(${any.join(" OR ")})`);
+  }
+  if (f.billModes.length) {
+    const modes = f.billModes.filter((m) => m !== NOT_SET);
+    const any: string[] = [];
+    if (modes.length) any.push(facet("o.bill_mode", modes));
+    if (f.billModes.includes(NOT_SET)) any.push(`NULLIF(TRIM(o.bill_mode), '') IS NULL`);
+    clauses.push(`(${any.join(" OR ")})`);
+  }
   if (f.types.length) {
     // The type is the SO's, or any of its ECs' — the pipeline reads each EC
     // by its own item type, falling back to the order's.
@@ -3096,7 +3144,8 @@ export async function listOrdersForBillingPage(opts: {
     restrict: opts.onlyPacked
       ? `${orderOpenSql("o")} AND EXISTS (SELECT 1 FROM order_packing_slips ps
                                            WHERE ps.order_id = o.id AND ps.kind = 'actual')`
-      : orderOpenSql("o"),
+      // Billing: not a Challan order — there is no PI to raise on one.
+      : deptInvolvementSql("billing"),
     searchable: (term) =>
       `(o.so_no ILIKE ${term} OR o.client_name ILIKE ${term} OR o.sl_no::text ILIKE ${term})`,
     filter: opts.filter,

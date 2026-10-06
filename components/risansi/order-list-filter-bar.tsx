@@ -12,8 +12,11 @@ import {
   type DeptFilterKey,
 } from "@/lib/dept-status";
 import {
+  BILL_MODE_FILTER_OPTIONS,
   DATE_PRESETS,
   FIELD_FILTER_FIELDS,
+  PAYMENT_FILTER_DEPTS,
+  PAYMENT_TERM_FILTER_OPTIONS,
   FIELD_STATES,
   ORDER_DATE_FIELDS,
   SIGN_OFF_OPTIONS,
@@ -41,6 +44,8 @@ const FILTER_KEYS = [
   "ready",
   "field",
   "fstate",
+  "pterm",
+  "bmode",
 ];
 
 /**
@@ -151,9 +156,12 @@ export function OrderListFilterBar({
               : [];
             const keepsTarget =
               next && DEPT_VIEWS[next as DeptFilterKey].hasTarget;
+            const keepsPayment = !!next && PAYMENT_FILTER_DEPTS.includes(next);
             setParams({
               dept: next,
               dstatus: status,
+              pterm: keepsPayment ? filter.paymentTerms : null,
+              bmode: keepsPayment ? filter.billModes : null,
               signoff: next ? filter.signOff : null,
               datefield:
                 filter.dateField === "dept_target" && !keepsTarget
@@ -174,6 +182,25 @@ export function OrderListFilterBar({
             selected={filter.deptStatuses}
             onChange={(next) => setParams({ dstatus: next })}
           />
+        )}
+        {/* Billing and Accounts: how the SO is paid, and how it is billed. */}
+        {activeDept && PAYMENT_FILTER_DEPTS.includes(activeDept) && (
+          <>
+            <MultiSelectFilter
+              label="Payment terms"
+              allLabel="Any terms"
+              options={PAYMENT_TERM_FILTER_OPTIONS}
+              selected={filter.paymentTerms}
+              onChange={(next) => setParams({ pterm: next })}
+            />
+            <MultiSelectFilter
+              label="Bill mode"
+              allLabel="Any mode"
+              options={BILL_MODE_FILTER_OPTIONS}
+              selected={filter.billModes}
+              onChange={(next) => setParams({ bmode: next })}
+            />
+          </>
         )}
         {/* The order list only: one of the SO's own fields, filled or pending. */}
         {!dept && (

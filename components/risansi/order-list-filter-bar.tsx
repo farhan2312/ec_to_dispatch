@@ -90,8 +90,11 @@ export function OrderListFilterBar({
       ? hasTarget
       : DEPT_VIEWS[activeDept].hasTarget
     : false;
+  // Assembly & Packing works to the SO's Target Date for Packing Team.
   const targetLabel = activeDept
-    ? `${DEPT_FILTER_LABELS[activeDept]} target`
+    ? activeDept === "assembly"
+      ? "Target Date for Packing Team"
+      : `${DEPT_FILTER_LABELS[activeDept]} target`
     : "Target date";
 
   const activePreset =
@@ -290,7 +293,8 @@ export function OrderListFilterBar({
           options={ORDER_DATE_FIELDS.filter((f) => {
             // Planning reads by its readiness date, not a target.
             if (f.value === "dept_target") return deptTarget && activeDept !== "planning";
-            if (f.value === "readiness") return activeDept === "planning";
+            // Assembly & Packing works from Planning's readiness date too.
+            if (f.value === "readiness") return activeDept === "planning" || activeDept === "assembly";
             if (f.value === "dispatch_target") return !dept;
             // Completion dates come from sign-offs, which are switched off.
             if (f.value === "completed_on") return SIGN_OFF_ENABLED;

@@ -26,6 +26,27 @@ function when(value: string): string {
     : d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+/**
+ * The entry moved a readiness date from one date to another — a re-date, not
+ * the first date given, a lot added or one taken away.
+ */
+const redated = (e: ReadyLotEvent) =>
+  (e.action === "changed" || e.action === "readiness") &&
+  !!e.prev_ready_date &&
+  !!e.ready_date &&
+  e.prev_ready_date.slice(0, 10) !== e.ready_date.slice(0, 10);
+
+/**
+ * How many times the date moved. The same move saved EC by EC (or twice in a
+ * row) is one change, not several.
+ */
+const redateCount = (events: ReadyLotEvent[]) =>
+  new Set(
+    events
+      .filter(redated)
+      .map((e) => `${e.lot_no}|${e.prev_ready_date!.slice(0, 10)}|${e.ready_date!.slice(0, 10)}`)
+  ).size;
+
 /** One history entry as a sentence. */
 function describe(e: ReadyLotEvent): string {
   const lot = `Lot ${e.lot_no}`;
@@ -119,6 +140,14 @@ export function ReadyLotHistoryButton({
               <div>
                 <h2 className="font-display text-base font-semibold text-foreground">Readiness history</h2>
                 <p className="text-xs text-muted">{soLabel} · newest first</p>
+                {events && events.length > 0 && (() => {
+                  const n = redateCount(events);
+                  return (
+                    <p className={`mt-1 text-xs font-semibold ${n > 0 ? "text-amber-700" : "text-muted"}`}>
+                      {n === 0 ? "Readiness date never changed" : `Readiness date changed ${n} time${n === 1 ? "" : "s"}`}
+                    </p>
+                  );
+                })()}
               </div>
               <button
                 type="button"
@@ -141,7 +170,14 @@ export function ReadyLotHistoryButton({
               <ol className="space-y-2.5">
                 {events.map((e, i) => (
                   <li key={i} className="rounded-lg border border-card-border px-3 py-2">
-                    <p className="text-sm font-medium text-foreground">{describe(e)}</p>
+                    <p className="text-sm font-medium text-foreground">
+                      {describe(e)}
+                      {redated(e) && (
+                        <span className="ml-1.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                          Date changed
+                        </span>
+                      )}
+                    </p>
                     <p className="mt-0.5 text-xs text-muted">
                       {e.action === "recorded"
                         ? `before history was kept · ${when(e.changed_at)}`

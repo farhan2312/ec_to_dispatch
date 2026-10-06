@@ -27,7 +27,8 @@ import {
   PENDING,
   type DeptFilterKey,
 } from "@/lib/dept-status";
-import type { OrderListFilter, SignOff } from "@/lib/order-list-filter";
+import { FIELD_FILTER_FIELDS, type OrderListFilter, type SignOff } from "@/lib/order-list-filter";
+import { appliesSql, filledSql } from "@/lib/order-gaps";
 import {
   PAGE_SIZE,
   clampPage,
@@ -2586,6 +2587,17 @@ function orderListClauses(
   if (f.dept && f.overdue) clauses.push(deptOverduePredicate(f.dept));
   // Packed by Assembly & Packing and not yet gone: Dispatch's own shortlist.
   if (f.ready) clauses.push(READY_TO_DISPATCH);
+  // One SO field, filled or pending. Pending is blank where the field applies.
+  if (f.field) {
+    const def = FIELD_FILTER_FIELDS.find((x) => x.column === f.field!.column);
+    if (def) {
+      clauses.push(
+        f.field.state === "filled"
+          ? `(${filledSql(def)})`
+          : `((${appliesSql(def)}) AND NOT (${filledSql(def)}))`
+      );
+    }
+  }
 
   if (f.from || f.to) {
     const range = (column: string) =>

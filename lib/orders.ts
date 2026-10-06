@@ -871,13 +871,39 @@ export async function saveReadyLots(
     await syncPackedFromLots(c, itemId);
     const last = lots[lots.length - 1];
     if (last) {
+      // Fully ready with no date of its own: the readiness date stays the last
+      // one given — an earlier lot's, or the EC's own while it was In plan —
+      // and remembers which status it belongs to.
+      let date = last.ready_date;
+      let dateStatus: string | null = null;
+      if (!date && last.status === "Fully ready") {
+        const earlier = [...lots.slice(0, -1)].reverse().find((l) => l.ready_date);
+        if (earlier) {
+          date = earlier.ready_date;
+          dateStatus = earlier.status;
+        } else {
+          const cur = await c.query<{ status: string | null; ready_date: string | null; date_status: string | null }>(
+            `SELECT actual_spare_status AS status,
+                    to_char(planning_readiness_date, 'YYYY-MM-DD') AS ready_date,
+                    readiness_date_status AS date_status
+               FROM order_planning WHERE item_id = $1`,
+            [itemId]
+          );
+          const was = cur.rows[0];
+          if (was?.ready_date) {
+            date = was.ready_date;
+            dateStatus = was.status === "Fully ready" ? was.date_status : was.status;
+          }
+        }
+      }
       await c.query(
-        `INSERT INTO order_planning (item_id, actual_spare_status, planning_readiness_date)
-         VALUES ($1, $2, $3)
+        `INSERT INTO order_planning (item_id, actual_spare_status, planning_readiness_date, readiness_date_status)
+         VALUES ($1, $2, $3, $4)
          ON CONFLICT (item_id) DO UPDATE
             SET actual_spare_status = EXCLUDED.actual_spare_status,
-                planning_readiness_date = EXCLUDED.planning_readiness_date`,
-        [itemId, last.status, last.ready_date]
+                planning_readiness_date = EXCLUDED.planning_readiness_date,
+                readiness_date_status = EXCLUDED.readiness_date_status`,
+        [itemId, last.status, date, dateStatus]
       );
     }
   });
@@ -900,10 +926,12 @@ export async function inheritSparePlanning(
     status: string | null;
     ready_date: string | null;
     remarks: string | null;
+    date_status: string | null;
   }>(
     `SELECT p.item_id, p.actual_spare_status AS status,
             to_char(p.planning_readiness_date, 'YYYY-MM-DD') AS ready_date,
-            p.spare_readiness_remarks AS remarks
+            p.spare_readiness_remarks AS remarks,
+            p.readiness_date_status AS date_status
        FROM order_items me
        JOIN orders o ON o.id = me.order_id
        JOIN order_items s ON s.order_id = me.order_id AND s.id <> me.id
@@ -929,13 +957,14 @@ export async function inheritSparePlanning(
   // The lots carry the status and date with them, and their own history.
   if (lots.rows.length > 0) await saveReadyLots(itemId, lots.rows, actor);
   await query(
-    `INSERT INTO order_planning (item_id, actual_spare_status, planning_readiness_date, spare_readiness_remarks)
-     VALUES ($1, $2, $3::date, $4)
+    `INSERT INTO order_planning (item_id, actual_spare_status, planning_readiness_date, spare_readiness_remarks, readiness_date_status)
+     VALUES ($1, $2, $3::date, $4, $5)
      ON CONFLICT (item_id) DO UPDATE
         SET actual_spare_status = EXCLUDED.actual_spare_status,
             planning_readiness_date = EXCLUDED.planning_readiness_date,
-            spare_readiness_remarks = EXCLUDED.spare_readiness_remarks`,
-    [itemId, from.status, from.ready_date, from.remarks]
+            spare_readiness_remarks = EXCLUDED.spare_readiness_remarks,
+            readiness_date_status = EXCLUDED.readiness_date_status`,
+    [itemId, from.status, from.ready_date, from.remarks, from.date_status]
   );
   if (lots.rows.length === 0 && actor) {
     await logReadinessChange(
@@ -2093,7 +2122,9 @@ export async function listItemsForSection(
     table === "order_planning" || table === "order_assembly_dispatch"
       ? `, COALESCE((SELECT jsonb_agg(to_jsonb(rl) ORDER BY rl.seq)
                      FROM order_ready_lots rl WHERE rl.item_id = it.id),
-                  '[]'::jsonb) AS ready_lots`
+                  '[]'::jsonb) AS ready_lots${
+           table === "order_planning" ? ", d.readiness_date_status" : ""
+         }`
       : "";
 
   const result = await query<Row>(

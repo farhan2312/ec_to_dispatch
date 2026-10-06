@@ -337,7 +337,11 @@ export function DepartmentWorkspace({
           toInput(ec.actual_pump_status) ||
           toInput(ec.planning_status) ||
           "Pending",
-        date: shortDate(ec.planning_readiness_date),
+        date:
+          shortDate(ec.planning_readiness_date) +
+          (toInput(ec.readiness_date_status) && toInput(ec.planning_readiness_date)
+            ? ` (${toInput(ec.readiness_date_status)})`
+            : ""),
       };
     }
     const lots = packingLotsFromRows(ec.ready_lots);

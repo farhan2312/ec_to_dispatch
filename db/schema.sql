@@ -1519,6 +1519,10 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS zone TEXT;
 -- the EC's item_type, so a Planning row only ever shows one set.
 ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS spare_readiness_remarks TEXT;
 ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS actual_spare_status     TEXT;
+-- A Spare that turns Fully ready without a date of its own keeps the date it
+-- had, and this says which status that date was given under (In plan,
+-- Partial ready). Blank when the readiness date is the current status's own.
+ALTER TABLE order_planning ADD COLUMN IF NOT EXISTS readiness_date_status   TEXT;
 
 -- Drawing is now tracked as a list of revisions per EC rather than three flat
 -- fields on order_drawing. Each revision records the three hand-offs, every

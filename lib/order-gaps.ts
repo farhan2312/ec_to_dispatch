@@ -19,6 +19,7 @@ export type OrderGapRow = {
   so_no: string | null;
   client_name: string | null;
   so_date: string | null;
+  order_type: string | null;
   /** The labels of the fields still blank, in the order the form shows them. */
   missing: string[];
 };
@@ -44,8 +45,8 @@ const GAP_FIELDS: OrderField[] = (SECTION_BY_TABLE.get("orders")?.fields ?? []).
   (f) => !f.computed && !NOT_A_GAP.has(f.column)
 );
 
-/** "This field has a value." */
-function filledSql(f: OrderField): string {
+/** "This field has a value" — over an `orders o` alias. */
+export function filledSql(f: OrderField): string {
   // The prose field is not typed into any more — the terms themselves are the
   // lines beneath it — so either one counts as the terms being recorded.
   if (f.column === "payment_terms") {
@@ -56,7 +57,7 @@ function filledSql(f: OrderField): string {
 }
 
 /** "This field applies to this order" — the dependsOn gate, in SQL. */
-function appliesSql(f: OrderField): string {
+export function appliesSql(f: OrderField): string {
   // Drawing's target is owed only where there is something to draw: an order
   // of Spares only has none.
   if (f.column === "drg_target_date") return deptInvolvementSql("drawing", "o");
@@ -94,9 +95,12 @@ export async function listOrderGaps(opts: {
   offset: number;
   limit: number;
   search: string;
+  /** Pump or Spare — the SO's order type, or any of its ECs' item type. */
+  type?: string | null;
 }): Promise<{ rows: OrderGapRow[]; total: number }> {
   const term = opts.search.trim();
   const like = term === "" ? null : `%${term}%`;
+  const type = opts.type?.trim() || null;
 
   const result = await query<OrderGapRow & { total: number }>(
     `WITH checked AS (
@@ -105,6 +109,7 @@ export async function listOrderGaps(opts: {
               o.so_no,
               o.client_name,
               to_char(o.so_date, 'YYYY-MM-DD') AS so_date,
+              o.order_type,
               ${MISSING_SQL} AS missing
          FROM orders o
         WHERE ${orderOpenSql("o")}
@@ -114,14 +119,18 @@ export async function listOrderGaps(opts: {
                OR o.client_code ILIKE $1
                OR o.po_no ILIKE $1
                OR o.sl_no::text ILIKE $1)
+          AND ($4::text IS NULL
+               OR TRIM(COALESCE(o.order_type, '')) = $4
+               OR EXISTS (SELECT 1 FROM order_items s
+                           WHERE s.order_id = o.id AND TRIM(COALESCE(s.item_type, '')) = $4))
      )
-     SELECT id, sl_no, so_no, client_name, so_date, missing,
+     SELECT id, sl_no, so_no, client_name, so_date, order_type, missing,
             count(*) OVER ()::int AS total
        FROM checked
       WHERE cardinality(missing) > 0
       ORDER BY sl_no
       LIMIT $2 OFFSET $3`,
-    [like, opts.limit, opts.offset]
+    [like, opts.limit, opts.offset, type]
   );
 
   return {

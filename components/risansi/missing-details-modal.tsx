@@ -35,6 +35,7 @@ function MissingDetailsModal({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [term, setTerm] = useState("");
+  const [type, setType] = useState<"" | "Pump" | "Spare">("");
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -45,10 +46,10 @@ function MissingDetailsModal({ onClose }: { onClose: () => void }) {
   const rowsRef = useRef<OrderGapRow[]>([]);
 
   const fetchBatch = useCallback(
-    async (offset: number, q: string, request: number) => {
+    async (offset: number, q: string, t: string, request: number) => {
       loadingRef.current = true;
       setLoading(true);
-      const res = await orderGapsAction(offset, q);
+      const res = await orderGapsAction(offset, q, t || null);
       // A newer search has since been typed; this answer is for a list that no
       // longer exists, and that newer request owns the flags.
       if (request !== requestRef.current) return;
@@ -86,8 +87,8 @@ function MissingDetailsModal({ onClose }: { onClose: () => void }) {
     setDone(false);
     setError(null);
     scrollRef.current?.scrollTo({ top: 0 });
-    fetchBatch(0, term, requestRef.current);
-  }, [term, fetchBatch]);
+    fetchBatch(0, term, type, requestRef.current);
+  }, [term, type, fetchBatch]);
 
   // The next batch loads when the foot of the list comes into view.
   useEffect(() => {
@@ -96,13 +97,13 @@ function MissingDetailsModal({ onClose }: { onClose: () => void }) {
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries[0]?.isIntersecting || loadingRef.current) return;
-        fetchBatch(rowsRef.current.length, term, requestRef.current);
+        fetchBatch(rowsRef.current.length, term, type, requestRef.current);
       },
       { root: scrollRef.current, rootMargin: "160px" }
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [done, term, rows.length, fetchBatch]);
+  }, [done, term, type, rows.length, fetchBatch]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -144,8 +145,8 @@ function MissingDetailsModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
-        <div className="border-b border-card-border px-5 py-3">
-          <div className="relative">
+        <div className="flex flex-wrap items-center gap-2 border-b border-card-border px-5 py-3">
+          <div className="relative min-w-[12rem] flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="search"
@@ -157,6 +158,24 @@ function MissingDetailsModal({ onClose }: { onClose: () => void }) {
               className="h-9 w-full rounded-lg border border-input-border bg-background pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground"
             />
           </div>
+          {/* Pump or Spare: the SO's order type, or any of its ECs'. */}
+          <div role="group" aria-label="Order type" className="inline-flex overflow-hidden rounded-lg border border-input-border">
+            {([["", "All"], ["Pump", "Pump"], ["Spare", "Spare"]] as const).map(([value, label]) => (
+              <button
+                key={label}
+                type="button"
+                onClick={() => setType(value)}
+                aria-pressed={type === value}
+                className={`h-9 px-3 text-sm font-medium transition-colors ${
+                  type === value
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-surface text-foreground hover:bg-background"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
@@ -166,7 +185,7 @@ function MissingDetailsModal({ onClose }: { onClose: () => void }) {
             </p>
           ) : rows.length === 0 && !loading ? (
             <p className="px-5 py-10 text-sm text-muted">
-              {term
+              {term || type
                 ? "No order matching that search has details missing."
                 : "Every order has its details filled in."}
             </p>
@@ -183,7 +202,7 @@ function MissingDetailsModal({ onClose }: { onClose: () => void }) {
                         {row.so_no || `#${row.sl_no}`}
                       </Link>
                       <span className="ml-2 text-xs text-muted">
-                        {row.client_name || "—"} · {dayOnly(row.so_date)}
+                        {[row.order_type, row.client_name || "—", dayOnly(row.so_date)].filter(Boolean).join(" · ")}
                       </span>
                     </div>
                     <span className="shrink-0 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-700">

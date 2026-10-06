@@ -6,6 +6,7 @@
 // route and the SQL builder all read one definition.
 
 import { DEPT_VIEWS } from "@/lib/dept-view";
+import { SECTION_BY_TABLE, type OrderField } from "@/lib/order-schema";
 import {
   DEPT_FILTER_KEYS,
   DEPT_FILTER_LABELS,
@@ -34,6 +35,22 @@ export const SIGN_OFF_OPTIONS = [
 ] as const;
 
 export type SignOff = (typeof SIGN_OFF_OPTIONS)[number]["value"];
+
+/**
+ * The SO's own fields the list can be narrowed by — "filled" or "pending" —
+ * the Order details form's fields, in its order. A computed value is derived,
+ * never typed, so it is nobody's to fill.
+ */
+export const FIELD_FILTER_FIELDS: OrderField[] = (SECTION_BY_TABLE.get("orders")?.fields ?? []).filter(
+  (f) => !f.computed
+);
+
+export const FIELD_STATES = [
+  { value: "pending", label: "Pending" },
+  { value: "filled", label: "Filled" },
+] as const;
+
+export type FieldState = (typeof FIELD_STATES)[number]["value"];
 
 export const DATE_PRESETS = [
   "Today",
@@ -102,6 +119,11 @@ export type OrderListFilter = {
    * says so without hiding anything.
    */
   ready: boolean;
+  /**
+   * One of the SO's own fields, filled or still pending. Pending only counts
+   * where the field applies — PO No. on an FR order is not owed.
+   */
+  field: { column: string; state: FieldState } | null;
 };
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -161,6 +183,11 @@ export function parseOrderListFilter(
   let to = date(get("to"));
   if (from && to && from > to) [from, to] = [to, from];
 
+  const fieldRaw2 = get("field");
+  const field = FIELD_FILTER_FIELDS.some((f) => f.column === fieldRaw2)
+    ? { column: fieldRaw2 as string, state: (get("fstate") === "filled" ? "filled" : "pending") as FieldState }
+    : null;
+
   return {
     search: (get("q") ?? "").trim(),
     zones: list(get("zone")),
@@ -175,12 +202,14 @@ export function parseOrderListFilter(
     to,
     overdue: get("overdue") === "1",
     ready: get("ready") === "1",
+    field,
   };
 }
 
 /** Whether anything narrows the list at all. */
 export function isOrderListFiltered(f: OrderListFilter): boolean {
   return !!(
+    f.field ||
     f.ready ||
     f.overdue ||
     f.search ||
@@ -205,6 +234,10 @@ export function orderListFilterParams(f: OrderListFilter): URLSearchParams {
   if (f.dept) p.set("dept", f.dept);
   if (f.overdue) p.set("overdue", "1");
   if (f.ready) p.set("ready", "1");
+  if (f.field) {
+    p.set("field", f.field.column);
+    p.set("fstate", f.field.state);
+  }
   if (f.deptStatuses.length) p.set("dstatus", f.deptStatuses.join(","));
   if (f.signOff) p.set("signoff", f.signOff);
   if (f.from || f.to) {
@@ -221,6 +254,10 @@ export function describeOrderListFilter(f: OrderListFilter): string {
   if (f.search) parts.push(`Search: ${f.search}`);
   if (f.overdue) parts.push("Overdue only");
   if (f.ready) parts.push("Ready to dispatch");
+  if (f.field) {
+    const label = FIELD_FILTER_FIELDS.find((x) => x.column === f.field!.column)?.label ?? f.field.column;
+    parts.push(`${label}: ${f.field.state === "filled" ? "filled" : "pending"}`);
+  }
   if (f.zones.length) parts.push(`Zone: ${f.zones.join(", ")}`);
   if (f.reps.length) parts.push(`Rep: ${f.reps.join(", ")}`);
   if (f.markets.length) parts.push(`Market: ${f.markets.join(", ")}`);

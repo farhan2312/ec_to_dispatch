@@ -16,7 +16,8 @@ export type OrderGapsResult =
  */
 export async function orderGapsAction(
   offset: number,
-  search: string
+  search: string,
+  type: string | null = null
 ): Promise<OrderGapsResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
@@ -29,6 +30,7 @@ export async function orderGapsAction(
       offset: Math.max(0, Math.floor(offset)),
       limit: GAP_BATCH,
       search: (search ?? "").slice(0, 120),
+      type: type === "Pump" || type === "Spare" ? type : null,
     });
     return { ok: true, rows, total };
   } catch (error) {

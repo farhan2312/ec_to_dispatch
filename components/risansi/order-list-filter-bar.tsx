@@ -13,6 +13,8 @@ import {
 } from "@/lib/dept-status";
 import {
   DATE_PRESETS,
+  FIELD_FILTER_FIELDS,
+  FIELD_STATES,
   ORDER_DATE_FIELDS,
   SIGN_OFF_OPTIONS,
   isOrderListFiltered,
@@ -37,6 +39,8 @@ const FILTER_KEYS = [
   "to",
   "overdue",
   "ready",
+  "field",
+  "fstate",
 ];
 
 /**
@@ -170,6 +174,28 @@ export function OrderListFilterBar({
             selected={filter.deptStatuses}
             onChange={(next) => setParams({ dstatus: next })}
           />
+        )}
+        {/* The order list only: one of the SO's own fields, filled or pending. */}
+        {!dept && (
+          <>
+            <SingleSelectFilter
+              label="Field"
+              allLabel="Any field"
+              options={FIELD_FILTER_FIELDS.map((f) => ({ value: f.column, label: f.label }))}
+              selected={filter.field?.column ?? null}
+              onChange={(next) =>
+                setParams({ field: next, fstate: next ? (filter.field?.state ?? "pending") : null })
+              }
+            />
+            <SingleSelectFilter
+              label="Is"
+              allLabel="Pending"
+              disabled={!filter.field}
+              options={FIELD_STATES.filter((s) => s.value !== "pending").map((s) => ({ value: s.value, label: s.label }))}
+              selected={filter.field?.state === "filled" ? "filled" : null}
+              onChange={(next) => setParams({ fstate: next ?? "pending" })}
+            />
+          </>
         )}
         {SIGN_OFF_ENABLED && (
         <SingleSelectFilter

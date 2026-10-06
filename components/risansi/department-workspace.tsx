@@ -534,7 +534,7 @@ export function DepartmentWorkspace({
             <thead>
               <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
                 {groupBySo && <th className="w-8 px-2 py-3" />}
-                <th className="px-4 py-3">Sl.</th>
+                <th className="px-4 py-3"><SortHeader label="Sl." sortKey="sl" /></th>
                 <th className="px-4 py-3">SO No.</th>
                 <th className="px-4 py-3">Chat</th>
                 {!groupBySo && showEcNo && <th className="px-4 py-3">EC No.</th>}

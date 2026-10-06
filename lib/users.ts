@@ -54,15 +54,18 @@ const PUBLIC_COLUMNS =
  */
 export async function createUser(
   input: NewUser,
-  status: UserStatus = "pending"
+  status: UserStatus = "pending",
+  // An admin-added account starts on the password the admin typed — a
+  // temporary one the user must replace at first sign-in.
+  opts: { mustChangePassword?: boolean } = {}
 ): Promise<User> {
   const passwordHash = await bcrypt.hash(input.password, 12);
   try {
     const result = await query<User>(
-      `INSERT INTO users (full_name, email, password_hash, role, status)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO users (full_name, email, password_hash, role, status, must_change_password)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING ${PUBLIC_COLUMNS}`,
-      [input.fullName.trim(), input.email.trim(), passwordHash, input.role, status]
+      [input.fullName.trim(), input.email.trim(), passwordHash, input.role, status, !!opts.mustChangePassword]
     );
     return result.rows[0];
   } catch (error) {

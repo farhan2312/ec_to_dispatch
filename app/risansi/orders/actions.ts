@@ -53,6 +53,8 @@ import {
   CHILD_FIELDS,
   ORDER_STATUS_OPTIONS,
   SECTION_BY_TABLE,
+  ORDER_MAKING_EDITABLE,
+  ORDER_MAKING_FIELDS,
   firstMissingAddOnField,
   paymentTermsText,
   type ChildTable,
@@ -66,6 +68,7 @@ import {
 import {
   canAccessDepartment,
   canCreateOrders,
+  isOrderMaking,
   canEditChild,
   canEditQcDocuments,
   canEditQcRequirementDocs,
@@ -136,6 +139,15 @@ export async function createOrderAction(
     return { ok: false, error: "You don't have permission to create orders." };
   }
 
+  // Order Making fills Client and Purchase Order details only; anything else
+  // in the request (an import column, a crafted call) is not theirs to set.
+  if (isOrderMaking(user.role)) {
+    const own = new Set(ORDER_MAKING_EDITABLE.map((f) => f.column));
+    input = Object.fromEntries(
+      Object.entries(input).filter(([k]) => own.has(k))
+    ) as NewOrderInput;
+    if (input.order_type === "Spare") input = { ...input, boi: "No", qc_required: "No" };
+  }
   if (!(input.client_code ?? "").trim()) {
     return { ok: false, error: "Client Code is required." };
   }
@@ -176,9 +188,22 @@ export async function createOrderAction(
     await Promise.all([
       autoFillTargets(id, user),
       getUsdInrRate().then((rate) => applyUsdConversion(id, rate)),
+      // Order Making hands the SO over: Central Visibility fills its terms,
+      // targets and ECs.
+      isOrderMaking(user.role)
+        ? emitNotification({
+            roles: ["central_visibility"],
+            orderId: id,
+            type: "dept_update",
+            message: `New SO ${label} created by Order Making${
+              input.client_name ? ` for ${input.client_name}` : ""
+            } — fill its terms, target dates and ECs`,
+          })
+        : null,
     ]);
 
     revalidatePath("/risansi/orders");
+    revalidatePath("/risansi/departments/order-making");
     return { ok: true, slNo: sl_no };
   } catch (error) {
     console.error("createOrder failed:", error);
@@ -258,7 +283,7 @@ export async function getOrderPisAction(
   orderId: string
 ): Promise<ViewPisPayload> {
   const user = await getCurrentUser();
-  if (!user) return { bill_type: null, pis: [], challan: null };
+  if (!user || isOrderMaking(user.role)) return { bill_type: null, pis: [], challan: null };
   const detail = await getOrderDetail(orderId);
   if (!detail) return { bill_type: null, pis: [], challan: null };
   return {
@@ -277,6 +302,11 @@ export async function getOrderCoreAction(
   if (!user) return null;
   const detail = await getOrderDetail(orderId);
   if (!detail) return null;
+  if (isOrderMaking(user.role)) {
+    return Object.fromEntries(
+      ["id", "sl_no", ...ORDER_MAKING_FIELDS.map((f) => f.column)].map((c) => [c, detail.order[c] ?? null])
+    );
+  }
   // The terms live in their lines; the popup reads them as one.
   return {
     ...detail.order,
@@ -615,7 +645,8 @@ export async function updateOrderSectionAction(
     return { ok: false, error: "Unknown section." };
   }
 
-  if (!canEditSection(user.role, table as OrderTable)) {
+  const orderMaker = isOrderMaking(user.role) && table === "orders";
+  if (!canEditSection(user.role, table as OrderTable) && !orderMaker) {
     return {
       ok: false,
       error: "You don't have permission to edit this section.",
@@ -624,6 +655,14 @@ export async function updateOrderSectionAction(
 
   // Non-central users can't edit fields marked centralOnly (filled by Mitali).
   let allowedValues = values;
+  // Order Making: Client and Purchase Order details only.
+  if (orderMaker) {
+    const own = new Set(ORDER_MAKING_EDITABLE.map((f) => f.column));
+    allowedValues = Object.fromEntries(Object.entries(values).filter(([k]) => own.has(k)));
+    if (allowedValues.order_type === "Spare") {
+      allowedValues = { ...allowedValues, boi: "No", qc_required: "No" };
+    }
+  }
   if (!isCentral(user.role)) {
     const centralOnly = new Set(
       section.fields.filter((f) => f.centralOnly).map((f) => f.column)

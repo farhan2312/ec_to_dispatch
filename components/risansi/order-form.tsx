@@ -149,7 +149,8 @@ const SECTIONS: Section[] = [
   {
     title: "Target Dates",
     fields: [
-      { name: "drg_target_date", label: "Target Date for Drawing", type: "date" },
+      // A Spare has no drawing.
+      { name: "drg_target_date", label: "Target Date for Drawing", type: "date", dependsOn: { name: "order_type", value: "Spare", not: true } },
       {
         name: "purchase_target_date",
         label: "Target Date for Purchase",
@@ -238,6 +239,17 @@ export function OrderForm() {
     setValues((prev) => withValueRules(prev, name, value));
   }
 
+  // Whether a field applies to the order as filled so far: FR takes a
+  // complaint instead of a quotation and PO, a Spare has no total quantity,
+  // BOI or Quality, LD Date needs LD = Yes. A field that does not apply is
+  // hidden and not sent.
+  const applies = (field: Field) =>
+    !field.dependsOn ||
+    ((values[field.dependsOn.name] ?? "") === field.dependsOn.value) === !field.dependsOn.not;
+  // A Challan order is worth 0 INR: its value and currency are set, not typed.
+  const challanLocked = (field: Field) =>
+    values.bill_type === "Challan" && (field.name === "order_value" || field.name === "order_currency");
+
   // Picking a client from the Market Intell directory fills the Client
   // section; everything else on the form is left untouched.
   function applyClient(client: MarketIntellClient) {
@@ -275,7 +287,13 @@ export function OrderForm() {
     }
 
     setIsSubmitting(true);
-    const result = await createOrderAction(values);
+    const sending = Object.fromEntries(
+      SECTIONS
+        .flatMap((sec) => sec.fields)
+        .filter((f) => applies(f) && (values[f.name] ?? "") !== "")
+        .map((f) => [f.name, values[f.name]])
+    ) as NewOrderInput;
+    const result = await createOrderAction(sending);
     if (!result.ok) {
       setIsSubmitting(false);
       setError(result.error);
@@ -308,12 +326,8 @@ export function OrderForm() {
             </h2>
             <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
               {section.fields.map((field) => {
-                const disabled = field.dependsOn
-                  ? ((values[field.dependsOn.name] ?? "") === field.dependsOn.value) ===
-                    !field.dependsOn.not
-                    ? false
-                    : true
-                  : false;
+                if (!applies(field)) return null;
+                const disabled = challanLocked(field);
                 return (
                 <div key={field.name}>
                   <label
@@ -351,6 +365,9 @@ export function OrderForm() {
                       disabled={disabled}
                       className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-50`}
                     />
+                  )}
+                  {disabled && (
+                    <p className="mt-1 text-[11px] text-muted">0 INR on a Challan order</p>
                   )}
                 </div>
                 );

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canCreateOrders } from "@/lib/roles";
+import { canImportOrders } from "@/lib/roles";
 import { OrderImport } from "@/components/risansi/order-import";
 
 export const metadata: Metadata = {
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ImportOrdersPage() {
   const user = await getCurrentUser();
-  if (!user || !canCreateOrders(user.role)) redirect("/risansi/orders");
+  if (!user || !canImportOrders(user.role)) redirect("/risansi/orders");
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-8">

@@ -19,6 +19,8 @@ export default async function OrderDetailPage({
   const { id } = await params;
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  // Order Making works from its own page — the SO's pages show far more.
+  if (user.role === "order_making") redirect("/risansi/departments/order-making");
 
   // Target dates keep their full history; the panel shows the current value
   // with every earlier one behind it. Read alongside the order itself — it is

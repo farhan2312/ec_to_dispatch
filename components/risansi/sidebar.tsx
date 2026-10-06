@@ -16,6 +16,7 @@ import {
 import { logout } from "@/app/risansi/actions";
 import {
   canAccessDepartment,
+  canAccessOrderMaking,
   canSeeEscalations,
   isCentral,
   reminderDeptForRole,
@@ -59,7 +60,10 @@ export function Sidebar({
     .toUpperCase();
 
   const visibleDepartments = DEPARTMENT_NAV.filter((item) =>
-    canAccessDepartment(user.role, item.table)
+    // Order Making's page is over the orders table itself.
+    item.table === "orders"
+      ? canAccessOrderMaking(user.role)
+      : canAccessDepartment(user.role, item.table)
   );
 
   // Department roles only need their own workspace, not the whole-order list.

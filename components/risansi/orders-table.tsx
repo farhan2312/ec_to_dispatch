@@ -9,7 +9,7 @@ import { deleteOrderAction } from "@/app/risansi/orders/actions";
 import { UrlPagination, useUrlTable } from "./url-table";
 import type { PageResult } from "@/lib/pagination";
 import { AddOnForm } from "./add-on-form";
-import { ClientLookup } from "./client-lookup";
+import { SortHeader } from "./sort-header";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import { isOrderListFiltered, parseOrderListFilter } from "@/lib/order-list-filter";
 
@@ -174,11 +174,7 @@ export function OrdersTable({
 
   return (
     <div>
-      {/* Create an SO straight from the Market Intell client directory. Only
-          shown to roles that may create orders (same gate as Add-On/delete). */}
-      {canDelete && <ClientLookup />}
-
-      <OrderListFilterBar options={result.options} total={result.total} />
+      <OrderListFilterBar options={result.options} total={result.total} noDispatchTarget />
 
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">
         <div className="overflow-x-auto">
@@ -186,9 +182,9 @@ export function OrdersTable({
             <thead>
               <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
                 <th className="w-8 px-2 py-3" />
-                <th className="px-4 py-3">Sl. No.</th>
+                <th className="px-4 py-3"><SortHeader label="Sl. No." sortKey="sl" /></th>
                 <th className="px-4 py-3">SO No.</th>
-                <th className="px-4 py-3">SO Date</th>
+                <th className="px-4 py-3"><SortHeader label="SO Date" sortKey="so_date" /></th>
                 <th className="px-4 py-3">Client Name</th>
                 <th className="px-4 py-3">Client Code</th>
                 <th className="px-4 py-3 text-right">Order Value</th>

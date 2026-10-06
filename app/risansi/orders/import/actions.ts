@@ -1,7 +1,7 @@
 "use server";
 
 import { getCurrentUser } from "@/lib/session";
-import { canCreateOrders } from "@/lib/roles";
+import { canImportOrders } from "@/lib/roles";
 import {
   enrichClients,
   flagDuplicateSoNos,
@@ -23,7 +23,7 @@ export async function parseImportAction(
 ): Promise<ParseImportResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
-  if (!canCreateOrders(user.role)) {
+  if (!canImportOrders(user.role)) {
     return { ok: false, error: "You don't have permission to create orders." };
   }
 
@@ -66,7 +66,7 @@ export async function commitImportAction(
 ): Promise<CommitImportResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
-  if (!canCreateOrders(user.role)) {
+  if (!canImportOrders(user.role)) {
     return { ok: false, error: "You don't have permission to create orders." };
   }
   if (!Array.isArray(rows) || rows.length === 0) {

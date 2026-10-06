@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ClipboardList, Download, Plus, Upload } from "lucide-react";
-import { listOrdersPage } from "@/lib/orders";
+import { listOrdersPage, parseQueueSort } from "@/lib/orders";
 import { parsePage } from "@/lib/pagination";
 import {
   isOrderListFiltered,
@@ -34,8 +34,12 @@ export default async function OrdersPage({
   const params = await searchParams;
   // The central dashboard's filter set, read from the URL so it narrows the
   // whole table in SQL — see lib/order-list-filter.ts.
-  const filter = parseOrderListFilter((key) => params[key]);
-  const result = await listOrdersPage({ page: parsePage(params.page), filter });
+  const filter = parseOrderListFilter((key) => params[key], { noDispatchTarget: true });
+  const result = await listOrdersPage({
+    page: parsePage(params.page),
+    filter,
+    sort: parseQueueSort(params.sort),
+  });
   const canCreate = canCreateOrders(user.role);
 
   // The export mirrors whatever the list is showing: with any filter on it

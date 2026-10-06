@@ -334,6 +334,9 @@ export function roleSeesOrder(
     ec_types?: unknown[];
   }
 ): boolean {
+  // Order Making fills Client and PO details from its own page; the SO's
+  // pages carry everything else.
+  if (role === "order_making") return false;
   const view = deptViewForRole(role);
   if (!view) return true;
   if (view.key === "drawing") {

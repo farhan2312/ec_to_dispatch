@@ -32,6 +32,8 @@ export default async function DashboardPage({
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  // Order Making has no dashboard: its page is its work.
+  if (user.role === "order_making") redirect("/risansi/departments/order-making");
 
   if (canSeeCentralDashboard(user.role)) {
     const params = await searchParams;

@@ -58,7 +58,8 @@ export function OrderListFilterBar({
   total,
   dept,
   searchPlaceholder = "Search SO, client name, client code, EC…",
-  hasTarget = true,
+  hasTarget: hasTargetProp = true,
+  noDispatchTarget = false,
 }: {
   options: OrderListOptions;
   total: number;
@@ -71,14 +72,19 @@ export function OrderListFilterBar({
   searchPlaceholder?: string;
   /** Whether the pinned department works to a target date at all. */
   hasTarget?: boolean;
+  /** The orders list: no Dispatch target date filter; SO date by default. */
+  noDispatchTarget?: boolean;
 }) {
   // Who the customer is does not change what these departments do: they work
   // to dates and statuses, so the party facets are noise on their queues.
   const showsParty = !dept || !DEPTS_WITHOUT_PARTY.has(dept);
   const { get, setParams } = useUrlTable();
+  // Dispatch no longer dates by, or chases, its dispatch target.
+  const hasTarget = hasTargetProp && dept !== "dispatch";
   const filter = parseDeptFilter(
     (key) => get(key) || undefined,
-    dept ?? null
+    dept ?? null,
+    { noDispatchTarget }
   );
   const filtered = isOrderListFiltered(filter);
   const activeDept = dept ?? filter.dept;
@@ -88,7 +94,7 @@ export function OrderListFilterBar({
   const deptTarget = activeDept
     ? dept
       ? hasTarget
-      : DEPT_VIEWS[activeDept].hasTarget
+      : DEPT_VIEWS[activeDept].hasTarget && activeDept !== "dispatch"
     : false;
   // Assembly & Packing works to the SO's Target Date for Packing Team.
   const targetLabel = activeDept
@@ -158,7 +164,7 @@ export function OrderListFilterBar({
               ? filter.deptStatuses.filter((s) => statusesFor(next as DeptFilterKey).includes(s))
               : [];
             const keepsTarget =
-              next && DEPT_VIEWS[next as DeptFilterKey].hasTarget;
+              next && next !== "dispatch" && DEPT_VIEWS[next as DeptFilterKey].hasTarget;
             const keepsPayment = !!next && PAYMENT_FILTER_DEPTS.includes(next);
             setParams({
               dept: next,
@@ -242,7 +248,7 @@ export function OrderListFilterBar({
       <div className="flex flex-wrap items-center gap-2">
         {/* Past its own target with work outstanding — only meaningful for a
             department that works to a date. */}
-        {activeDept && hasTarget && (
+        {activeDept && hasTarget && activeDept !== "dispatch" && (
           <button
             type="button"
             onClick={() => setParams({ overdue: filter.overdue ? null : "1" })}
@@ -283,7 +289,9 @@ export function OrderListFilterBar({
                 ? hasTarget
                   ? targetLabel
                   : "SO date"
-                : "Dispatch target"
+                : noDispatchTarget
+                  ? "SO date"
+                  : "Dispatch target"
           }
           // A department has no use for somebody else's target; inside its own
           // queue it keeps its own, the order's own dates, and when work was
@@ -295,7 +303,7 @@ export function OrderListFilterBar({
             if (f.value === "dept_target") return deptTarget && activeDept !== "planning";
             // Assembly & Packing works from Planning's readiness date too.
             if (f.value === "readiness") return activeDept === "planning" || activeDept === "assembly";
-            if (f.value === "dispatch_target") return !dept;
+            if (f.value === "dispatch_target") return !dept && !noDispatchTarget;
             // Completion dates come from sign-offs, which are switched off.
             if (f.value === "completed_on") return SIGN_OFF_ENABLED;
             return true;
@@ -312,7 +320,9 @@ export function OrderListFilterBar({
                   ? hasTarget
                     ? "dept_target"
                     : "so_date"
-                  : "dispatch_target";
+                  : noDispatchTarget
+                    ? "so_date"
+                    : "dispatch_target";
             setParams({ datefield: next === fallback ? null : next });
           }}
         />

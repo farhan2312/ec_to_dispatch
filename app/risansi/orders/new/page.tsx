@@ -15,6 +15,8 @@ export const dynamic = "force-dynamic";
 export default async function NewOrderPage() {
   const user = await getCurrentUser();
   if (!user || !canCreateOrders(user.role)) redirect("/risansi/orders");
+  // Order Making creates SOs from its own page, with its own form.
+  if (user.role === "order_making") redirect("/risansi/departments/order-making");
 
   return (
     <div className="px-4 py-6 sm:px-8 sm:py-8">

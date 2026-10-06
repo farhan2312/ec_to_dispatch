@@ -6,7 +6,12 @@
 // route and the SQL builder all read one definition.
 
 import { DEPT_VIEWS } from "@/lib/dept-view";
-import { SECTION_BY_TABLE, type OrderField } from "@/lib/order-schema";
+import {
+  BILL_MODE_OPTIONS,
+  PAYMENT_TERM_OPTIONS,
+  SECTION_BY_TABLE,
+  type OrderField,
+} from "@/lib/order-schema";
 import {
   DEPT_FILTER_KEYS,
   DEPT_FILTER_LABELS,
@@ -51,6 +56,13 @@ export const FIELD_STATES = [
 ] as const;
 
 export type FieldState = (typeof FIELD_STATES)[number]["value"];
+
+/** Billing and Accounts narrow their queues by how the SO is paid and billed. */
+export const NOT_SET = "Not set";
+export const PAYMENT_TERM_FILTER_OPTIONS = [...PAYMENT_TERM_OPTIONS.map((o) => o.value), NOT_SET];
+export const BILL_MODE_FILTER_OPTIONS = [...BILL_MODE_OPTIONS.map((o) => o.value), NOT_SET];
+/** The departments that see those two filters. */
+export const PAYMENT_FILTER_DEPTS: readonly string[] = ["billing", "accounts"];
 
 export const DATE_PRESETS = [
   "Today",
@@ -124,6 +136,10 @@ export type OrderListFilter = {
    * where the field applies — PO No. on an FR order is not owed.
    */
   field: { column: string; state: FieldState } | null;
+  /** Billing / Accounts: any of these payment terms on the SO ("Not set": none). */
+  paymentTerms: string[];
+  /** Billing / Accounts: the SO's Bill Mode ("Not set": blank). */
+  billModes: string[];
 };
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -203,12 +219,24 @@ export function parseOrderListFilter(
     overdue: get("overdue") === "1",
     ready: get("ready") === "1",
     field,
+    // Only where the controls are shown — a hidden filter would narrow
+    // without saying so.
+    paymentTerms:
+      dept && PAYMENT_FILTER_DEPTS.includes(dept)
+        ? list(get("pterm")).filter((v) => PAYMENT_TERM_FILTER_OPTIONS.includes(v))
+        : [],
+    billModes:
+      dept && PAYMENT_FILTER_DEPTS.includes(dept)
+        ? list(get("bmode")).filter((v) => BILL_MODE_FILTER_OPTIONS.includes(v))
+        : [],
   };
 }
 
 /** Whether anything narrows the list at all. */
 export function isOrderListFiltered(f: OrderListFilter): boolean {
   return !!(
+    f.paymentTerms.length ||
+    f.billModes.length ||
     f.field ||
     f.ready ||
     f.overdue ||
@@ -234,6 +262,8 @@ export function orderListFilterParams(f: OrderListFilter): URLSearchParams {
   if (f.dept) p.set("dept", f.dept);
   if (f.overdue) p.set("overdue", "1");
   if (f.ready) p.set("ready", "1");
+  if (f.paymentTerms.length) p.set("pterm", f.paymentTerms.join(","));
+  if (f.billModes.length) p.set("bmode", f.billModes.join(","));
   if (f.field) {
     p.set("field", f.field.column);
     p.set("fstate", f.field.state);
@@ -258,6 +288,8 @@ export function describeOrderListFilter(f: OrderListFilter): string {
     const label = FIELD_FILTER_FIELDS.find((x) => x.column === f.field!.column)?.label ?? f.field.column;
     parts.push(`${label}: ${f.field.state === "filled" ? "filled" : "pending"}`);
   }
+  if (f.paymentTerms.length) parts.push(`Payment terms: ${f.paymentTerms.join(", ")}`);
+  if (f.billModes.length) parts.push(`Bill mode: ${f.billModes.join(", ")}`);
   if (f.zones.length) parts.push(`Zone: ${f.zones.join(", ")}`);
   if (f.reps.length) parts.push(`Rep: ${f.reps.join(", ")}`);
   if (f.markets.length) parts.push(`Market: ${f.markets.join(", ")}`);

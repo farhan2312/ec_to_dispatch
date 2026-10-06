@@ -161,7 +161,7 @@ export function BillingWorkspace({
                 <th className="px-4 py-3">Bill Type</th>
                 <th className="px-4 py-3">Payment Terms</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
-                <th className="px-4 py-3">Dispatch Status</th>
+                {mode === "dispatch" && <th className="px-4 py-3">Dispatch Status</th>}
                 <th className="px-4 py-3" />
               </tr>
             </thead>
@@ -229,6 +229,7 @@ export function BillingWorkspace({
                         {formatValue(row.order_value)}
                         {row.order_currency ? ` ${row.order_currency}` : ""}
                       </td>
+                      {mode === "dispatch" && (
                       <td className="px-4 py-3 whitespace-nowrap">
                         {row.dispatch_status ? (
                           <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
@@ -238,6 +239,7 @@ export function BillingWorkspace({
                           <span className="text-muted-foreground">—</span>
                         )}
                       </td>
+                      )}
                       <td className="px-4 py-3 whitespace-nowrap text-right">
                         <button
                           type="button"

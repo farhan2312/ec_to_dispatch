@@ -795,11 +795,13 @@ export async function updateOrderSection(
  */
 export async function saveReadyLots(
   itemId: string,
-  lots: { status: string; ready_date: string }[],
+  lots: { status: string; ready_date: string | null }[],
   // Who made the change, for the lots' history.
   actor?: { id: string; role: string }
 ): Promise<void> {
   if (!UUID_RE.test(itemId)) return;
+  // A Fully ready lot may have no date: stored as none, not as "".
+  lots = lots.map((l) => ({ status: l.status, ready_date: l.ready_date || null }));
   await withTransaction(async (c) => {
     // Lot by lot in place, so what Assembly & Packing recorded against a lot
     // (its packing date) stays with it; a lot whose status changes carries
@@ -879,6 +881,72 @@ export async function saveReadyLots(
       );
     }
   });
+}
+
+/**
+ * A Spare SO is planned as one, so an EC added to it takes the SO's planning
+ * from the Spare ECs already there (the one Planning saved last): status,
+ * readiness date, readiness remarks and the readiness lots. Packing is not
+ * copied — Assembly & Packing has not packed the new EC. Returns whether
+ * anything was copied.
+ */
+export async function inheritSparePlanning(
+  itemId: string,
+  actor?: { id: string; role: string }
+): Promise<boolean> {
+  if (!UUID_RE.test(itemId)) return false;
+  const lead = await query<{
+    item_id: string;
+    status: string | null;
+    ready_date: string | null;
+    remarks: string | null;
+  }>(
+    `SELECT p.item_id, p.actual_spare_status AS status,
+            to_char(p.planning_readiness_date, 'YYYY-MM-DD') AS ready_date,
+            p.spare_readiness_remarks AS remarks
+       FROM order_items me
+       JOIN orders o ON o.id = me.order_id
+       JOIN order_items s ON s.order_id = me.order_id AND s.id <> me.id
+       JOIN order_planning p ON p.item_id = s.id
+      WHERE me.id = $1
+        AND ${spareEcSql("me", "o")}
+        AND ${spareEcSql("s", "o")}
+        AND (NULLIF(btrim(p.actual_spare_status), '') IS NOT NULL
+             OR p.planning_readiness_date IS NOT NULL
+             OR EXISTS (SELECT 1 FROM order_ready_lots l WHERE l.item_id = s.id))
+      ORDER BY p.updated_at DESC NULLS LAST, s.seq
+      LIMIT 1`,
+    [itemId]
+  );
+  const from = lead.rows[0];
+  if (!from) return false;
+
+  const lots = await query<{ status: string; ready_date: string }>(
+    `SELECT status, to_char(ready_date, 'YYYY-MM-DD') AS ready_date
+       FROM order_ready_lots WHERE item_id = $1 ORDER BY seq`,
+    [from.item_id]
+  );
+  // The lots carry the status and date with them, and their own history.
+  if (lots.rows.length > 0) await saveReadyLots(itemId, lots.rows, actor);
+  await query(
+    `INSERT INTO order_planning (item_id, actual_spare_status, planning_readiness_date, spare_readiness_remarks)
+     VALUES ($1, $2, $3::date, $4)
+     ON CONFLICT (item_id) DO UPDATE
+        SET actual_spare_status = EXCLUDED.actual_spare_status,
+            planning_readiness_date = EXCLUDED.planning_readiness_date,
+            spare_readiness_remarks = EXCLUDED.spare_readiness_remarks`,
+    [itemId, from.status, from.ready_date, from.remarks]
+  );
+  if (lots.rows.length === 0 && actor) {
+    await logReadinessChange(
+      itemId,
+      { status: null, ready_date: null },
+      { status: from.status, ready_date: from.ready_date },
+      actor
+    );
+  }
+  await recomputeDispatchStatusForItem(itemId);
+  return true;
 }
 
 /**
@@ -2827,6 +2895,8 @@ async function pageOfOrderIds(opts: {
   filter?: OrderListFilter;
   /** The queue's order, as SQL over `o`; Sl. No. when not given. */
   orderBy?: string;
+  /** Every matching SO rather than one page — for a printed report. */
+  all?: boolean;
 }): Promise<{ ids: string[]; total: number; page: number }> {
   const search = opts.search ? likePattern(opts.search) : null;
   const facets = opts.filter
@@ -2864,7 +2934,7 @@ async function pageOfOrderIds(opts: {
     `SELECT o.id FROM orders o ${where}
       ORDER BY ${opts.orderBy ?? "o.sl_no ASC"}
       LIMIT ${own(2)} OFFSET ${own(3)}`,
-    [...facets.params, search, PAGE_SIZE, offsetFor(page)]
+    [...facets.params, search, opts.all ? REPORT_LIMIT : PAGE_SIZE, opts.all ? 0 : offsetFor(page)]
   );
 
   return { ids: ids.rows.map((r) => r.id), total, page };
@@ -2875,6 +2945,9 @@ const soAndEcSearch = (term: string) => `(o.so_no ILIKE ${term} OR o.client_name
              OR o.sl_no::text ILIKE ${term}
              OR EXISTS (SELECT 1 FROM order_items s
                          WHERE s.order_id = o.id AND s.ec_no ILIKE ${term}))`;
+
+/** The most SOs a printed queue report carries. */
+const REPORT_LIMIT = 2000;
 
 /** Item-scope department queue, one page of SOs' worth of ECs. */
 /** How a department queue can be sorted besides by Sl. No. ("-" = latest first). */
@@ -2908,6 +2981,8 @@ export async function listItemsForSectionPage(
     filter?: OrderListFilter;
     /** Planning / Assembly: by the readiness date (the SO's latest), soonest or latest first. */
     sort?: QueueSort | null;
+    /** Every matching SO, not one page — the queue's PDF report. */
+    all?: boolean;
   }
 ): Promise<PageResult<Row>> {
   // A department does not see an order it has nothing to do with (QC when
@@ -2926,6 +3001,7 @@ export async function listItemsForSectionPage(
     searchable: soAndEcSearch,
     filter: opts.filter,
     orderBy: queueOrderBy(opts.sort),
+    all: opts.all,
   });
 
   const rows = ids.length === 0 ? [] : await listItemsForSection(table, contextColumns, ids);

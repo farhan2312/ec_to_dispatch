@@ -28,6 +28,7 @@ import {
   deleteLatestTargetRevision,
   deptInvolvedInOrder,
   saveReadyLots,
+  inheritSparePlanning,
   saveLotPacking,
   logReadinessChange,
   listReadyLotHistory,
@@ -353,6 +354,10 @@ export async function createItemAction(
       // A new EC can settle Drawing's target: its quantity may be the one the
       // SO did not state, and it may be the first EC that is not a Spare.
       autoFillTargets(orderId, user),
+      // A Spare SO is planned as one: the new EC joins it where it stands.
+      inheritSparePlanning(itemId, { id: user.id, role: user.role }).catch((error) =>
+        console.error("inheritSparePlanning failed:", error)
+      ),
     ];
 
     // Bought-out items listed with the EC are Purchase's work, so they hear

@@ -4,6 +4,11 @@ import { useEffect, useState } from "react";
 import { History, Loader2, X } from "lucide-react";
 import { getReadyLotHistoryAction } from "@/app/risansi/orders/actions";
 import type { ReadyLotEvent } from "@/lib/orders";
+import {
+  collapseHistory,
+  tagHistory,
+  type HistoryKind,
+} from "@/lib/readiness-history";
 
 const ROLE_NAMES: Record<string, string> = {
   planning: "Planning",
@@ -12,7 +17,7 @@ const ROLE_NAMES: Record<string, string> = {
 };
 
 function day(value: string | null): string {
-  if (!value) return "—";
+  if (!value) return "no date";
   const d = new Date(value);
   return Number.isNaN(d.getTime())
     ? value
@@ -26,59 +31,42 @@ function when(value: string): string {
     : d.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-/**
- * The entry moved a readiness date from one date to another — a re-date, not
- * the first date given, a lot added or one taken away.
- */
-const redated = (e: ReadyLotEvent) =>
-  (e.action === "changed" || e.action === "readiness") &&
-  !!e.prev_ready_date &&
-  !!e.ready_date &&
-  e.prev_ready_date.slice(0, 10) !== e.ready_date.slice(0, 10);
+const sameDay = (a: string | null, b: string | null) => (a ?? "").slice(0, 10) === (b ?? "").slice(0, 10);
 
-/**
- * How many times the date moved. The same move saved EC by EC (or twice in a
- * row) is one change, not several.
- */
-const redateCount = (events: ReadyLotEvent[]) =>
-  new Set(
-    events
-      .filter(redated)
-      .map((e) => `${e.lot_no}|${e.prev_ready_date!.slice(0, 10)}|${e.ready_date!.slice(0, 10)}`)
-  ).size;
+type Kind = HistoryKind;
 
-/** One history entry as a sentence. */
-function describe(e: ReadyLotEvent): string {
-  const lot = `Lot ${e.lot_no}`;
-  // Planning's status / date with no lots.
-  if (e.lot_no === 0) {
-    if (e.action === "recorded") return `${e.status ?? "—"} · ${day(e.ready_date)} — first recorded`;
-    const parts: string[] = [];
-    if (e.prev_status !== e.status) parts.push(`${e.prev_status ?? "—"} → ${e.status ?? "—"}`);
-    else if (e.status) parts.push(e.status);
-    if (e.prev_ready_date !== e.ready_date) parts.push(`${day(e.prev_ready_date)} → ${day(e.ready_date)}`);
-    else parts.push(day(e.ready_date));
-    return parts.join(" · ");
-  }
-  switch (e.action) {
-    case "added":
-      return `${lot} added · ${e.status ?? "—"} · ${day(e.ready_date)}`;
-    case "removed":
-      return `${lot} removed (was ${e.status ?? "—"} · ${day(e.ready_date)})`;
-    case "recorded":
-      return `${lot} · ${e.status ?? "—"} · ${day(e.ready_date)} — first recorded`;
-    default: {
-      const parts: string[] = [];
-      if (e.prev_status !== e.status) parts.push(`${e.prev_status ?? "—"} → ${e.status ?? "—"}`);
-      if (e.prev_ready_date !== e.ready_date) parts.push(`${day(e.prev_ready_date)} → ${day(e.ready_date)}`);
-      return `${lot} · ${parts.join(" · ") || "updated"}`;
-    }
-  }
+const TAG: Record<Kind, { label: string; className: string }> = {
+  date: { label: "Date moved", className: "bg-amber-100 text-amber-800" },
+  status: { label: "Status changed", className: "bg-sky-100 text-sky-800" },
+  first: { label: "Date given", className: "bg-teal-100 text-teal-800" },
+  cleared: { label: "Date removed", className: "bg-slate-100 text-slate-700" },
+  added: { label: "Lot added", className: "bg-emerald-100 text-emerald-800" },
+  removed: { label: "Lot removed", className: "bg-rose-100 text-rose-700" },
+  recorded: { label: "First recorded", className: "bg-slate-100 text-slate-600" },
+};
+
+/** One labelled line: "Date  10 May 2026 → 06 Oct 2026". */
+function Line({ label, from, to, changed }: { label: string; from?: string; to: string; changed: boolean }) {
+  return (
+    <div className="flex gap-2 text-sm">
+      <span className="w-12 shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+      {changed && from !== undefined ? (
+        <span className="text-foreground">
+          <span className="text-muted line-through decoration-muted/60">{from}</span>
+          <span className="mx-1.5 text-muted">→</span>
+          <span className="font-semibold">{to}</span>
+        </span>
+      ) : (
+        <span className="text-foreground">{to}</span>
+      )}
+    </div>
+  );
 }
 
 /**
- * The readiness date, clickable: opens how the SO's readiness lots moved —
- * every lot added, re-dated or re-statused, by whom and when.
+ * The readiness date, clickable: opens how the SO's readiness moved — a
+ * summary of how often the date was moved and the status changed, then every
+ * change, newest first, tagged by what it did.
  */
 export function ReadyLotHistoryButton({
   orderId,
@@ -118,7 +106,7 @@ export function ReadyLotHistoryButton({
           setError(null);
           setOpen(true);
         }}
-        title="See how the readiness lots changed"
+        title="See how the readiness date and status changed"
         className="inline-flex items-center gap-1 whitespace-nowrap text-left underline decoration-dotted underline-offset-2 hover:text-foreground"
       >
         {label}
@@ -134,20 +122,12 @@ export function ReadyLotHistoryButton({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-surface p-5 shadow-xl sm:rounded-2xl"
+            className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-surface p-5 shadow-xl sm:rounded-2xl"
           >
-            <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <h2 className="font-display text-base font-semibold text-foreground">Readiness history</h2>
-                <p className="text-xs text-muted">{soLabel} · newest first</p>
-                {events && events.length > 0 && (() => {
-                  const n = redateCount(events);
-                  return (
-                    <p className={`mt-1 text-xs font-semibold ${n > 0 ? "text-amber-700" : "text-muted"}`}>
-                      {n === 0 ? "Readiness date never changed" : `Readiness date changed ${n} time${n === 1 ? "" : "s"}`}
-                    </p>
-                  );
-                })()}
+                <p className="text-xs text-muted">{soLabel}</p>
               </div>
               <button
                 type="button"
@@ -158,40 +138,105 @@ export function ReadyLotHistoryButton({
                 <X className="h-4 w-4" />
               </button>
             </div>
+
             {error ? (
               <p className="text-sm text-danger">{error}</p>
             ) : events === null ? (
               <p className="flex items-center gap-2 text-sm text-muted">
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading…
               </p>
-            ) : events.length === 0 ? (
-              <p className="text-sm text-muted">Nothing recorded on this SO yet.</p>
             ) : (
-              <ol className="space-y-2.5">
-                {events.map((e, i) => (
-                  <li key={i} className="rounded-lg border border-card-border px-3 py-2">
-                    <p className="text-sm font-medium text-foreground">
-                      {describe(e)}
-                      {redated(e) && (
-                        <span className="ml-1.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                          Date changed
-                        </span>
-                      )}
-                    </p>
-                    <p className="mt-0.5 text-xs text-muted">
-                      {e.action === "recorded"
-                        ? `before history was kept · ${when(e.changed_at)}`
-                        : `by ${e.changed_by_name ?? "—"}${
-                            e.changed_by_role ? ` (${ROLE_NAMES[e.changed_by_role] ?? e.changed_by_role})` : ""
-                          } · ${when(e.changed_at)}`}
-                    </p>
-                  </li>
-                ))}
-              </ol>
+              <ReadinessHistoryView events={events} />
             )}
           </div>
         </div>
       )}
+    </>
+  );
+}
+
+
+/** The history itself: two counts, then each change tagged by what it did. */
+export function ReadinessHistoryView({ events }: { events: ReadyLotEvent[] }) {
+  const entries = collapseHistory(events);
+  const tags = tagHistory(entries);
+  const dateMoves = entries.filter((x) => tags.get(x)!.includes("date")).length;
+  const statusChanges = entries.filter((x) => tags.get(x)!.includes("status")).length;
+  if (entries.length === 0) return <p className="text-sm text-muted">Nothing recorded on this SO yet.</p>;
+  return (
+    <>
+      {/* The two numbers people ask for, apart from everything else. */}
+      <div className="mb-4 grid grid-cols-2 gap-2">
+        <div className="rounded-lg bg-amber-50 px-3 py-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-800">Date moved</p>
+          <p className="font-display text-xl font-bold text-amber-900">
+            {dateMoves} <span className="text-sm font-medium">time{dateMoves === 1 ? "" : "s"}</span>
+          </p>
+        </div>
+        <div className="rounded-lg bg-sky-50 px-3 py-2">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-800">Status changed</p>
+          <p className="font-display text-xl font-bold text-sky-900">
+            {statusChanges} <span className="text-sm font-medium">time{statusChanges === 1 ? "" : "s"}</span>
+          </p>
+        </div>
+      </div>
+
+      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        All changes · newest first
+      </p>
+      <ol className="space-y-2">
+        {entries.map((x, i) => {
+          const { e, times } = x;
+          const kinds = tags.get(x)!;
+          const edit = e.action === "changed" || e.action === "readiness";
+          return (
+            <li key={i} className="rounded-lg border border-card-border px-3 py-2.5">
+              <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-semibold text-foreground">
+                  {e.lot_no === 0 ? "Readiness" : `Lot ${e.lot_no}`}
+                </span>
+                {kinds.map((k) => (
+                  <span key={k} className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${TAG[k].className}`}>
+                    {TAG[k].label}
+                  </span>
+                ))}
+                {kinds.length === 0 && (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                    Saved, no change
+                  </span>
+                )}
+              </div>
+              {e.action === "removed" ? (
+                <p className="text-sm text-muted">
+                  Was {e.status ?? "—"} · {day(e.ready_date)}
+                </p>
+              ) : (
+                <>
+                  <Line
+                    label="Status"
+                    from={e.prev_status ?? "—"}
+                    to={e.status ?? "—"}
+                    changed={edit && (e.prev_status ?? "") !== (e.status ?? "")}
+                  />
+                  <Line
+                    label="Date"
+                    from={day(e.prev_ready_date)}
+                    to={day(e.ready_date)}
+                    changed={edit && !sameDay(e.prev_ready_date, e.ready_date)}
+                  />
+                </>
+              )}
+              <p className="mt-1.5 text-xs text-muted">
+                {e.action === "recorded"
+                  ? `Before history was kept · ${when(e.changed_at)}`
+                  : `${e.changed_by_name ?? "—"}${
+                      e.changed_by_role ? ` (${ROLE_NAMES[e.changed_by_role] ?? e.changed_by_role})` : ""
+                    } · ${when(e.changed_at)}${times > 1 ? ` · saved ${times}×` : ""}`}
+              </p>
+            </li>
+          );
+        })}
+      </ol>
     </>
   );
 }

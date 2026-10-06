@@ -1,6 +1,8 @@
 import "server-only";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { sanitize, wrap } from "@/lib/pdf-text";
+import { readinessSummary } from "@/lib/readiness-history";
+import type { ReadyLotEvent } from "@/lib/orders";
 
 // Planning's queue on paper: one line per SO with where it stands — status,
 // readiness date, how late it is, its readiness lots — and a summary on top,
@@ -63,12 +65,15 @@ type SoLine = {
   dispatchTarget: string;
   ld: string;
   notes: string;
+  /** How often the readiness date moved, and the dates it went through. */
+  history: string;
+  dateMoves: number;
   /** For the summary. */
   statusKey: string;
   ready: boolean;
 };
 
-function soLines(rows: Row[]): SoLine[] {
+function soLines(rows: Row[], histories: Map<string, ReadyLotEvent[]>): SoLine[] {
   const groups = new Map<string, Row[]>();
   for (const r of rows) {
     const k = str(r.order_id);
@@ -114,6 +119,12 @@ function soLines(rows: Row[]): SoLine[] {
     ].join("; ");
 
     const ready = ecs.every(ecReady);
+    // The same reading as the history popup: "2× · 03 Oct → 06 Oct → 18 Sept".
+    const summary = readinessSummary(histories.get(str(head.order_id)) ?? []);
+    const history =
+      summary.dateMoves > 0
+        ? `${summary.dateMoves}× · ${summary.dates.map((d) => day(d, false)).join(" → ")}`
+        : "";
     return {
       sl: str(head.sl_no),
       so: str(head.so_no) || `#${str(head.sl_no)}`,
@@ -126,6 +137,8 @@ function soLines(rows: Row[]): SoLine[] {
       dispatchTarget: day(head.dispatch_target_date),
       ld: str(head.ld).toLowerCase() === "yes" ? day(head.ld_date) || "Yes" : "",
       notes: [lots, remarks].filter(Boolean).join(" · "),
+      history,
+      dateMoves: summary.dateMoves,
       statusKey: uniq.length === 1 ? uniq[0] : "Mixed",
       ready,
     };
@@ -137,22 +150,27 @@ const PAGE = { w: 842, h: 595 };
 const MARGIN = 36;
 const WIDTH = PAGE.w - MARGIN * 2;
 const COLUMNS: { label: string; width: number; key: keyof SoLine }[] = [
-  { label: "Sl.", width: 30, key: "sl" },
-  { label: "SO No.", width: 82, key: "so" },
-  { label: "SO date", width: 52, key: "soDate" },
-  { label: "Type", width: 44, key: "type" },
-  { label: "ECs", width: 26, key: "ecs" },
-  { label: "Status", width: 104, key: "status" },
-  { label: "Readiness date", width: 80, key: "readiness" },
-  { label: "Overdue", width: 46, key: "overdue" },
-  { label: "Dispatch target", width: 72, key: "dispatchTarget" },
-  { label: "LD date", width: 60, key: "ld" },
-  { label: "Lots / remarks", width: 174, key: "notes" },
+  { label: "Sl.", width: 28, key: "sl" },
+  { label: "SO No.", width: 80, key: "so" },
+  { label: "SO date", width: 50, key: "soDate" },
+  { label: "Type", width: 38, key: "type" },
+  { label: "ECs", width: 24, key: "ecs" },
+  { label: "Status", width: 92, key: "status" },
+  { label: "Readiness date", width: 84, key: "readiness" },
+  { label: "Overdue", width: 42, key: "overdue" },
+  { label: "Dispatch target", width: 68, key: "dispatchTarget" },
+  { label: "LD date", width: 42, key: "ld" },
+  { label: "Date moved", width: 118, key: "history" },
+  { label: "Lots / remarks", width: 104, key: "notes" },
 ];
 
 /** Planning's queue as one PDF: a summary, then every SO. */
-export async function buildPlanningReportPdf(rows: Row[], filterLine: string): Promise<Uint8Array> {
-  const lines = soLines(rows);
+export async function buildPlanningReportPdf(
+  rows: Row[],
+  filterLine: string,
+  histories: Map<string, ReadyLotEvent[]> = new Map()
+): Promise<Uint8Array> {
+  const lines = soLines(rows, histories);
 
   const pdf = await PDFDocument.create();
   pdf.setTitle("Planning progress report");
@@ -165,6 +183,7 @@ export async function buildPlanningReportPdf(rows: Row[], filterLine: string): P
   const tile = rgb(0.95, 0.96, 0.97);
   const red = rgb(0.85, 0.15, 0.2);
   const green = rgb(0.05, 0.5, 0.3);
+  const amber = rgb(0.7, 0.42, 0.02);
 
   let page: PDFPage = pdf.addPage([PAGE.w, PAGE.h]);
   let y = PAGE.h - MARGIN;
@@ -195,6 +214,7 @@ export async function buildPlanningReportPdf(rows: Row[], filterLine: string): P
     { label: "ECs", value: String(ecCount) },
     { label: "Ready", value: String(lines.filter((l) => l.ready).length), color: green },
     { label: "Overdue", value: String(lines.filter((l) => l.overdue > 0).length), color: red },
+    { label: "Date moved", value: String(lines.filter((l) => l.dateMoves > 0).length), color: amber },
   ];
   const tileW = 96;
   const tileGap = 8;
@@ -252,6 +272,8 @@ export async function buildPlanningReportPdf(rows: Row[], filterLine: string): P
       const color =
         key === "overdue" && l.overdue > 0
           ? red
+          : key === "history" && l.dateMoves > 0
+            ? amber
           : key === "status" && l.ready
             ? green
             : cl[0] === "—"

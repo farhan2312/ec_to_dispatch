@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/session";
 import { canEditSection } from "@/lib/roles";
-import { listItemsForSectionPage, parseQueueSort } from "@/lib/orders";
+import { listItemsForSectionPage, listReadyLotHistories, parseQueueSort } from "@/lib/orders";
 import { parseQuery } from "@/lib/pagination";
 import { describeOrderListFilter, parseDeptFilter } from "@/lib/order-list-filter";
 import { PLANNING_CONTEXT_FIELDS } from "@/lib/order-schema";
@@ -40,7 +40,9 @@ export async function GET(request: Request) {
   const filterLine = [describeOrderListFilter(filter), search && `Search: ${search}`]
     .filter(Boolean)
     .join("  ·  ");
-  const bytes = await buildPlanningReportPdf(queue.rows, filterLine);
+  // How each SO's readiness date moved, for the Date moved column.
+  const histories = await listReadyLotHistories([...new Set(queue.rows.map((r) => String(r.order_id)))]);
+  const bytes = await buildPlanningReportPdf(queue.rows, filterLine, histories);
 
   const stamp = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const download = get("download") === "1";

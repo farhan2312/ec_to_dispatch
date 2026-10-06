@@ -40,20 +40,29 @@ export function lotsSummary(lots: ReadyLot[]): { status: string; date: string } 
   return last ? { status: last.status, date: last.ready_date } : null;
 }
 
+/**
+ * Whether a lot of this status takes a date. A Partial ready lot says when
+ * the rest will follow; a Fully ready one has nothing left to wait for.
+ */
+export const lotNeedsDate = (status: string) => status !== "Fully ready";
+
 /** The first thing wrong with a set of lots, or null when they can be saved. */
 export function lotsError(lots: ReadyLot[]): string | null {
   if (lots.length > READY_LOT_LIMIT) return `A Spare takes at most ${READY_LOT_LIMIT} lots.`;
+  let lastDate = "";
   for (let i = 0; i < lots.length; i++) {
     const lot = lots[i];
     const n = i + 1;
     if (!READY_LOT_STATUSES.includes(lot.status)) return `Lot ${n}: choose Partial ready or Fully ready.`;
-    if (!ISO.test(lot.ready_date)) return `Lot ${n}: enter its date.`;
+    if (lotNeedsDate(lot.status) && !ISO.test(lot.ready_date)) return `Lot ${n}: enter its date.`;
+    if (lot.ready_date && !ISO.test(lot.ready_date)) return `Lot ${n}: enter a valid date.`;
     if (lot.status === "Fully ready" && i < lots.length - 1) {
       return `Lot ${n} is Fully ready, so no lot can come after it.`;
     }
-    if (i > 0 && lot.ready_date < lots[i - 1].ready_date) {
-      return `Lot ${n}'s date cannot be before Lot ${i}'s.`;
+    if (lot.ready_date && lastDate && lot.ready_date < lastDate) {
+      return `Lot ${n}'s date cannot be before an earlier lot's.`;
     }
+    if (lot.ready_date) lastDate = lot.ready_date;
   }
   return null;
 }

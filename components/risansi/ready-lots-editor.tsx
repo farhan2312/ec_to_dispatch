@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Lock, Plus, Trash2 } from "lucide-react";
 import { READY_LOT_LIMIT, READY_LOT_STATUSES } from "@/lib/order-schema";
-import { lotsFrozen, type ReadyLot } from "@/lib/ready-lots";
+import { lotNeedsDate, lotsFrozen, type ReadyLot } from "@/lib/ready-lots";
 
 function formatDate(value: string): string {
   if (!value) return "—";
@@ -75,7 +75,12 @@ export function ReadyLotsEditor({
                   <select
                     aria-label={`Lot ${i + 1} status`}
                     value={lot.status}
-                    onChange={(e) => set(i, { status: e.target.value })}
+                    // Fully ready takes no date: drop one picked before.
+                    onChange={(e) =>
+                      set(i, lotNeedsDate(e.target.value)
+                        ? { status: e.target.value }
+                        : { status: e.target.value, ready_date: "" })
+                    }
                     className={inputClass}
                   >
                     <option value="">—</option>
@@ -85,13 +90,17 @@ export function ReadyLotsEditor({
                       </option>
                     ))}
                   </select>
-                  <input
-                    aria-label={`Lot ${i + 1} date`}
-                    type="date"
-                    value={lot.ready_date}
-                    onChange={(e) => set(i, { ready_date: e.target.value })}
-                    className={inputClass}
-                  />
+                  {lotNeedsDate(lot.status) ? (
+                    <input
+                      aria-label={`Lot ${i + 1} date`}
+                      type="date"
+                      value={lot.ready_date}
+                      onChange={(e) => set(i, { ready_date: e.target.value })}
+                      className={inputClass}
+                    />
+                  ) : (
+                    <span className="text-xs text-muted">No date needed</span>
+                  )}
                 </>
               ) : (
                 <>

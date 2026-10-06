@@ -1104,6 +1104,31 @@ export async function listReadyLotHistory(orderId: string): Promise<ReadyLotEven
 }
 
 /**
+ * Readiness histories for many SOs at once — the Planning PDF. Only SOs with
+ * changes recorded are read; the rest have nothing to tell. A few at a time,
+ * so a long queue does not flood the database.
+ */
+export async function listReadyLotHistories(orderIds: string[]): Promise<Map<string, ReadyLotEvent[]>> {
+  const out = new Map<string, ReadyLotEvent[]>();
+  const ids = orderIds.filter((id) => UUID_RE.test(id));
+  if (ids.length === 0) return out;
+  const r = await query<{ order_id: string }>(
+    `SELECT DISTINCT it.order_id
+       FROM order_items it
+      WHERE it.order_id = ANY($1::uuid[])
+        AND EXISTS (SELECT 1 FROM order_ready_lot_history h WHERE h.item_id = it.id)`,
+    [ids]
+  );
+  const todo = r.rows.map((x) => x.order_id);
+  for (let i = 0; i < todo.length; i += 8) {
+    const batch = todo.slice(i, i + 8);
+    const res = await Promise.all(batch.map((id) => listReadyLotHistory(id)));
+    batch.forEach((id, k) => out.set(id, res[k]));
+  }
+  return out;
+}
+
+/**
  * A Spare EC is packed when a lot is Fully packed: its Actual Material Packing
  * Date is that lot's date — the one every "packed" check, alert and Dispatch's
  * ready shortlist already reads. With lots but none Fully packed, it is not

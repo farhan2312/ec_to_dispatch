@@ -736,12 +736,14 @@ export function DepartmentWorkspace({
                               <td className="px-4 py-3 whitespace-nowrap text-muted">
                                 {/* Planning and Central can see how the lots moved; Assembly
                                     works from the latest. */}
+                                {/* A Fully ready SO has no date left to show, but its
+                                    history still says when it moved. */}
                                 {table === "order_planning" &&
                                 (role === "planning" || role === "central_visibility" || role === "admin") &&
-                                sum.date !== "—" ? (
+                                (sum.date !== "—" || sum.status === "Fully ready") ? (
                                   <ReadyLotHistoryButton
                                     orderId={String(g.head.order_id)}
-                                    label={sum.date}
+                                    label={sum.date === "—" ? "History" : sum.date}
                                     soLabel={toInput(g.head.so_no) || String(g.head.sl_no ?? "")}
                                   />
                                 ) : (

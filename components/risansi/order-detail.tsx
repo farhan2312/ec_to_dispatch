@@ -19,6 +19,7 @@ import { AddOnForm } from "./add-on-form";
 import { OrderThread } from "./order-thread";
 import type { TargetRevision } from "@/lib/target-dates";
 import { SoSections } from "./so-sections";
+import { HoldBanner } from "./hold-badge";
 
 export { invoiceRowHeader } from "./so-sections";
 
@@ -218,6 +219,8 @@ export function OrderDetail({
       {/* The order status — a banner once it is cancelled or diverted — and,
           for Central Visibility and Admin, the control that sets it. */}
       <OrderStatusPanel orderId={orderId} order={order} role={role} />
+      {/* Held by Central Visibility: everyone sees why. */}
+      <HoldBanner order={order} />
 
       <div className="space-y-6">
         {/* Per-SO discussion. One lane per department, no cross-department

@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { clearedSql, orderOpenSql, orderStatusSql, spareEcSql } from "@/lib/dept-view";
+import { orderOpenSql, orderStatusSql, releasedSql, spareEcSql } from "@/lib/dept-view";
 import { isCentral, reminderDeptForRole, type ReminderDept } from "@/lib/roles";
 
 // The DB session runs in UTC, but the business operates on IST days. Deadlines
@@ -167,8 +167,8 @@ export async function listReminders(
       `SELECT * FROM (${REMINDERS_SQL}) r
         WHERE ($1::text[] IS NULL OR r.dept = ANY($1))
           -- A cancelled or diverted order has no deadlines left.
-          -- Nor one Central Visibility has not cleared: no department works on it yet.
-          AND EXISTS (SELECT 1 FROM orders oo WHERE oo.id = r.id AND ${orderOpenSql("oo")} AND ${clearedSql("oo")})
+          -- Nor one Central Visibility has not yet cleared or held: no department sees it.
+          AND EXISTS (SELECT 1 FROM orders oo WHERE oo.id = r.id AND ${orderOpenSql("oo")} AND ${releasedSql("oo")})
         ORDER BY r.days_left ASC, r.sl_no ASC`,
       [filter]
     );

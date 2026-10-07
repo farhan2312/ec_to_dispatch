@@ -66,7 +66,7 @@ export function formatDisplay(field: OrderField, value: unknown): string {
 
 // Seed the form value for a field, normalizing select casing.
 function seedValue(field: OrderField, data: Row | null): string {
-  return canonicalSelectValue(field, toInput(data?.[field.column]));
+  return canonicalSelectValue(field, toInput(data?.[field.column]) || field.defaultValue || "");
 }
 
 // A field's dependsOn may reference a column outside this section (e.g. the
@@ -336,7 +336,7 @@ export function EditableSection({
                         {fieldEditable ? (
                           field.type === "select" ? (
                             <select
-                              value={values[field.column] ?? ""}
+                              value={values[field.column] || field.defaultValue || ""}
                               onChange={(e) => {
                                 const next = e.target.value;
                                 setValues((prev) => withValueRules(prev, field.column, next));
@@ -352,7 +352,7 @@ export function EditableSection({
                               }}
                               className="h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50"
                             >
-                              <option value="">—</option>
+                              {!field.defaultValue && <option value="">—</option>}
                               {selectOptionsFor(field, values[field.column] ?? "").map((o) => (
                                 <option key={o.value} value={o.value}>
                                   {o.label}
@@ -390,7 +390,7 @@ export function EditableSection({
                                       ? lotsLead.status
                                       : lotsLead.date
                                   )
-                                : formatDisplay(field, data?.[field.column])}
+                                : formatDisplay(field, data?.[field.column] ?? field.defaultValue)}
                             </span>
                             {fieldExtra?.(field)}
                           </div>

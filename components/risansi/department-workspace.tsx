@@ -26,6 +26,7 @@ import {
 } from "@/lib/order-schema";
 import { OrderChildList } from "./order-children";
 import { SortHeader } from "./sort-header";
+import { HoldBadge } from "./hold-badge";
 import { ReadyLotHistoryButton } from "./ready-lot-history";
 import { ReadyLotsEditor } from "./ready-lots-editor";
 import {
@@ -607,6 +608,7 @@ export function DepartmentWorkspace({
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
                       {toInput(order.so_no) || "—"}
+                      <HoldBadge order={order} />
                     </td>
                     <td className="px-4 py-3">
                       <ChatButton
@@ -708,6 +710,7 @@ export function DepartmentWorkspace({
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap">
                           {toInput(g.head.so_no) || "—"}
+                          <HoldBadge order={g.head} />
                         </td>
                         <td className="px-4 py-3">
                           <ChatButton
@@ -1116,7 +1119,7 @@ function EditSectionModal({
   const router = useRouter();
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(
-      fields.map((f) => [f.column, canonicalSelectValue(f, toInput(data[f.column]))])
+      fields.map((f) => [f.column, canonicalSelectValue(f, toInput(data[f.column]) || f.defaultValue || "")])
     )
   );
   const [saving, setSaving] = useState(false);
@@ -1173,6 +1176,27 @@ function EditSectionModal({
   const identity = [data.so_no, data.ec_no].filter(Boolean).join(" · ");
   const inputClass =
     "h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50";
+
+  // Accounts: Order Value (+GST) follows the GST % being typed — the stored
+  // figure re-based from the saved rate onto the new one (blank = 18%).
+  // …and the balance follows both it and the amount received being typed.
+  const liveBalance = (): unknown => {
+    const total = Number(liveValueWithGst());
+    if (!Number.isFinite(total) || toInput(data.order_value_gst) === "") return data.balance_of_payment;
+    const received = Number(toInput(values.amount_received) || "0");
+    if (!Number.isFinite(received)) return data.balance_of_payment;
+    return (Math.round((total - received) * 100) / 100).toFixed(2);
+  };
+  const liveValueWithGst = (): unknown => {
+    const stored = Number(data.order_value_gst);
+    if (!Number.isFinite(stored) || toInput(data.order_value_gst) === "") return data.order_value_gst;
+    const rate = (v: unknown) => {
+      const n = Number(toInput(v) || "18");
+      return Number.isFinite(n) ? n : 18;
+    };
+    const base = stored / (1 + rate(data.gst_rate) / 100);
+    return (Math.round(base * (1 + rate(values.gst_rate) / 100) * 100) / 100).toFixed(2);
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
@@ -1264,7 +1288,7 @@ function EditSectionModal({
                   {f.label}
                 </div>
                 <div className="text-sm text-muted">
-                  {formatValue(f, data[f.column])}
+                  {formatValue(f, f.column === "order_value_gst" ? liveValueWithGst() : data[f.column])}
                 </div>
               </div>
             ))}
@@ -1333,7 +1357,10 @@ function EditSectionModal({
                       </span>
                     </label>
                     <div className="flex h-10 items-center px-1 text-[14px] text-muted">
-                      {formatValue(field, data[field.column])}
+                      {formatValue(
+                        field,
+                        field.column === "balance_of_payment" ? liveBalance() : data[field.column]
+                      )}
                     </div>
                   </div>
                 );

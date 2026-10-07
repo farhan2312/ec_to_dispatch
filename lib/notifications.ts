@@ -206,10 +206,10 @@ async function emit(
 ): Promise<void> {
   let unique = [...new Set(roles)];
   if (unique.length === 0) return;
-  // An SO Central Visibility has not cleared is no department's business yet:
-  // only Central, Admin and Order Making hear about it.
+  // An SO Central Visibility has not yet cleared or held is no department's
+  // business: only Central, Admin and Order Making hear about it.
   const cleared = await query<{ clear: boolean }>(
-    `SELECT COALESCE(clearance_status, '') = 'Clear' AS clear FROM orders WHERE id = $1`,
+    `SELECT COALESCE(NULLIF(clearance_status, ''), 'Clear') IN ('Clear', 'Hold') AS clear FROM orders WHERE id = $1`,
     [input.orderId]
   );
   if (cleared.rows[0] && !cleared.rows[0].clear) {

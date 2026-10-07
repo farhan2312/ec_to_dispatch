@@ -15,12 +15,13 @@ import {
 import {
   deptInvolvementSql,
   deptQueueSql,
-  clearedSql,
+  releasedSql,
   orderOpenSql,
   orderStatusSql,
   spareEcSql,
 } from "@/lib/dept-view";
 import { autoTargets } from "@/lib/target-rules";
+import { DEFAULT_GST_RATE } from "@/lib/order-validation";
 import { PLANNING_READY_SQL } from "@/lib/reminders";
 import type { LockFacts } from "@/lib/order-lock";
 import {
@@ -305,7 +306,8 @@ export async function createOrder(
         nullify(input.bill_mode),
         nullify(input.complaint_no),
         nullify(input.complaint_date),
-        nullify(input.clearance_status),
+        // Clear unless held.
+        nullify(input.clearance_status) ?? "Clear",
         // A reason only goes with a Hold.
         input.clearance_status === "Hold" ? nullify(input.clearance_hold_reason) : null,
         input.clearance_status === "Hold" ? nullify(input.clearance_remarks) : null,
@@ -1168,12 +1170,20 @@ async function recomputeAccountsBalance(orderId: string): Promise<void> {
   if (!UUID_RE.test(orderId)) return;
   await query(
     `UPDATE order_accounts a
-        SET balance_of_payment = o.order_value - COALESCE(a.amount_received, 0)
+        SET balance_of_payment = ${ORDER_VALUE_GST_SQL("o", "a")} - COALESCE(a.amount_received, 0)
        FROM orders o
       WHERE a.order_id = o.id AND o.id = $1`,
     [orderId]
   );
 }
+
+/**
+ * The SO's value with GST, as orderValueWithGst: the INR value (a foreign
+ * order's conversion) × (1 + the rate Accounts set, 18% when blank).
+ */
+export const ORDER_VALUE_GST_SQL = (o: string, a: string): string => `round(
+    COALESCE(CASE WHEN upper(COALESCE(${o}.order_currency, 'INR')) <> 'INR' THEN ${o}.order_value_inr END, ${o}.order_value)
+    * (1 + COALESCE(${a}.gst_rate, ${DEFAULT_GST_RATE}) / 100.0), 2)`;
 
 // Which parent column each 1:many child hangs off: per-SO tables key on
 // order_id, per-EC tables on item_id.
@@ -1487,6 +1497,8 @@ export async function applyUsdConversion(orderId: string, rate: number | null): 
         AND (calc.fx IS DISTINCT FROM calc.fx_now OR calc.inr IS DISTINCT FROM calc.inr_now)`,
     [orderId, rate]
   );
+  // A new INR figure (or a Challan's 0) moves what the payments count against.
+  await recomputeAccountsBalance(orderId);
 }
 
 /** The lock facts of the order an EC belongs to. */
@@ -1930,7 +1942,7 @@ export async function listOrdersOverview(
       WHERE ${
         // Drawing's rows are ECs: a Spare EC is out, whatever the SO around it.
         dept === "drawing"
-          ? `NOT (${spareEcSql("it", "o")}) AND ${orderOpenSql("o")} AND ${clearedSql("o")}`
+          ? `NOT (${spareEcSql("it", "o")}) AND ${orderOpenSql("o")} AND ${releasedSql("o")}`
           : dept
             ? deptQueueSql(dept)
             : "TRUE"
@@ -2024,6 +2036,10 @@ export async function listOrdersForSection(
       if (from === "orders" && f.column === "payment_terms") {
         return `, ${PAYMENT_TERMS_SQL("o")} AS payment_terms`;
       }
+      // Accounts: the value with GST, from the SO and its accounts row (d).
+      if (f.column === "order_value_gst" && table === "order_accounts") {
+        return `, (${ORDER_VALUE_GST_SQL("o", "d")})::text AS order_value_gst`;
+      }
       let alias: string;
       if (from === "orders") alias = "o";
       else if (from === table) alias = "d";
@@ -2057,6 +2073,7 @@ export async function listOrdersForSection(
             o.so_no,
             NULL::text AS ec_no,
             o.client_name,
+            o.clearance_status, o.clearance_hold_reason, o.clearance_remarks,
             -- What the payment terms say about whether this department
             -- still has anything to record here (lib/order-lock).
             ${AFTER_RECEIPT_ONLY} AS after_receipt_only${detailSelects ? `,\n            ${detailSelects}` : ""}${contextSelects}
@@ -2175,7 +2192,8 @@ export async function listItemsForSection(
             o.so_no,
             it.ec_no,
             it.item_type,
-            o.client_name
+            o.client_name,
+            o.clearance_status, o.clearance_hold_reason, o.clearance_remarks
             ${childSelect}${soChildSelect}${readyLotsSelect}${detailSelects ? `,\n            ${detailSelects}` : ""}${contextSelects}
        FROM order_items it
        JOIN orders o ON o.id = it.order_id
@@ -2230,6 +2248,7 @@ export async function listOrdersForBilling(
             to_char(o.so_date, 'YYYY-MM-DD') AS so_date,
             o.order_type,
             o.client_name,
+            o.clearance_status, o.clearance_hold_reason, o.clearance_remarks,
             o.bill_type,
             ${PAYMENT_TERMS_SQL("o")} AS payment_terms,
             ${AFTER_RECEIPT_ONLY} AS after_receipt_only,
@@ -2301,6 +2320,7 @@ export async function listItemsForPurchase(
             to_char(o.so_date, 'YYYY-MM-DD') AS so_date,
             o.order_type,
             it.ec_no,
+            o.clearance_status, o.clearance_hold_reason, o.clearance_remarks,
             o.boi,
             o.ld,
             to_char(o.ld_date, 'YYYY-MM-DD') AS ld_date,
@@ -2317,7 +2337,14 @@ export async function listItemsForPurchase(
   return result.rows;
 }
 
-function detailSelect(alias: string, f: { column: string; type: string }): string {
+function detailSelect(
+  alias: string,
+  f: { column: string; type: string; defaultValue?: string }
+): string {
+  // A field with a default shows it while nothing is stored (GST 18%).
+  if (f.defaultValue !== undefined && (f.type === "int" || f.type === "number")) {
+    return `COALESCE(${alias}.${f.column}, ${Number(f.defaultValue)})::text AS ${f.column}`;
+  }
   if (f.type === "date") {
     return `to_char(${alias}.${f.column}, 'YYYY-MM-DD') AS ${f.column}`;
   }
@@ -2750,13 +2777,9 @@ function orderListClauses(
     }
     clauses.push(`(${any.join(" OR ")})`);
   }
-  // Clearance: Clear, Hold, or not cleared yet; and the reasons for a Hold.
+  // Clearance: Clear (blank counts as Clear) or Hold; and the reasons for a Hold.
   if (f.clearance.length) {
-    const set = f.clearance.filter((c) => c !== NOT_SET);
-    const any: string[] = [];
-    if (set.length) any.push(facet("o.clearance_status", set));
-    if (f.clearance.includes(NOT_SET)) any.push(`NULLIF(TRIM(o.clearance_status), '') IS NULL`);
-    clauses.push(`(${any.join(" OR ")})`);
+    clauses.push(`COALESCE(NULLIF(TRIM(o.clearance_status), ''), 'Clear') = ANY(${p(f.clearance)}::text[])`);
   }
   if (f.holdReasons.length) {
     clauses.push(`(COALESCE(o.clearance_status, '') = 'Hold' AND ${facet("o.clearance_hold_reason", f.holdReasons)})`);
@@ -3304,7 +3327,7 @@ export async function listOrdersForBillingPage(opts: {
     orderBy: queueOrderBy(opts.sort),
     // A cancelled or diverted order is no longer Billing's or Dispatch's work.
     restrict: opts.onlyPacked
-      ? `${orderOpenSql("o")} AND ${clearedSql("o")} AND EXISTS (SELECT 1 FROM order_packing_slips ps
+      ? `${orderOpenSql("o")} AND ${releasedSql("o")} AND EXISTS (SELECT 1 FROM order_packing_slips ps
                                            WHERE ps.order_id = o.id AND ps.kind = 'actual')`
       // Billing: not a Challan order — there is no PI to raise on one.
       : deptQueueSql("billing"),

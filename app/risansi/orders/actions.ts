@@ -106,6 +106,7 @@ import {
   checkReceivedWithinValue,
   cleanBoiRows,
   numericValue,
+  orderValueWithGst,
 } from "@/lib/order-validation";
 import {
   childLabel,
@@ -681,8 +682,9 @@ export async function updateOrderSectionAction(
   try {
     if (section.scope === "so") {
       const before = await getOrderDetail(id);
-      if (!isCentral(user.role) && !orderMaker && before && !isCleared(before.order)) {
-        return { ok: false, error: NOT_CLEARED };
+      if (tbl === "orders" && "clearance_status" in allowedValues && !allowedValues.clearance_status) {
+        // Blank is Clear: an SO is clear unless held.
+        allowedValues = { ...allowedValues, clearance_status: "Clear" };
       }
       if (tbl === "orders" && before) {
         const status = "clearance_status" in allowedValues
@@ -700,24 +702,37 @@ export async function updateOrderSectionAction(
       // the fields; this is the same rule on the endpoint.
       const locked = lockReason(tbl, before?.order as never, user.role);
       if (locked) return { ok: false, error: locked };
-      // Amount received never exceeds the order value — checked from whichever
-      // side is being saved, so neither can be moved past the other.
-      if (before && tbl === "order_accounts" && "amount_received" in allowedValues) {
+      // Amount received (with GST) never exceeds the order value with GST —
+      // checked from whichever side is being saved (the amount, the GST rate,
+      // or the order's value), so neither can be moved past the other.
+      const accountsBefore = (before as Record<string, unknown> | null)?.order_accounts as
+        | Record<string, unknown>
+        | null
+        | undefined;
+      if (
+        before &&
+        tbl === "order_accounts" &&
+        ("amount_received" in allowedValues || "gst_rate" in allowedValues)
+      ) {
+        const received = "amount_received" in allowedValues
+          ? allowedValues.amount_received
+          : accountsBefore?.amount_received;
+        const rate = "gst_rate" in allowedValues ? allowedValues.gst_rate : accountsBefore?.gst_rate;
         const problem = checkReceivedWithinValue(
-          numericValue(allowedValues.amount_received),
-          numericValue(before.order.order_value),
+          numericValue(received),
+          orderValueWithGst(before.order, rate),
           "received"
         );
         if (problem) return { ok: false, error: problem };
       }
-      if (before && tbl === "orders" && "order_value" in allowedValues) {
-        const accounts = (before as Record<string, unknown>).order_accounts as
-          | Record<string, unknown>
-          | null
-          | undefined;
+      if (
+        before &&
+        tbl === "orders" &&
+        ("order_value" in allowedValues || "order_currency" in allowedValues)
+      ) {
         const problem = checkReceivedWithinValue(
-          numericValue(accounts?.amount_received),
-          numericValue(allowedValues.order_value),
+          numericValue(accountsBefore?.amount_received),
+          orderValueWithGst({ ...before.order, ...allowedValues }, accountsBefore?.gst_rate),
           "order value"
         );
         if (problem) return { ok: false, error: problem };
@@ -760,8 +775,13 @@ export async function updateOrderSectionAction(
           : null,
         // Order details carry the dates the first targets are counted from.
         tbl === "orders" ? autoFillTargets(id, user) : null,
-        tbl === "orders" && before && !isCleared(before.order) && allowedValues.clearance_status === "Clear"
-          ? notifyCleared(id)
+        tbl === "orders" && before && "clearance_status" in allowedValues
+          ? notifyClearance(
+              id,
+              String(before.order.clearance_status ?? ""),
+              allowedValues.clearance_status ?? "",
+              allowedValues.clearance_hold_reason ?? String(before.order.clearance_hold_reason ?? "")
+            )
           : null,
         // …and the value and currency its INR conversion is worked out from.
         tbl === "orders"
@@ -772,9 +792,6 @@ export async function updateOrderSectionAction(
     } else {
       // Item-scope: id is the item_id.
       const before = await getItemDetail(id);
-      if (!isCentral(user.role) && before && !isCleared(before.order)) {
-        return { ok: false, error: NOT_CLEARED };
-      }
       const itemLock = lockReason(tbl, before?.order as never, user.role);
       if (itemLock) return { ok: false, error: itemLock };
       // A Spare's readiness lots ride along with Planning's form.
@@ -1389,16 +1406,14 @@ async function autoFillTargets(
 }
 
 /** The department roles, by the department they run — for telling them. */
-/** Said to a department that tries to save on an SO it should not see yet. */
-const NOT_CLEARED = "This SO is not cleared by Central Visibility yet.";
-
-const isCleared = (order: Record<string, unknown>) => String(order.clearance_status ?? "") === "Clear";
-
 /**
- * An SO has just been cleared: every department with work on it hears that
- * it is now in their queue — they heard nothing of it while it waited.
+ * The SO was put on hold, or its hold lifted: every department with work on
+ * it hears it (blank counts as Clear).
  */
-async function notifyCleared(orderId: string): Promise<void> {
+async function notifyClearance(orderId: string, wasRaw: string, nowRaw: string, reason: string): Promise<void> {
+  const was = wasRaw || "Clear";
+  const now = nowRaw || "Clear";
+  if (was === now || (now !== "Clear" && now !== "Hold")) return;
   try {
     const label = (await getOrderLabel(orderId)) ?? orderId;
     const depts = Object.keys(ROLE_BY_DEPT) as DeptKey[];
@@ -1410,10 +1425,13 @@ async function notifyCleared(orderId: string): Promise<void> {
       roles: involved.map((d) => ROLE_BY_DEPT[d]),
       orderId,
       type: "dept_update",
-      message: `SO ${label} cleared by Central Visibility — it is now in your queue`,
+      message:
+        now === "Hold"
+          ? `SO ${label} put on hold by Central Visibility${reason.trim() ? ` — ${reason.trim()}` : ""}`
+          : `Hold lifted on SO ${label} by Central Visibility`,
     });
   } catch (error) {
-    console.error("notifyCleared failed:", error);
+    console.error("notifyClearance failed:", error);
   }
 }
 

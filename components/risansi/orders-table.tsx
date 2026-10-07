@@ -124,11 +124,8 @@ function ItemRows({
   );
 }
 
-/** Central Visibility's clearance: Clear, Hold (with its reason), or still to do. */
+/** Central Visibility's clearance: Clear (the default), or Hold with its reason. */
 export function ClearanceChip({ status, reason }: { status: string | null; reason: string | null }) {
-  if (status === "Clear") {
-    return <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Clear</span>;
-  }
   if (status === "Hold") {
     return (
       <span title={reason ?? undefined} className="inline-flex flex-col">
@@ -137,7 +134,7 @@ export function ClearanceChip({ status, reason }: { status: string | null; reaso
       </span>
     );
   }
-  return <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">Not cleared</span>;
+  return <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Clear</span>;
 }
 
 export function OrdersTable({

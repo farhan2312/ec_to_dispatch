@@ -57,6 +57,10 @@ export type OrderField = {
   // Number fields only: the lowest value accepted. Enforced on save
   // (lib/order-validation.ts) and set on the input so its arrows stop there.
   min?: number;
+  // The value a blank stands for — shown and saved in its place (Clearance
+  // Status is Clear unless held, GST is 18% unless changed). A select with it
+  // offers no blank choice.
+  defaultValue?: string;
 };
 
 /** Turn a list of strings into { value, label } option objects. */
@@ -213,7 +217,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
     fields: [
       // Clearance — Central Visibility's call; until an SO is Clear no
       // department sees it.
-      { column: "clearance_status", label: "Clearance Status", type: "select", options: CLEARANCE_OPTIONS, group: "Clearance" },
+      { column: "clearance_status", label: "Clearance Status", type: "select", options: CLEARANCE_OPTIONS, defaultValue: "Clear", group: "Clearance" },
       {
         column: "clearance_hold_reason",
         label: "Hold Reason",
@@ -520,8 +524,11 @@ export const ORDER_SECTIONS: OrderSection[] = [
         options: PAYMENT_STATUS_OPTIONS,
       },
       { column: "payment_confirmed_date", label: "Payment Confirmed Date", type: "date" },
-      // Also capped at the order value — see checkReceivedWithinValue.
-      { column: "amount_received", label: "Amount Received (without GST)", type: "number", min: 0 },
+      // The GST Accounts applies to the order value: 18% unless changed.
+      { column: "gst_rate", label: "GST %", type: "number", min: 0, defaultValue: "18" },
+      // With GST, and capped at the order value with GST — see
+      // checkReceivedWithinValue.
+      { column: "amount_received", label: "Amount Received", type: "number", min: 0 },
       {
         column: "balance_of_payment",
         label: "Balance of Payment",
@@ -1258,6 +1265,10 @@ export const SO_CONTEXT_FIELDS: OrderField[] = [
 export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
   ...SO_CONTEXT_FIELDS,
   { column: "payment_terms", label: "Payment Terms", type: "text" },
+  // What the payments are counted against: the value, and with GST at the
+  // rate Accounts set (18% unless changed).
+  { column: "order_value", label: "Order Value", type: "number" },
+  { column: "order_value_gst", label: "Order Value (+GST)", type: "number" },
 ];
 
 

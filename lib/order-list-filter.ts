@@ -63,8 +63,8 @@ export type FieldState = (typeof FIELD_STATES)[number]["value"];
 export const NOT_SET = "Not set";
 export const PAYMENT_TERM_FILTER_OPTIONS = [...PAYMENT_TERM_OPTIONS.map((o) => o.value), NOT_SET];
 export const BILL_MODE_FILTER_OPTIONS = [...BILL_MODE_OPTIONS.map((o) => o.value), NOT_SET];
-/** Clearance: Clear, Hold or not cleared yet; and why an SO is held. */
-export const CLEARANCE_FILTER_OPTIONS = [...CLEARANCE_OPTIONS.map((o) => o.value), NOT_SET];
+/** Clearance: Clear or Hold; and why an SO is held. */
+export const CLEARANCE_FILTER_OPTIONS = CLEARANCE_OPTIONS.map((o) => o.value);
 export const HOLD_REASON_FILTER_OPTIONS = CLEARANCE_HOLD_REASONS.map((o) => o.value);
 
 /** The departments that see those two filters. */
@@ -146,7 +146,7 @@ export type OrderListFilter = {
   paymentTerms: string[];
   /** Billing / Accounts: the SO's Bill Mode ("Not set": blank). */
   billModes: string[];
-  /** The orders list: Clear, Hold or "Not set" (not cleared yet). */
+  /** The orders list: Clear or Hold. */
   clearance: string[];
   /** The orders list: why the held SOs are held. */
   holdReasons: string[];

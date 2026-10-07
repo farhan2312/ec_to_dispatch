@@ -8,6 +8,7 @@ import { isCentral } from "@/lib/roles";
 import { OrderChildList } from "./order-children";
 import { EcDrawingDocsButton } from "./drawing-docs";
 import { SortHeader } from "./sort-header";
+import { HoldBadge } from "./hold-badge";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import type { OrderListOptions } from "@/lib/orders";
@@ -199,7 +200,9 @@ export function PurchaseWorkspace({
                         </button>
                       </td>
                       <td className="px-4 py-3 font-medium tabular-nums">{g.head.sl_no}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{g.head.so_no ?? "—"}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{g.head.so_no ?? "—"}
+                        <HoldBadge order={g.head} />
+                      </td>
                       <td className="px-4 py-3">
                         <button
                           type="button"

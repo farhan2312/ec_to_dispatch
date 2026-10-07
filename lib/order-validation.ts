@@ -73,6 +73,31 @@ export function cleanBoiRows(
   return { ok: true, rows };
 }
 
+/** The GST rate when Accounts has not set one. */
+export const DEFAULT_GST_RATE = 18;
+
+/**
+ * An SO's value with GST: the value in INR (a foreign-currency order's
+ * conversion) times 1 + the GST rate. Null while there is no value.
+ */
+export function orderValueWithGst(
+  order: { order_value?: unknown; order_currency?: unknown; order_value_inr?: unknown },
+  gstRate: unknown
+): number | null {
+  const inr = String(order.order_currency ?? "INR").trim().toUpperCase() || "INR";
+  const raw = inr !== "INR" && order.order_value_inr != null && order.order_value_inr !== ""
+    ? order.order_value_inr
+    : order.order_value;
+  if (raw === null || raw === undefined || String(raw).trim() === "") return null;
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return null;
+  const rate =
+    gstRate === null || gstRate === undefined || String(gstRate).trim() === ""
+      ? DEFAULT_GST_RATE
+      : Number(gstRate);
+  return Math.round(value * (1 + (Number.isFinite(rate) ? rate : DEFAULT_GST_RATE) / 100) * 100) / 100;
+}
+
 /**
  * The amount received on an SO against its order value. Nothing to compare
  * while either is blank — Accounts may record a receipt before the value is in.
@@ -86,6 +111,6 @@ export function checkReceivedWithinValue(
   if (Number.isNaN(received) || Number.isNaN(orderValue)) return null;
   if (received <= orderValue) return null;
   return side === "received"
-    ? `Amount received (${amountFmt.format(received)}) cannot be more than the order value (${amountFmt.format(orderValue)}).`
-    : `Order value (${amountFmt.format(orderValue)}) cannot be less than the amount already received (${amountFmt.format(received)}).`;
+    ? `Amount received (${amountFmt.format(received)}) cannot be more than the order value with GST (${amountFmt.format(orderValue)}).`
+    : `Order value with GST (${amountFmt.format(orderValue)}) cannot be less than the amount already received (${amountFmt.format(received)}).`;
 }

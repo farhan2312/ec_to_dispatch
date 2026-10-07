@@ -40,13 +40,8 @@ export function lockReason(
       ? "This order has been diverted, so it takes no further entries."
       : "This order was cancelled by the client, so it takes no further entries.";
   }
-  if (order.after_receipt_only !== true) return null;
-  if (table === "order_billing_docs") {
-    return "This order is paid after receipt, so there is no PI to raise.";
-  }
-  if (table === "order_accounts") {
-    return "This order is paid after receipt, so there is no payment to confirm here.";
-  }
+  // Paid after receipt no longer closes anything: a PI can be raised, and a
+  // payment recorded, against every payment term.
   return null;
 }
 

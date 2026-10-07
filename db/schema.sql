@@ -2104,6 +2104,21 @@ CREATE TRIGGER order_payment_terms_set_updated_at
     BEFORE UPDATE ON order_payment_terms
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
+-- A Payment Against Documents line names the documents it waits on
+-- (comma-separated, from PAYMENT_DOCUMENT_OPTIONS).
+ALTER TABLE order_payment_terms ADD COLUMN IF NOT EXISTS documents TEXT;
+-- The terms were renamed: Advance is Advance Against PI, and the PBG balance
+-- is Balance Against PBG.
+UPDATE order_payment_terms SET term = 'Advance Against PI' WHERE term = 'Advance';
+UPDATE order_payment_terms SET term = 'Balance Against PBG' WHERE term = 'After Receipt Against PBG';
+
+-- A PI is raised against one payment term line, and a line takes one PI.
+-- Removing the line leaves its PI in place, unlinked.
+ALTER TABLE order_billing_docs ADD COLUMN IF NOT EXISTS payment_term_id UUID
+    REFERENCES order_payment_terms(id) ON DELETE SET NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS order_billing_docs_payment_term_uniq
+    ON order_billing_docs (payment_term_id) WHERE payment_term_id IS NOT NULL;
+
 -- ===========================================================================
 -- audit_log: where an event came from
 -- ===========================================================================

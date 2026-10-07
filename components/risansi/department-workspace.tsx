@@ -27,6 +27,7 @@ import {
 import { OrderChildList } from "./order-children";
 import { SortHeader } from "./sort-header";
 import { HoldBadge } from "./hold-badge";
+import { TermPis } from "./term-pis";
 import { ReadyLotHistoryButton } from "./ready-lot-history";
 import { ReadyLotsEditor } from "./ready-lots-editor";
 import {
@@ -53,7 +54,6 @@ import { QcDocumentsModal } from "./qc-documents-modal";
 import { OrderDetailsModal } from "./order-details-modal";
 import { BoiItemsModal } from "./boi-items-modal";
 import { EcDrawingDocsButton, RevisionDocsButton } from "./drawing-docs";
-import { ViewPisModal } from "./view-pis-modal";
 import { OrderThreadModal } from "./order-thread-modal";
 import {
   TargetHistoryCell,
@@ -99,6 +99,20 @@ function formatValue(field: OrderField, value: unknown): string {
   }
   if (field.type === "select") return canonicalSelectValue(field, s);
   return s;
+}
+
+const money = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/**
+ * A context value as shown: the order value with its currency (INR / USD),
+ * the value with GST — always in INR — likewise; anything else as it is.
+ */
+function contextValue(field: OrderField, row: Row, value: unknown = row[field.column]): string {
+  if (field.column !== "order_value" && field.column !== "order_value_gst") return formatValue(field, value);
+  const n = Number(toInput(value));
+  if (toInput(value) === "" || !Number.isFinite(n)) return "—";
+  const currency = field.column === "order_value" ? toInput(row.order_currency) || "INR" : "INR";
+  return `${money.format(n)} ${currency}`;
 }
 
 // Build the search matcher + placeholder from what each department actually
@@ -194,6 +208,8 @@ export function DepartmentWorkspace({
   // Planning / Assembly & Packing edit a whole SO at once: one form for all
   // its ECs.
   const [editSo, setEditSo] = useState<{ orderId: string; head: Row; count: number } | null>(null);
+  // Accounts: a click on an SO's row opens its Order details.
+  const [detailsFor, setDetailsFor] = useState<string | null>(null);
   const [docsPanel, setDocsPanel] = useState<{ row: Row; config: DocumentsConfig } | null>(
     null
   );
@@ -285,7 +301,7 @@ export function DepartmentWorkspace({
   // carries the history behind it — a date that has moved twice reads very
   // differently from one that never has.
   function contextCell(f: OrderField, row: Row) {
-    const value = formatValue(f, row[f.column]);
+    const value = contextValue(f, row);
     const target = targetForColumn(f.column);
     const orderId = toInput(row.order_id ?? row.id);
     if (!target || !orderId) return value;
@@ -545,7 +561,13 @@ export function DepartmentWorkspace({
                     key={f.column}
                     className="px-3 py-3 whitespace-nowrap text-muted-foreground"
                   >
-                    {f.column === "so_date" ? <SortHeader label={f.label} sortKey="so_date" /> : f.label}
+                    {f.column === "so_date" ? (
+                      <SortHeader label={f.label} sortKey="so_date" />
+                    ) : table === "order_accounts" && f.column === "payment_terms" ? (
+                      "Payment terms & PIs"
+                    ) : (
+                      f.label
+                    )}
                   </th>
                 ))}
                 {groupBySo ? (
@@ -601,7 +623,18 @@ export function DepartmentWorkspace({
                   <tr
                     key={String(order.id)}
                     data-focus-row={String(order.id)}
-                    className={`text-foreground ${focusClass(String(order.id))}`}
+                    // Accounts: the row opens its Order details — not a click on
+                    // the row's own buttons and fields.
+                    onClick={
+                      table === "order_accounts"
+                        ? (e) => {
+                            if ((e.target as HTMLElement).closest("button, a, input, select, textarea, label, [role=dialog]")) return;
+                            setDetailsFor(String(order.id));
+                          }
+                        : undefined
+                    }
+                    title={table === "order_accounts" ? "Click for order details" : undefined}
+                    className={`text-foreground ${table === "order_accounts" ? "cursor-pointer hover:bg-background/60" : ""} ${focusClass(String(order.id))}`}
                   >
                     <td className="px-4 py-3 font-medium tabular-nums">
                       {String(order.sl_no ?? "—")}
@@ -624,14 +657,27 @@ export function DepartmentWorkspace({
                     {showParty && (
                       <td className="px-4 py-3">{toInput(order.client_name) || "—"}</td>
                     )}
-                    {soContext.map((f) => (
+                    {soContext.map((f) =>
+                      // Accounts: each payment term with the PI raised against it.
+                      table === "order_accounts" && f.column === "payment_terms" ? (
+                        <td key={f.column} className="px-3 py-3 align-top">
+                          <TermPis
+                            orderId={String(order.id)}
+                            soLabel={toInput(order.so_no) || String(order.sl_no ?? "")}
+                            terms={(order.term_lines ?? []) as Row[]}
+                            pis={(order.pi_docs ?? []) as Row[]}
+                            canEdit={false}
+                          />
+                        </td>
+                      ) : (
                       <td
                         key={f.column}
                         className="px-3 py-3 whitespace-nowrap text-muted"
                       >
                         {contextCell(f, order)}
                       </td>
-                    ))}
+                      )
+                    )}
                     {visibleFields.map((f) => (
                       <td key={f.column} className="px-3 py-3 whitespace-nowrap">
                         {fieldApplies(f, order) ? formatValue(f, order[f.column]) : "—"}
@@ -1060,6 +1106,7 @@ export function DepartmentWorkspace({
         />
       )}
 
+      {detailsFor && <OrderDetailsModal orderId={detailsFor} onClose={() => setDetailsFor(null)} />}
       {docsPanel && (
         <QcDocumentsModal
           table={docsPanel.config.table}
@@ -1125,7 +1172,6 @@ function EditSectionModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showOrder, setShowOrder] = useState(false);
-  const [showPis, setShowPis] = useState(false);
   const [showBoi, setShowBoi] = useState(false);
   // A Spare's readiness lots live in Planning's form; once there is one, the
   // status and readiness date are the latest lot's.
@@ -1241,20 +1287,11 @@ function EditSectionModal({
               View BOI items
             </button>
           )}
-          {/* orderId is the SO's order_id only for SO-scope sections
-              (Billing & Operations, Accounts) — the rest are keyed by item_id. */}
-          {(table === "order_billing" || table === "order_accounts") && (
+          {/* orderId is the SO's order_id only for SO-scope sections — the rest
+              are keyed by item_id. Accounts sees PIs and order details on its
+              list row, so its form carries neither button. */}
+          {table === "order_billing" && (
             <div className="flex shrink-0 items-center gap-2">
-              {table === "order_accounts" && (
-                <button
-                  type="button"
-                  onClick={() => setShowPis(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-input-border px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
-                >
-                  <ClipboardList className="h-3.5 w-3.5" />
-                  View PIs
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => setShowOrder(true)}
@@ -1288,7 +1325,7 @@ function EditSectionModal({
                   {f.label}
                 </div>
                 <div className="text-sm text-muted">
-                  {formatValue(f, f.column === "order_value_gst" ? liveValueWithGst() : data[f.column])}
+                  {contextValue(f, data, f.column === "order_value_gst" ? liveValueWithGst() : data[f.column])}
                 </div>
               </div>
             ))}
@@ -1448,9 +1485,6 @@ function EditSectionModal({
 
       {showOrder && (
         <OrderDetailsModal orderId={orderId} onClose={() => setShowOrder(false)} />
-      )}
-      {showPis && (
-        <ViewPisModal orderId={orderId} onClose={() => setShowPis(false)} />
       )}
       {/* Item-scope sections key `orderId` by item_id, which is exactly what
           the BOI rows hang off. */}

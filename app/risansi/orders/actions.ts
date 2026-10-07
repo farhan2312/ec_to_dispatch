@@ -2189,3 +2189,104 @@ export async function setDeptCompleteAction(
     return { ok: false, error: "Could not save. Please try again." };
   }
 }
+
+/**
+ * Whether a payment term line can take this PI: it is one of the SO's own
+ * lines, and no other PI is raised against it (a line takes one PI). Null
+ * when it can, else why not.
+ */
+async function termTakesPi(orderId: string, termId: string, piId: string | null): Promise<string | null> {
+  const r = await query<{ order_id: string; taken: boolean }>(
+    `SELECT t.order_id,
+            EXISTS (SELECT 1 FROM order_billing_docs d
+                     WHERE d.payment_term_id = t.id AND ($2::uuid IS NULL OR d.id <> $2::uuid)) AS taken
+       FROM order_payment_terms t WHERE t.id = $1`,
+    [termId, piId]
+  );
+  const row = r.rows[0];
+  if (!row || row.order_id !== orderId) return "That payment term is not on this SO.";
+  if (row.taken) return "That payment term already has a PI.";
+  return null;
+}
+
+/**
+ * Billing raises or edits a PI against one of the SO's payment term lines
+ * (or, on an SO with no terms yet, on its own). A new PI is created through
+ * the list's own add and save, so its guards, audit line and notice to
+ * Accounts are the same as ever; the link to the term is set alongside.
+ */
+export async function savePiAction(
+  orderId: string,
+  input: { piId?: string | null; termId?: string | null; pi_no: string; pi_date: string; pi_value: string }
+): Promise<ChildActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canEditChild(user.role, "order_billing_docs")) {
+    return { ok: false, error: "Only Billing can raise PIs." };
+  }
+  if (!UUID_RE_ACTION.test(orderId)) return { ok: false, error: "Order not found." };
+  const termId = input.termId && UUID_RE_ACTION.test(input.termId) ? input.termId : null;
+  const piId = input.piId && UUID_RE_ACTION.test(input.piId) ? input.piId : null;
+  if (!(input.pi_no ?? "").trim()) return { ok: false, error: "Enter the PI No." };
+  // A new PI is raised against a payment term; an SO without terms has none to raise.
+  if (!piId && !termId) return { ok: false, error: "Raise the PI against a payment term." };
+  if (termId) {
+    const problem = await termTakesPi(orderId, termId, piId);
+    if (problem) return { ok: false, error: problem };
+  }
+  let id = piId;
+  if (!id) {
+    const made = await addOrderChildAction(orderId, "order_billing_docs");
+    if (!made.ok) return made;
+    id = made.id ?? null;
+    if (!id) return { ok: false, error: "Could not raise the PI." };
+  }
+  if (termId) {
+    await query(`UPDATE order_billing_docs SET payment_term_id = $2 WHERE id = $1 AND order_id = $3`, [id, termId, orderId]);
+  }
+  const saved = await updateOrderChildAction(
+    id,
+    "order_billing_docs",
+    { pi_no: input.pi_no, pi_date: input.pi_date, pi_value: input.pi_value },
+    orderId
+  );
+  revalidatePath("/risansi/departments/billing");
+  return saved.ok ? { ok: true, id } : saved;
+}
+
+/** Billing attaches a PI to a payment term line, or takes it off one (null). */
+export async function linkPiAction(
+  orderId: string,
+  piId: string,
+  termId: string | null
+): Promise<ChildActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canEditChild(user.role, "order_billing_docs")) {
+    return { ok: false, error: "Only Billing can link PIs." };
+  }
+  if (!UUID_RE_ACTION.test(orderId) || !UUID_RE_ACTION.test(piId)) return { ok: false, error: "PI not found." };
+  if (termId) {
+    if (!UUID_RE_ACTION.test(termId)) return { ok: false, error: "Payment term not found." };
+    const problem = await termTakesPi(orderId, termId, piId);
+    if (problem) return { ok: false, error: problem };
+  }
+  const r = await query(
+    `UPDATE order_billing_docs SET payment_term_id = $3 WHERE id = $1 AND order_id = $2`,
+    [piId, orderId, termId]
+  );
+  if (r.rowCount === 0) return { ok: false, error: "PI not found." };
+  const label = (await getOrderLabel(orderId)) ?? orderId;
+  await logAudit({
+    actor: { id: user.id, email: user.email, role: user.role },
+    action: "order.update",
+    category: "activity",
+    target: label,
+    details: termId ? "Linked a PI to a payment term" : "Unlinked a PI from its payment term",
+    subject: { orderId, soNo: label },
+  });
+  revalidatePath("/risansi/departments/billing");
+  return { ok: true };
+}
+
+const UUID_RE_ACTION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

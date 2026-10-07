@@ -82,6 +82,17 @@ export const PUMP_TYPE_OPTIONS = opts(["PCP", "MMP", "RBL", "OLB"]);
 export const BILL_TYPE_OPTIONS = opts(["Tax Invoice", "Challan"]);
 // Whether the order is billed, or an FR — which carries no quotation or PO.
 export const BILL_MODE_OPTIONS = opts(["Billing", "FR"]);
+
+// Clearance: Central Visibility releases an SO to the departments (Clear) or
+// holds it, with the reason kept for regular review.
+export const CLEARANCE_OPTIONS = opts(["Clear", "Hold"]);
+export const CLEARANCE_HOLD_REASONS = opts([
+  "Client-side issue",
+  "PI hold",
+  "Outstanding payment hold",
+  "Quality / design hold",
+  "Others",
+]);
 // FR (financial reconciliation) reason for a Challan.
 export const FR_REASON_OPTIONS = opts([
   "Wrong supply",
@@ -200,6 +211,25 @@ export const ORDER_SECTIONS: OrderSection[] = [
     // The order's payment terms, one line per slice — see PAYMENT_TERM_FIELDS.
     childTable: "order_payment_terms",
     fields: [
+      // Clearance — Central Visibility's call; until an SO is Clear no
+      // department sees it.
+      { column: "clearance_status", label: "Clearance Status", type: "select", options: CLEARANCE_OPTIONS, group: "Clearance" },
+      {
+        column: "clearance_hold_reason",
+        label: "Hold Reason",
+        type: "select",
+        options: CLEARANCE_HOLD_REASONS,
+        dependsOn: [{ column: "clearance_status", value: "Hold" }],
+        group: "Clearance",
+      },
+      {
+        column: "clearance_remarks",
+        label: "Hold Remarks",
+        type: "text",
+        dependsOn: [{ column: "clearance_status", value: "Hold" }],
+        group: "Clearance",
+      },
+
       // Client — client_code and client_type are compulsory at creation.
       { column: "client_code", label: "Client Code", type: "text", group: "Client" },
       { column: "client_name", label: "Client Name", type: "text", group: "Client" },

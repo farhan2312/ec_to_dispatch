@@ -292,6 +292,20 @@ export { isPerEcDept };
  * with BOI, Quality only those needing QC docs, Accounts only those carrying a
  * receivable. The rest work every order.
  */
+/** Central Visibility has cleared the SO for the departments. */
+export function clearedSql(order = "o"): string {
+  return `COALESCE(${order}.clearance_status, '') = 'Clear'`;
+}
+
+/**
+ * What a department sees in its queue, dashboard and reminders: an order it
+ * has work on that Central Visibility has cleared. (Involvement alone still
+ * decides who an order's targets are for, cleared or not.)
+ */
+export function deptQueueSql(dept: DeptKey, alias = "o"): string {
+  return `${deptInvolvementSql(dept, alias)} AND ${clearedSql(alias)}`;
+}
+
 export function deptInvolvementSql(dept: DeptKey, alias = "o"): string {
   // A cancelled or diverted order is nobody's work.
   return `(${deptOwnInvolvementSql(dept, alias)}) AND ${orderOpenSql(alias)}`;
@@ -327,6 +341,8 @@ export function roleSeesOrder(
     qc_required?: unknown;
     bill_type?: unknown;
     order_type?: unknown;
+    /** Until Central Visibility clears it, no department sees the SO. */
+    clearance_status?: unknown;
     /**
      * The types of the ECs in view — every EC on an SO page, the one EC on an
      * EC page. Drawing reaches the page while any of them is not a Spare.
@@ -339,6 +355,7 @@ export function roleSeesOrder(
   if (role === "order_making") return false;
   const view = deptViewForRole(role);
   if (!view) return true;
+  if (String(order.clearance_status ?? "") !== "Clear") return false;
   if (view.key === "drawing") {
     const orderType = order.order_type == null ? null : String(order.order_type);
     const types = order.ec_types ?? [];

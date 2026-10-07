@@ -9,6 +9,8 @@ import type { NewOrderInput } from "@/lib/orders";
 import type { MarketIntellClient } from "@/lib/market-intell";
 import { ClientLookup } from "./client-lookup";
 import {
+  CLEARANCE_HOLD_REASONS,
+  CLEARANCE_OPTIONS,
   BILL_MODE_OPTIONS,
   BILL_TYPE_OPTIONS,
   CURRENCY_OPTIONS,
@@ -95,6 +97,26 @@ const SECTIONS: Section[] = [
         min: 0,
         // A Spare order is counted by value.
         dependsOn: { name: "order_type", value: "Spare", not: true },
+      },
+    ],
+  },
+  {
+    // Until it is Clear, the SO is in no department's queue.
+    title: "Clearance",
+    fields: [
+      { name: "clearance_status", label: "Clearance Status", type: "select", options: CLEARANCE_OPTIONS },
+      {
+        name: "clearance_hold_reason",
+        label: "Hold Reason",
+        type: "select",
+        options: CLEARANCE_HOLD_REASONS,
+        dependsOn: { name: "clearance_status", value: "Hold" },
+      },
+      {
+        name: "clearance_remarks",
+        label: "Hold Remarks",
+        type: "text",
+        dependsOn: { name: "clearance_status", value: "Hold" },
       },
     ],
   },

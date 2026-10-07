@@ -37,6 +37,7 @@ const NOT_A_GAP = new Set([
   "payment_terms_remarks",
   "master_reason_of_delay",
   "so_remarks",
+  "clearance_remarks",
 ]);
 
 /** The fields the check covers: everything the Order details form asks for. */

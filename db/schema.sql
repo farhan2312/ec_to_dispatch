@@ -2237,6 +2237,13 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS so_remarks TEXT;
 
 -- A challan's own quantity, so a Challan order can read as fully dispatched.
 ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS challan_quantity INTEGER;
+-- Clearance: Central Visibility clears each SO (Clear) or holds it (Hold,
+-- with a reason) before any department works on it. Blank = not cleared yet;
+-- an SO that is not Clear is in no department's queue.
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS clearance_status      TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS clearance_hold_reason TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS clearance_remarks     TEXT;
+
 -- The LR copy is kept on SharePoint; Dispatch pastes its link on the Docket &
 -- LR step (the old file upload, lr_file_*, is no longer offered).
 ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS lr_link TEXT;

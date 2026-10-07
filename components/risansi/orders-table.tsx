@@ -124,6 +124,22 @@ function ItemRows({
   );
 }
 
+/** Central Visibility's clearance: Clear, Hold (with its reason), or still to do. */
+export function ClearanceChip({ status, reason }: { status: string | null; reason: string | null }) {
+  if (status === "Clear") {
+    return <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">Clear</span>;
+  }
+  if (status === "Hold") {
+    return (
+      <span title={reason ?? undefined} className="inline-flex flex-col">
+        <span className="inline-flex w-fit rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700">Hold</span>
+        {reason && <span className="mt-0.5 text-[11px] text-muted">{reason}</span>}
+      </span>
+    );
+  }
+  return <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">Not cleared</span>;
+}
+
 export function OrdersTable({
   result,
   canDelete = false,
@@ -145,7 +161,7 @@ export function OrdersTable({
   );
   const pageRows = orders;
   // expand-toggle + 9 data columns + open + optional Add-On/delete.
-  const baseCols = 11;
+  const baseCols = 12;
   const colSpan = baseCols + (canDelete ? 1 : 0);
   function toggle(id: string) {
     setExpanded((prev) => {
@@ -188,6 +204,7 @@ export function OrdersTable({
                 <th className="px-4 py-3">Client Name</th>
                 <th className="px-4 py-3">Client Code</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
+                <th className="px-4 py-3">Clearance</th>
                 <th className="px-4 py-3">Payment Status</th>
                 <th className="px-4 py-3">Order Status</th>
                 <th className="px-4 py-3 text-center normal-case">ECs</th>
@@ -256,6 +273,9 @@ export function OrdersTable({
                         ) : (
                           "—"
                         )}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <ClearanceChip status={order.clearance_status} reason={order.clearance_hold_reason} />
                       </td>
                       <td className="px-4 py-3">
                         <StatusChip value={order.payment_status} />

@@ -103,5 +103,7 @@ export function sharedFacets(f: OrderMakingFilter): OrderListFilter {
     field: null,
     paymentTerms: [],
     billModes: f.billModes,
+    clearance: [],
+    holdReasons: [],
   };
 }

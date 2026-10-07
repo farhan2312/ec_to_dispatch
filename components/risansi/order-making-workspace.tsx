@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, CheckCircle2, Loader2, MessageSquare, Pencil, Plus, X } from "lucide-react";
 import { OrderThreadModal } from "./order-thread-modal";
+import { ClearanceChip } from "./orders-table";
 import { DATE_PRESETS, presetRange } from "@/lib/order-list-filter";
 import {
   BILL_MODE_FILTER_OPTIONS,
@@ -219,6 +220,7 @@ export function OrderMakingWorkspace({
                     {c.column === "so_no" && <th className="px-4 py-3">Chat</th>}
                   </Fragment>
                 ))}
+                <th className="px-4 py-3">Clearance</th>
                 <th className="px-4 py-3">Details</th>
                 {canEdit && <th className="px-4 py-3" />}
               </tr>
@@ -226,7 +228,7 @@ export function OrderMakingWorkspace({
             <tbody className="divide-y divide-card-border">
               {queue.rows.length === 0 && (
                 <tr>
-                  <td colSpan={cols.length + 4} className="px-4 py-10 text-center text-sm text-muted">
+                  <td colSpan={cols.length + 5} className="px-4 py-10 text-center text-sm text-muted">
                     {missingOnly ? "Every SO has its client and PO details filled." : "No SOs match."}
                   </td>
                 </tr>
@@ -265,6 +267,13 @@ export function OrderMakingWorkspace({
                       )}
                     </Fragment>
                   ))}
+                  {/* Central Visibility's call: cleared, held (and why), or still to do. */}
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <ClearanceChip
+                      status={(row.clearance_status as string | null) ?? null}
+                      reason={(row.clearance_hold_reason as string | null) ?? null}
+                    />
+                  </td>
                   <td className="px-4 py-3">
                     {row.missing.length === 0 ? (
                       <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">

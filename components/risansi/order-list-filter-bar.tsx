@@ -12,6 +12,8 @@ import {
   type DeptFilterKey,
 } from "@/lib/dept-status";
 import {
+  CLEARANCE_FILTER_OPTIONS,
+  HOLD_REASON_FILTER_OPTIONS,
   BILL_MODE_FILTER_OPTIONS,
   DATE_PRESETS,
   FIELD_FILTER_FIELDS,
@@ -46,6 +48,8 @@ const FILTER_KEYS = [
   "fstate",
   "pterm",
   "bmode",
+  "clear",
+  "hreason",
 ];
 
 /**
@@ -208,6 +212,25 @@ export function OrderListFilterBar({
               options={BILL_MODE_FILTER_OPTIONS}
               selected={filter.billModes}
               onChange={(next) => setParams({ bmode: next })}
+            />
+          </>
+        )}
+        {/* The orders list: Central Visibility's clearance, and why SOs are held. */}
+        {noDispatchTarget && (
+          <>
+            <MultiSelectFilter
+              label="Clearance"
+              allLabel="Any clearance"
+              options={CLEARANCE_FILTER_OPTIONS}
+              selected={filter.clearance}
+              onChange={(next) => setParams({ clear: next })}
+            />
+            <MultiSelectFilter
+              label="Hold reason"
+              allLabel="Any reason"
+              options={HOLD_REASON_FILTER_OPTIONS}
+              selected={filter.holdReasons}
+              onChange={(next) => setParams({ hreason: next })}
             />
           </>
         )}

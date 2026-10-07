@@ -204,8 +204,18 @@ async function emit(
     message: string;
   }
 ): Promise<void> {
-  const unique = [...new Set(roles)];
+  let unique = [...new Set(roles)];
   if (unique.length === 0) return;
+  // An SO Central Visibility has not cleared is no department's business yet:
+  // only Central, Admin and Order Making hear about it.
+  const cleared = await query<{ clear: boolean }>(
+    `SELECT COALESCE(clearance_status, '') = 'Clear' AS clear FROM orders WHERE id = $1`,
+    [input.orderId]
+  );
+  if (cleared.rows[0] && !cleared.rows[0].clear) {
+    unique = unique.filter((r) => r === "central_visibility" || r === "admin" || r === "order_making");
+    if (unique.length === 0) return;
+  }
   const n = unique.length;
   // One INSERT with a row per role; the shared columns are the last 5 params.
   const values = unique

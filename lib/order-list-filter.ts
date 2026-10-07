@@ -8,6 +8,8 @@
 import { DEPT_VIEWS } from "@/lib/dept-view";
 import {
   BILL_MODE_OPTIONS,
+  CLEARANCE_HOLD_REASONS,
+  CLEARANCE_OPTIONS,
   PAYMENT_TERM_OPTIONS,
   SECTION_BY_TABLE,
   type OrderField,
@@ -61,6 +63,10 @@ export type FieldState = (typeof FIELD_STATES)[number]["value"];
 export const NOT_SET = "Not set";
 export const PAYMENT_TERM_FILTER_OPTIONS = [...PAYMENT_TERM_OPTIONS.map((o) => o.value), NOT_SET];
 export const BILL_MODE_FILTER_OPTIONS = [...BILL_MODE_OPTIONS.map((o) => o.value), NOT_SET];
+/** Clearance: Clear, Hold or not cleared yet; and why an SO is held. */
+export const CLEARANCE_FILTER_OPTIONS = [...CLEARANCE_OPTIONS.map((o) => o.value), NOT_SET];
+export const HOLD_REASON_FILTER_OPTIONS = CLEARANCE_HOLD_REASONS.map((o) => o.value);
+
 /** The departments that see those two filters. */
 export const PAYMENT_FILTER_DEPTS: readonly string[] = ["billing", "accounts"];
 
@@ -140,6 +146,10 @@ export type OrderListFilter = {
   paymentTerms: string[];
   /** Billing / Accounts: the SO's Bill Mode ("Not set": blank). */
   billModes: string[];
+  /** The orders list: Clear, Hold or "Not set" (not cleared yet). */
+  clearance: string[];
+  /** The orders list: why the held SOs are held. */
+  holdReasons: string[];
 };
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -239,12 +249,16 @@ export function parseOrderListFilter(
       dept && PAYMENT_FILTER_DEPTS.includes(dept)
         ? list(get("bmode")).filter((v) => BILL_MODE_FILTER_OPTIONS.includes(v))
         : [],
+    clearance: list(get("clear")).filter((v) => CLEARANCE_FILTER_OPTIONS.includes(v)),
+    holdReasons: list(get("hreason")).filter((v) => HOLD_REASON_FILTER_OPTIONS.includes(v)),
   };
 }
 
 /** Whether anything narrows the list at all. */
 export function isOrderListFiltered(f: OrderListFilter): boolean {
   return !!(
+    f.clearance.length ||
+    f.holdReasons.length ||
     f.paymentTerms.length ||
     f.billModes.length ||
     f.field ||
@@ -272,6 +286,8 @@ export function orderListFilterParams(f: OrderListFilter): URLSearchParams {
   if (f.dept) p.set("dept", f.dept);
   if (f.overdue) p.set("overdue", "1");
   if (f.ready) p.set("ready", "1");
+  if (f.clearance.length) p.set("clear", f.clearance.join(","));
+  if (f.holdReasons.length) p.set("hreason", f.holdReasons.join(","));
   if (f.paymentTerms.length) p.set("pterm", f.paymentTerms.join(","));
   if (f.billModes.length) p.set("bmode", f.billModes.join(","));
   if (f.field) {
@@ -298,6 +314,8 @@ export function describeOrderListFilter(f: OrderListFilter): string {
     const label = FIELD_FILTER_FIELDS.find((x) => x.column === f.field!.column)?.label ?? f.field.column;
     parts.push(`${label}: ${f.field.state === "filled" ? "filled" : "pending"}`);
   }
+  if (f.clearance.length) parts.push(`Clearance: ${f.clearance.join(", ")}`);
+  if (f.holdReasons.length) parts.push(`Hold reason: ${f.holdReasons.join(", ")}`);
   if (f.paymentTerms.length) parts.push(`Payment terms: ${f.paymentTerms.join(", ")}`);
   if (f.billModes.length) parts.push(`Bill mode: ${f.billModes.join(", ")}`);
   if (f.zones.length) parts.push(`Zone: ${f.zones.join(", ")}`);

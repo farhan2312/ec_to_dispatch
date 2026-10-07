@@ -151,6 +151,9 @@ export async function createOrderAction(
   if (!(input.client_code ?? "").trim()) {
     return { ok: false, error: "Client Code is required." };
   }
+  if (input.clearance_status === "Hold" && !(input.clearance_hold_reason ?? "").trim()) {
+    return { ok: false, error: "Choose a Hold Reason." };
+  }
   // Order value and quantity cannot be negative — the form says so, but this
   // is also how the Excel import creates orders.
   const bounds = checkFieldBounds(
@@ -678,6 +681,20 @@ export async function updateOrderSectionAction(
   try {
     if (section.scope === "so") {
       const before = await getOrderDetail(id);
+      if (!isCentral(user.role) && !orderMaker && before && !isCleared(before.order)) {
+        return { ok: false, error: NOT_CLEARED };
+      }
+      if (tbl === "orders" && before) {
+        const status = "clearance_status" in allowedValues
+          ? allowedValues.clearance_status
+          : String(before.order.clearance_status ?? "");
+        const reason = "clearance_hold_reason" in allowedValues
+          ? allowedValues.clearance_hold_reason
+          : String(before.order.clearance_hold_reason ?? "");
+        if (status === "Hold" && !(reason ?? "").trim()) {
+          return { ok: false, error: "Choose a Hold Reason." };
+        }
+      }
       // Sections an order carries no work for take no entries: an order paid
       // after receipt has no payment for Accounts to record. The form hides
       // the fields; this is the same rule on the endpoint.
@@ -743,6 +760,9 @@ export async function updateOrderSectionAction(
           : null,
         // Order details carry the dates the first targets are counted from.
         tbl === "orders" ? autoFillTargets(id, user) : null,
+        tbl === "orders" && before && !isCleared(before.order) && allowedValues.clearance_status === "Clear"
+          ? notifyCleared(id)
+          : null,
         // …and the value and currency its INR conversion is worked out from.
         tbl === "orders"
           ? getUsdInrRate().then((rate) => applyUsdConversion(id, rate))
@@ -752,6 +772,9 @@ export async function updateOrderSectionAction(
     } else {
       // Item-scope: id is the item_id.
       const before = await getItemDetail(id);
+      if (!isCentral(user.role) && before && !isCleared(before.order)) {
+        return { ok: false, error: NOT_CLEARED };
+      }
       const itemLock = lockReason(tbl, before?.order as never, user.role);
       if (itemLock) return { ok: false, error: itemLock };
       // A Spare's readiness lots ride along with Planning's form.
@@ -1366,6 +1389,34 @@ async function autoFillTargets(
 }
 
 /** The department roles, by the department they run — for telling them. */
+/** Said to a department that tries to save on an SO it should not see yet. */
+const NOT_CLEARED = "This SO is not cleared by Central Visibility yet.";
+
+const isCleared = (order: Record<string, unknown>) => String(order.clearance_status ?? "") === "Clear";
+
+/**
+ * An SO has just been cleared: every department with work on it hears that
+ * it is now in their queue — they heard nothing of it while it waited.
+ */
+async function notifyCleared(orderId: string): Promise<void> {
+  try {
+    const label = (await getOrderLabel(orderId)) ?? orderId;
+    const depts = Object.keys(ROLE_BY_DEPT) as DeptKey[];
+    const involved = (
+      await Promise.all(depts.map((d) => deptInvolvedInOrder(d, orderId).then((yes) => (yes ? d : null))))
+    ).filter((d): d is DeptKey => d !== null);
+    if (involved.length === 0) return;
+    await emitNotification({
+      roles: involved.map((d) => ROLE_BY_DEPT[d]),
+      orderId,
+      type: "dept_update",
+      message: `SO ${label} cleared by Central Visibility — it is now in your queue`,
+    });
+  } catch (error) {
+    console.error("notifyCleared failed:", error);
+  }
+}
+
 const ROLE_BY_DEPT: Record<DeptKey, string> = {
   drawing: "drawing",
   purchase: "purchase",

@@ -14,6 +14,8 @@ import {
 } from "@/lib/dept-completion";
 import {
   deptInvolvementSql,
+  deptQueueSql,
+  clearedSql,
   orderOpenSql,
   orderStatusSql,
   spareEcSql,
@@ -116,6 +118,9 @@ export type OrderListRow = {
   payment_status: string | null;
   // SO-level, derived from this SO's invoices (see recomputeDispatchStatus).
   dispatch_status: string | null;
+  /** Central Visibility's clearance, and why a held SO is held. */
+  clearance_status: string | null;
+  clearance_hold_reason: string | null;
   ec_count: number;
   items: ItemSummary[];
 };
@@ -160,6 +165,9 @@ export type NewOrderInput = {
   purchase_target_date?: string;
   dispatch_team_target_date?: string;
   packing_details_required?: string;
+  clearance_status?: string;
+  clearance_hold_reason?: string;
+  clearance_remarks?: string;
 };
 
 /** Fields captured when adding an EC/pump item (the Add-On form). */
@@ -245,13 +253,14 @@ export async function createOrder(
           dispatch_target_revised_date, qc_doc_target_date, purchase_target_date,
           packing_details_required, dispatch_team_target_date, so_handover_date,
           payment_terms_remarks, order_value_inr, bill_mode,
-          complaint_no, complaint_date
+          complaint_no, complaint_date,
+          clearance_status, clearance_hold_reason, clearance_remarks
        ) VALUES (
           -- The next free number, under the lock above.
           (SELECT COALESCE(max(sl_no), 0) + 1 FROM orders),
           $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,
           $22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,
-          $37,$38
+          $37,$38,$39,$40,$41
        )
        RETURNING id, sl_no::int AS sl_no`,
       [
@@ -296,6 +305,10 @@ export async function createOrder(
         nullify(input.bill_mode),
         nullify(input.complaint_no),
         nullify(input.complaint_date),
+        nullify(input.clearance_status),
+        // A reason only goes with a Hold.
+        input.clearance_status === "Hold" ? nullify(input.clearance_hold_reason) : null,
+        input.clearance_status === "Hold" ? nullify(input.clearance_remarks) : null,
       ]
     );
     return result.rows[0];
@@ -1917,9 +1930,9 @@ export async function listOrdersOverview(
       WHERE ${
         // Drawing's rows are ECs: a Spare EC is out, whatever the SO around it.
         dept === "drawing"
-          ? `NOT (${spareEcSql("it", "o")}) AND ${orderOpenSql("o")}`
+          ? `NOT (${spareEcSql("it", "o")}) AND ${orderOpenSql("o")} AND ${clearedSql("o")}`
           : dept
-            ? deptInvolvementSql(dept)
+            ? deptQueueSql(dept)
             : "TRUE"
       }
       ORDER BY o.sl_no ASC, it.seq ASC NULLS FIRST`
@@ -2737,6 +2750,17 @@ function orderListClauses(
     }
     clauses.push(`(${any.join(" OR ")})`);
   }
+  // Clearance: Clear, Hold, or not cleared yet; and the reasons for a Hold.
+  if (f.clearance.length) {
+    const set = f.clearance.filter((c) => c !== NOT_SET);
+    const any: string[] = [];
+    if (set.length) any.push(facet("o.clearance_status", set));
+    if (f.clearance.includes(NOT_SET)) any.push(`NULLIF(TRIM(o.clearance_status), '') IS NULL`);
+    clauses.push(`(${any.join(" OR ")})`);
+  }
+  if (f.holdReasons.length) {
+    clauses.push(`(COALESCE(o.clearance_status, '') = 'Hold' AND ${facet("o.clearance_hold_reason", f.holdReasons)})`);
+  }
   if (f.billModes.length) {
     const modes = f.billModes.filter((m) => m !== NOT_SET);
     const any: string[] = [];
@@ -2880,6 +2904,8 @@ export async function listOrdersPage(opts: {
             o.client_code,
             o.reps,
             o.zone,
+            o.clearance_status,
+            o.clearance_hold_reason,
             o.po_no,
             o.order_type,
             o.order_value::text AS order_value,
@@ -2932,6 +2958,8 @@ export async function listOrders(): Promise<OrderListRow[]> {
             o.client_code,
             o.reps,
             o.zone,
+            o.clearance_status,
+            o.clearance_hold_reason,
             o.po_no,
             o.order_type,
             o.order_value::text AS order_value,
@@ -3113,7 +3141,8 @@ export async function listOrdersForOrderMaking(opts: {
     f.type === "date" ? `to_char(o.${f.column}, 'YYYY-MM-DD') AS ${f.column}` : `o.${f.column}`
   ).join(", ");
   const r = await query<OrderMakingRow>(
-    `SELECT o.id, o.sl_no::int AS sl_no, ${cols}, ${missingSql} AS missing
+    `SELECT o.id, o.sl_no::int AS sl_no, ${cols}, ${missingSql} AS missing,
+            o.clearance_status, o.clearance_hold_reason
        FROM orders o WHERE o.id = ANY($1::uuid[])`,
     [ids]
   );
@@ -3169,7 +3198,7 @@ export async function listItemsForSectionPage(
   // A department does not see an order it has nothing to do with (QC when
   // the SO says QC is not needed). One rule, in lib/dept-view.
   const dept = deptForTable(table);
-  const restrict = dept ? deptInvolvementSql(dept) : "TRUE";
+  const restrict = dept ? deptQueueSql(dept) : "TRUE";
 
   const { ids, total, page } = await pageOfOrderIds({
     page: opts.page,
@@ -3216,7 +3245,7 @@ export async function listOrdersForSectionPage(
     // Accounts is not involved for Challan orders, so they must be out of
     // the count as well as out of the rows.
     restrict: deptForTable(table)
-      ? deptInvolvementSql(deptForTable(table)!)
+      ? deptQueueSql(deptForTable(table)!)
       : "TRUE",
     searchable: soAndEcSearch,
     filter: opts.filter,
@@ -3244,7 +3273,7 @@ export async function listItemsForPurchasePage(opts: {
     search: opts.search,
     focusOrderId: opts.focusOrderId ?? null,
     orderBy: queueOrderBy(opts.sort),
-    restrict: `${deptInvolvementSql("purchase")} AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id)`,
+    restrict: `${deptQueueSql("purchase")} AND EXISTS (SELECT 1 FROM order_items s WHERE s.order_id = o.id)`,
     searchable: soAndEcSearch,
     filter: opts.filter,
   });
@@ -3275,10 +3304,10 @@ export async function listOrdersForBillingPage(opts: {
     orderBy: queueOrderBy(opts.sort),
     // A cancelled or diverted order is no longer Billing's or Dispatch's work.
     restrict: opts.onlyPacked
-      ? `${orderOpenSql("o")} AND EXISTS (SELECT 1 FROM order_packing_slips ps
+      ? `${orderOpenSql("o")} AND ${clearedSql("o")} AND EXISTS (SELECT 1 FROM order_packing_slips ps
                                            WHERE ps.order_id = o.id AND ps.kind = 'actual')`
       // Billing: not a Challan order — there is no PI to raise on one.
-      : deptInvolvementSql("billing"),
+      : deptQueueSql("billing"),
     searchable: (term) =>
       `(o.so_no ILIKE ${term} OR o.client_name ILIKE ${term} OR o.sl_no::text ILIKE ${term})`,
     filter: opts.filter,

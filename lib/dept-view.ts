@@ -292,18 +292,27 @@ export { isPerEcDept };
  * with BOI, Quality only those needing QC docs, Accounts only those carrying a
  * receivable. The rest work every order.
  */
-/** Central Visibility has cleared the SO for the departments. */
+/** Central Visibility has cleared the SO: departments work on it. */
 export function clearedSql(order = "o"): string {
-  return `COALESCE(${order}.clearance_status, '') = 'Clear'`;
+  return `COALESCE(NULLIF(${order}.clearance_status, ''), 'Clear') = 'Clear'`;
 }
 
 /**
- * What a department sees in its queue, dashboard and reminders: an order it
- * has work on that Central Visibility has cleared. (Involvement alone still
- * decides who an order's targets are for, cleared or not.)
+ * Central Visibility has decided on the SO — Clear, or Hold. Departments see
+ * and work on a held SO, marked with its reason; one not yet decided they do
+ * not see at all.
+ */
+export function releasedSql(order = "o"): string {
+  return `COALESCE(NULLIF(${order}.clearance_status, ''), 'Clear') IN ('Clear', 'Hold')`;
+}
+
+/**
+ * What a department sees in its queue and dashboard: an order it has work on
+ * that Central Visibility has cleared or put on hold. (Involvement alone still
+ * decides who an order's targets are for, whatever its clearance.)
  */
 export function deptQueueSql(dept: DeptKey, alias = "o"): string {
-  return `${deptInvolvementSql(dept, alias)} AND ${clearedSql(alias)}`;
+  return `${deptInvolvementSql(dept, alias)} AND ${releasedSql(alias)}`;
 }
 
 export function deptInvolvementSql(dept: DeptKey, alias = "o"): string {
@@ -355,7 +364,8 @@ export function roleSeesOrder(
   if (role === "order_making") return false;
   const view = deptViewForRole(role);
   if (!view) return true;
-  if (String(order.clearance_status ?? "") !== "Clear") return false;
+  // Not yet cleared or held: not theirs to see.
+  if (!["Clear", "Hold"].includes(String(order.clearance_status || "Clear"))) return false;
   if (view.key === "drawing") {
     const orderType = order.order_type == null ? null : String(order.order_type);
     const types = order.ec_types ?? [];

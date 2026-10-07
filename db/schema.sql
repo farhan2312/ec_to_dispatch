@@ -164,6 +164,12 @@ CREATE TABLE IF NOT EXISTS order_accounts (
 -- Add the gate columns to any pre-existing order_accounts table.
 ALTER TABLE order_accounts ADD COLUMN IF NOT EXISTS payment_confirmed_date DATE;
 ALTER TABLE order_accounts ADD COLUMN IF NOT EXISTS hold_reason TEXT;
+-- The GST rate Accounts applies to the SO's value (blank = the usual 18%). The
+-- amount received is with GST, so the balance is counted against
+-- order value × (1 + rate).
+ALTER TABLE order_accounts ADD COLUMN IF NOT EXISTS gst_rate NUMERIC(5,2);
+ALTER TABLE order_accounts ALTER COLUMN gst_rate SET DEFAULT 18;
+UPDATE order_accounts SET gst_rate = 18 WHERE gst_rate IS NULL;
 
 -- Drawing — cols AD–AG ("in case of Pump").
 CREATE TABLE IF NOT EXISTS order_drawing (
@@ -2237,12 +2243,13 @@ ALTER TABLE orders ADD COLUMN IF NOT EXISTS so_remarks TEXT;
 
 -- A challan's own quantity, so a Challan order can read as fully dispatched.
 ALTER TABLE order_invoices ADD COLUMN IF NOT EXISTS challan_quantity INTEGER;
--- Clearance: Central Visibility clears each SO (Clear) or holds it (Hold,
--- with a reason) before any department works on it. Blank = not cleared yet;
--- an SO that is not Clear is in no department's queue.
+-- Clearance: every SO is Clear unless Central Visibility holds it (Hold, with
+-- a reason). A held SO stays in the departments' queues, marked with why.
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS clearance_status      TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS clearance_hold_reason TEXT;
 ALTER TABLE orders ADD COLUMN IF NOT EXISTS clearance_remarks     TEXT;
+ALTER TABLE orders ALTER COLUMN clearance_status SET DEFAULT 'Clear';
+UPDATE orders SET clearance_status = 'Clear' WHERE clearance_status IS NULL OR clearance_status = '';
 
 -- The LR copy is kept on SharePoint; Dispatch pastes its link on the Docket &
 -- LR step (the old file upload, lr_file_*, is no longer offered).

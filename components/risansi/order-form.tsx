@@ -31,6 +31,8 @@ type Field = {
   // Lowest value a number accepts — the browser blocks the submit below it,
   // and createOrderAction refuses it regardless.
   min?: number;
+  // A select with this set offers no blank choice and starts on it.
+  defaultValue?: string;
 };
 type Section = { title: string; fields: Field[] };
 
@@ -104,7 +106,7 @@ const SECTIONS: Section[] = [
     // Until it is Clear, the SO is in no department's queue.
     title: "Clearance",
     fields: [
-      { name: "clearance_status", label: "Clearance Status", type: "select", options: CLEARANCE_OPTIONS },
+      { name: "clearance_status", label: "Clearance Status", type: "select", options: CLEARANCE_OPTIONS, defaultValue: "Clear" },
       {
         name: "clearance_hold_reason",
         label: "Hold Reason",
@@ -253,7 +255,8 @@ const inputClass =
 
 export function OrderForm() {
   const router = useRouter();
-  const [values, setValues] = useState<NewOrderInput>({});
+  // Every new SO starts Clear; Central Visibility holds it when needed.
+  const [values, setValues] = useState<NewOrderInput>({ clearance_status: "Clear" });
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -368,7 +371,7 @@ export function OrderForm() {
                       disabled={disabled}
                       className={`${inputClass} disabled:cursor-not-allowed disabled:opacity-50`}
                     >
-                      <option value="">—</option>
+                      {!field.defaultValue && <option value="">—</option>}
                       {field.options?.map((o) => (
                         <option key={o.value} value={o.value}>
                           {o.label}

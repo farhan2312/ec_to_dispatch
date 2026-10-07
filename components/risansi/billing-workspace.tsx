@@ -11,6 +11,7 @@ import { OrderDetailsModal } from "./order-details-modal";
 import { DispatchSlipPicker } from "./dispatch-slip-picker";
 import { DispatchList } from "./dispatch-list";
 import { SortHeader } from "./sort-header";
+import { HoldBadge } from "./hold-badge";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import type { OrderListOptions } from "@/lib/orders";
@@ -201,7 +202,9 @@ export function BillingWorkspace({
                         </button>
                       </td>
                       <td className="px-4 py-3 font-medium tabular-nums">{row.sl_no}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{row.so_no ?? "—"}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{row.so_no ?? "—"}
+                        <HoldBadge order={row} />
+                      </td>
                       <td className="px-4 py-3">
                         <button
                           type="button"

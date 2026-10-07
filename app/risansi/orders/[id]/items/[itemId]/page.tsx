@@ -4,6 +4,7 @@ import { getItemDetail } from "@/lib/orders";
 import { getCurrentUser } from "@/lib/session";
 import { roleSeesOrder } from "@/lib/dept-view";
 import { ItemDetail } from "@/components/risansi/item-detail";
+import { HoldBanner } from "@/components/risansi/hold-badge";
 
 export const metadata: Metadata = {
   title: "EC | Risansi",
@@ -28,5 +29,13 @@ export default async function ItemDetailPage({
     notFound();
   }
 
-  return <ItemDetail detail={detail} orderId={id} itemId={itemId} role={user.role} />;
+  return (
+    <>
+      {/* Held by Central Visibility: everyone sees why. */}
+      <div className="px-4 pt-6 sm:px-8">
+        <HoldBanner order={detail.order} />
+      </div>
+      <ItemDetail detail={detail} orderId={id} itemId={itemId} role={user.role} />
+    </>
+  );
 }

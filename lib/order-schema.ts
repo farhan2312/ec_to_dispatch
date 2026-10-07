@@ -1014,18 +1014,36 @@ export function firstMissingAddOnField(
 // many lines as its terms have parts, and they are added to rather than
 // revised — a term that changes is a new agreement, not a correction.
 export const PAYMENT_TERM_OPTIONS = opts([
-  "Advance",
+  "Advance Against PI",
   "Advance Against ABG",
   "Before Dispatch",
-  "Payment Against Documents",
+  "Balance Against PBG",
   "After Receipt",
-  "After Receipt Against PBG",
+  "Payment Against Documents",
+  "Cheque on Delivery",
+  "Letter of Credit",
 ]);
 
-// Only the terms counted from the client receiving the material carry a credit
-// period; the rest fall due on the event itself.
-export const AFTER_RECEIPT_TERMS = ["After Receipt", "After Receipt Against PBG"];
-const TERMS_WITH_DAYS = AFTER_RECEIPT_TERMS;
+// The documents a Payment Against Documents line can wait on — Central
+// Visibility's list.
+export const PAYMENT_AGAINST_DOCUMENTS = "Payment Against Documents";
+export const PAYMENT_DOCUMENT_OPTIONS = opts([
+  "Tax Invoice",
+  "Packing List",
+  "LR / Bill of Lading",
+  "Test Certificate",
+  "Inspection Report",
+  "Warranty Certificate",
+  "E-way Bill",
+  "Insurance Certificate",
+]);
+
+// Only After Receipt is counted from the client receiving the material and
+// carries a credit period; the rest fall due on the event itself.
+export const AFTER_RECEIPT_TERMS = ["After Receipt"];
+// The terms that carry a number of days: After Receipt's credit period, and a
+// Letter of Credit's usance (e.g. LC 45 days).
+export const TERMS_WITH_DAYS = [...AFTER_RECEIPT_TERMS, "Letter of Credit"];
 
 /**
  * Nothing is due before the client has the material: the order has payment
@@ -1049,7 +1067,7 @@ export function isAfterReceiptOnly(
  * has no lines.
  */
 export function paymentTermsText(
-  lines: { term?: unknown; percent?: unknown; days?: unknown }[] | null | undefined,
+  lines: { term?: unknown; percent?: unknown; days?: unknown; documents?: unknown }[] | null | undefined,
   written?: unknown
 ): string {
   const blank = (v: unknown) => v === null || v === undefined || String(v).trim() === "";
@@ -1058,7 +1076,8 @@ export function paymentTermsText(
       const head = [blank(l.percent) ? "" : `${Number(l.percent)}%`, String(l.term ?? "").trim()]
         .filter(Boolean)
         .join(" ");
-      return head && !blank(l.days) ? `${head}, ${Number(l.days)} days` : head;
+      const withDocs = head && !blank(l.documents) ? `${head} (${String(l.documents).trim()})` : head;
+      return withDocs && !blank(l.days) ? `${withDocs}, ${Number(l.days)} days` : withDocs;
     })
     .filter(Boolean);
   return parts.length ? parts.join(" + ") : String(written ?? "").trim();
@@ -1078,6 +1097,13 @@ export const PAYMENT_TERM_FIELDS: OrderField[] = [
     type: "int",
     min: 0,
     dependsOn: [{ column: "term", value: TERMS_WITH_DAYS }],
+  },
+  // Which documents a Payment Against Documents line waits on.
+  {
+    column: "documents",
+    label: "Required Documents",
+    type: "text",
+    dependsOn: [{ column: "term", value: PAYMENT_AGAINST_DOCUMENTS }],
   },
 ];
 

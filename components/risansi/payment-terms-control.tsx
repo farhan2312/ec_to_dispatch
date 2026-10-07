@@ -9,7 +9,9 @@ import {
   updateOrderChildAction,
 } from "@/app/risansi/orders/actions";
 import {
-  AFTER_RECEIPT_TERMS,
+  TERMS_WITH_DAYS,
+  PAYMENT_AGAINST_DOCUMENTS,
+  PAYMENT_DOCUMENT_OPTIONS,
   PAYMENT_TERM_OPTIONS,
   type OrderField,
 } from "@/lib/order-schema";
@@ -22,9 +24,11 @@ const str = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 function describe(row: Row): string {
   const percent = str(row.percent).trim();
   const days = str(row.days).trim();
+  const docs = str(row.documents).trim();
   return [
     percent ? `${Number(percent)}%` : null,
     str(row.term).trim() || "—",
+    docs ? `Docs: ${docs}` : null,
     days ? `${days} days` : null,
   ]
     .filter(Boolean)
@@ -54,16 +58,23 @@ export function PaymentTermsControl({
   const [term, setTerm] = useState("");
   const [percent, setPercent] = useState("");
   const [days, setDays] = useState("");
+  const [docs, setDocs] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const needsDays = AFTER_RECEIPT_TERMS.includes(term);
+  const needsDays = TERMS_WITH_DAYS.includes(term);
+  // Payment Against Documents names the documents it waits on.
+  const needsDocs = term === PAYMENT_AGAINST_DOCUMENTS;
   const total = rows.reduce((n, r) => n + (Number(str(r.percent)) || 0), 0);
 
   async function save() {
     if (!term) {
       setError("Choose a term.");
+      return;
+    }
+    if (needsDocs && docs.length === 0) {
+      setError("Choose the required documents.");
       return;
     }
     setSaving(true);
@@ -79,7 +90,15 @@ export function PaymentTermsControl({
     const saved = await updateOrderChildAction(
       created.id ?? "",
       "order_payment_terms",
-      { term, percent, days: needsDays ? days : "" },
+      {
+        term,
+        percent,
+        days: needsDays ? days : "",
+        // In the list's own order, whatever order they were ticked in.
+        documents: needsDocs
+          ? PAYMENT_DOCUMENT_OPTIONS.map((o) => o.value).filter((d) => docs.includes(d)).join(", ")
+          : "",
+      },
       orderId
     );
     setSaving(false);
@@ -90,6 +109,7 @@ export function PaymentTermsControl({
     setTerm("");
     setPercent("");
     setDays("");
+    setDocs([]);
     setOpen(false);
     router.refresh();
   }
@@ -178,7 +198,7 @@ export function PaymentTermsControl({
                 aria-label="Percent"
                 className="h-8 w-16 rounded-md border border-input-border bg-surface px-2 text-xs text-foreground"
               />
-              {/* Only the terms counted from receipt carry a credit period. */}
+              {/* After Receipt's credit period, a Letter of Credit's days. */}
               {needsDays && (
                 <input
                   type="number"
@@ -189,6 +209,28 @@ export function PaymentTermsControl({
                   aria-label="Days"
                   className="h-8 w-20 rounded-md border border-input-border bg-surface px-2 text-xs text-foreground"
                 />
+              )}
+              {needsDocs && (
+                <div className="w-full">
+                  <p className="mb-1 text-[11px] font-medium text-muted-foreground">Required documents</p>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1">
+                    {PAYMENT_DOCUMENT_OPTIONS.map((o) => (
+                      <label key={o.value} className="inline-flex items-center gap-1 text-xs text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={docs.includes(o.value)}
+                          onChange={(e) =>
+                            setDocs((prev) =>
+                              e.target.checked ? [...prev, o.value] : prev.filter((d) => d !== o.value)
+                            )
+                          }
+                          className="h-3.5 w-3.5 accent-primary"
+                        />
+                        {o.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
               )}
               <button
                 type="button"

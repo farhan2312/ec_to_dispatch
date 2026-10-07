@@ -2074,6 +2074,15 @@ export async function listOrdersForSection(
             NULL::text AS ec_no,
             o.client_name,
             o.clearance_status, o.clearance_hold_reason, o.clearance_remarks,
+            -- The order value's currency, shown beside it (Accounts).
+            o.order_currency,
+            -- Accounts: the payment term lines and the PI raised against each.
+            ${table === "order_accounts" ? `COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                        'id', t.id, 'term', t.term, 'percent', t.percent::text,
+                        'days', t.days, 'documents', t.documents) ORDER BY t.seq)
+                      FROM order_payment_terms t WHERE t.order_id = o.id), '[]'::jsonb) AS term_lines,
+            COALESCE((SELECT jsonb_agg(to_jsonb(pd) ORDER BY pd.seq)
+                      FROM order_billing_docs pd WHERE pd.order_id = o.id), '[]'::jsonb) AS pi_docs,` : ""}
             -- What the payment terms say about whether this department
             -- still has anything to record here (lib/order-lock).
             ${AFTER_RECEIPT_ONLY} AS after_receipt_only${detailSelects ? `,\n            ${detailSelects}` : ""}${contextSelects}
@@ -2228,6 +2237,8 @@ export type BillingQueueRow = {
   fr_reason: string | null;
   dispatch_status: string | null;
   pi_docs: Row[];
+  /** The SO's payment term lines, in order — each takes one PI (Billing). */
+  term_lines: Row[];
   invoices: Row[];
   /** The SO's actual packing slips, each with the dispatch it went out on. */
   packing_slips: Row[];
@@ -2264,6 +2275,11 @@ export async function listOrdersForBilling(
             COALESCE((SELECT jsonb_agg(to_jsonb(d) ORDER BY d.seq)
                       FROM order_billing_docs d WHERE d.order_id = o.id),
                      '[]'::jsonb) AS pi_docs,
+            COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                        'id', t.id, 'term', t.term, 'percent', t.percent::text,
+                        'days', t.days, 'documents', t.documents) ORDER BY t.seq)
+                      FROM order_payment_terms t WHERE t.order_id = o.id),
+                     '[]'::jsonb) AS term_lines,
             COALESCE((SELECT jsonb_agg((to_jsonb(inv) - 'lr_file_data') || jsonb_build_object(
                         'slips', COALESCE((SELECT jsonb_agg(jsonb_build_object(
                          'id', ps.id, 'packing_slip_no', ps.packing_slip_no,
@@ -2551,6 +2567,7 @@ const PAYMENT_TERMS_SQL = (a: string) => `COALESCE(
               CASE WHEN ptx.percent IS NOT NULL
                    THEN rtrim(rtrim(ptx.percent::text, '0'), '.') || '%' END,
               NULLIF(TRIM(ptx.term), ''))
+            || CASE WHEN NULLIF(TRIM(ptx.documents), '') IS NOT NULL THEN ' (' || TRIM(ptx.documents) || ')' ELSE '' END
             || CASE WHEN ptx.days IS NOT NULL THEN ', ' || ptx.days || ' days' ELSE '' END,
             ' + ' ORDER BY ptx.seq)
      FROM order_payment_terms ptx
@@ -2563,9 +2580,10 @@ const AFTER_RECEIPT_ONLY = `(EXISTS (SELECT 1 FROM order_payment_terms pt
                             AND NOT EXISTS (SELECT 1 FROM order_payment_terms pt
                                              WHERE pt.order_id = o.id
                                                AND btrim(coalesce(pt.term, ''))
-                                                     NOT IN ('After Receipt',
-                                                             'After Receipt Against PBG')))`;
-const PAID_AFTER_RECEIPT = AFTER_RECEIPT_ONLY;
+                                                     NOT IN ('After Receipt')))`;
+// Paid after receipt used to make Billing and Accounts N/A; they now record a
+// PI and a payment on every order, so it matches nothing.
+const PAID_AFTER_RECEIPT = "FALSE";
 const IS_CHALLAN = `COALESCE(o.bill_type, '') = 'Challan'`;
 const BILL_RAISED = BILLING_RAISED;
 const PAYMENT_SET = `EXISTS (SELECT 1 FROM order_accounts a
@@ -3502,10 +3520,9 @@ export async function getOrderDeptStatus(
 
   const isChallan = String(head.bill_type ?? "") === "Challan";
 
-  const paidAfterReceipt = head.after_receipt_only === true;
+  // PIs and payments are recorded on every order, whatever its terms.
+  const paidAfterReceipt = false;
   return {
-    // Paid after receipt: no PI is due, so Billing reads N/A rather than
-    // pending forever. Its dispatch invoice is a separate matter.
     billing: paidAfterReceipt
       ? NA
       : head.has_pi

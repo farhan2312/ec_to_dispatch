@@ -1,12 +1,9 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
-import { ChevronDown, ClipboardList, MessageSquare, Plus } from "lucide-react";
+import { ChevronDown, MessageSquare, Plus } from "lucide-react";
 import type { BillingQueueRow } from "@/lib/orders";
-import { BILLING_DOC_FIELDS } from "@/lib/order-schema";
-import { OrderChildList } from "./order-children";
-import { lockReason } from "@/lib/order-lock";
-import { PiExcelUpload } from "./pi-excel-upload";
+import { TermPis } from "./term-pis";
 import { OrderDetailsModal } from "./order-details-modal";
 import { DispatchSlipPicker } from "./dispatch-slip-picker";
 import { DispatchList } from "./dispatch-list";
@@ -19,7 +16,6 @@ import { DEPT_VIEWS } from "@/lib/dept-view";
 import { useFocusRow } from "./use-focus-row";
 import type { PageResult } from "@/lib/pagination";
 import { OrderThreadModal } from "./order-thread-modal";
-import { completionFor, DeptCompleteCheck } from "./dept-complete-check";
 import type { DeptCompletion } from "@/lib/dept-completion";
 
 type Row = Record<string, unknown>;
@@ -55,7 +51,6 @@ export function BillingWorkspace({
   focusOrderId,
   role,
   unreadThreads = {},
-  completions = [],
   filterOptions,
 }: {
   // One server-fetched page; search and paging ran in SQL.
@@ -152,7 +147,7 @@ export function BillingWorkspace({
           <table className="w-full min-w-[880px] text-sm">
             <thead>
               <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
-                <th className="w-8 px-2 py-3" />
+                {mode === "dispatch" && <th className="w-8 px-2 py-3" />}
                 <th className="px-4 py-3"><SortHeader label="Sl." sortKey="sl" /></th>
                 <th className="px-4 py-3">SO No.</th>
                 <th className="px-4 py-3">Chat</th>
@@ -160,10 +155,9 @@ export function BillingWorkspace({
                 <th className="px-4 py-3">Order Type</th>
                 <th className="px-4 py-3">Client Name</th>
                 <th className="px-4 py-3">Bill Type</th>
-                <th className="px-4 py-3">Payment Terms</th>
+                <th className="px-4 py-3">{mode === "billing" ? "Payment terms & PIs" : "Payment Terms"}</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
                 {mode === "dispatch" && <th className="px-4 py-3">Dispatch Status</th>}
-                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody className="divide-y divide-card-border">
@@ -175,17 +169,24 @@ export function BillingWorkspace({
                 </tr>
               )}
               {pageRows.map((row) => {
-                const isChallan = row.bill_type === "Challan";
-                const piLock = lockReason("order_billing_docs", row);
-                const isOpen = expanded.has(row.id);
+                // Billing works on the row itself; only Dispatch opens one.
+                const isOpen = mode === "dispatch" && expanded.has(row.id);
                 return (
                   <Fragment key={row.id}>
                     <tr
                       data-focus-row={String(row.id)}
-                      className={`text-foreground transition-colors hover:bg-background/60 ${focusClass(
+                      // A click on the row opens its Order details — but not a
+                      // click on its own buttons, links or fields.
+                      onClick={(e) => {
+                        if ((e.target as HTMLElement).closest("button, a, input, select, textarea, label, [role=dialog]")) return;
+                        setOrderDetailsFor(row.id);
+                      }}
+                      title="Click for order details"
+                      className={`cursor-pointer text-foreground transition-colors hover:bg-background/60 ${focusClass(
                         String(row.id)
                       )}`}
                     >
+                      {mode === "dispatch" && (
                       <td className="px-2 py-3 text-center">
                         <button
                           type="button"
@@ -201,6 +202,7 @@ export function BillingWorkspace({
                           )}
                         </button>
                       </td>
+                      )}
                       <td className="px-4 py-3 font-medium tabular-nums">{row.sl_no}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{row.so_no ?? "—"}
                         <HoldBadge order={row} />
@@ -227,7 +229,20 @@ export function BillingWorkspace({
                       <td className="px-4 py-3 whitespace-nowrap">{row.order_type ?? "—"}</td>
                       <td className="px-4 py-3">{row.client_name ?? "—"}</td>
                       <td className="px-4 py-3">{row.bill_type ?? "—"}</td>
-                      <td className="px-4 py-3">{row.payment_terms ?? "—"}</td>
+                      <td className={`px-4 py-3 ${mode === "billing" ? "align-top" : ""}`}>
+                        {/* Billing: each term line with its PI, or "+ PI". */}
+                        {mode === "billing" ? (
+                          <TermPis
+                            orderId={row.id}
+                            soLabel={row.so_no ?? String(row.sl_no)}
+                            terms={(row.term_lines ?? []) as Row[]}
+                            pis={(row.pi_docs ?? []) as Row[]}
+                            canEdit={canEdit}
+                          />
+                        ) : (
+                          row.payment_terms ?? "—"
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-right tabular-nums">
                         {formatValue(row.order_value)}
                         {row.order_currency ? ` ${row.order_currency}` : ""}
@@ -243,62 +258,11 @@ export function BillingWorkspace({
                         )}
                       </td>
                       )}
-                      <td className="px-4 py-3 whitespace-nowrap text-right">
-                        <button
-                          type="button"
-                          onClick={() => setOrderDetailsFor(row.id)}
-                          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
-                        >
-                          <ClipboardList className="h-3.5 w-3.5" />
-                          Order details
-                        </button>
-                      </td>
                     </tr>
                     {isOpen && (
                       <tr className="bg-background/40">
                         <td colSpan={12} className="p-0">
                           <div className="space-y-4 px-4 py-3">
-                            {/* Challan orders skip the Operation card — their
-                                challan fields live inside each Dispatch
-                                card. Tax Invoice orders keep the PI list. */}
-                            {mode === "billing" && !isChallan && piLock && (
-                              <section className="rounded-xl border border-card-border bg-surface p-4 shadow-sm">
-                                <h3 className="text-sm font-semibold text-foreground">
-                                  Operation
-                                </h3>
-                                <p className="mt-1 text-sm text-muted">{piLock}</p>
-                              </section>
-                            )}
-                            {mode === "billing" && !isChallan && !piLock && (
-                              <OrderChildList
-                                orderId={row.id}
-                                table="order_billing_docs"
-                                title="Operation"
-                                fields={BILLING_DOC_FIELDS}
-                                rows={(row.pi_docs ?? []) as Row[]}
-                                canEdit={canEdit}
-                                headerAction={
-                                  <>
-                                    <DeptCompleteCheck
-                                      scopeId={String(row.id)}
-                                      dept="billing"
-                                      label={`${row.so_no ?? row.sl_no ?? ""} · Operation`}
-                                      completion={completionFor(
-                                        completions,
-                                        "billing",
-                                        String(row.id),
-                                        false
-                                      )}
-                                      canEdit={canEdit}
-                                    />
-                                    {canEdit ? (
-                                      <PiExcelUpload orderId={row.id} />
-                                    ) : null}
-                                  </>
-                                }
-                              />
-                            )}
-
                             {/* Dispatch — invoice, dispatch and docket
                                 details, one card per dispatch. The SO's
                                 dispatch status derives from these. For Challan

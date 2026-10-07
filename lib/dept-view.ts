@@ -119,12 +119,11 @@ function drawingInvolvedSql(order: string): string {
 }
 
 /**
- * Paid only once the client has the material: no PI to raise and no receipt
- * to chase. Read from the order's payment terms — every line counted from
- * receipt — rather than from prose or a second answer to the same question.
+ * Paid after receipt used to make Billing and Accounts N/A. PIs and payments
+ * are now recorded on every order, whatever its terms, so nothing is N/A for
+ * that reason — this stays the one switch, should that change again.
  */
-const paidAfterReceipt = (r: OrderOverviewRow) =>
-  (r as { after_receipt_only?: boolean }).after_receipt_only === true;
+const paidAfterReceipt: (r: OrderOverviewRow) => boolean = () => false;
 
 export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
   drawing: {

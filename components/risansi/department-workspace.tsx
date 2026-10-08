@@ -330,7 +330,7 @@ export function DepartmentWorkspace({
   // the queue actually matches its condition (e.g. Tax columns appear only if
   // some SO's bill_type is Tax).
   const visibleFields = fields.filter(
-    (f) => !f.dependsOn || orders.some((o) => fieldApplies(f, o))
+    (f) => !f.listHidden && (!f.dependsOn || orders.some((o) => fieldApplies(f, o)))
   );
   // A section can be purely a child list (Drawing → revisions). Then the flat
   // per-EC table and its Edit button carry nothing, so we skip them entirely.

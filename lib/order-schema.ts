@@ -61,6 +61,9 @@ export type OrderField = {
   // Status is Clear unless held, GST is 18% unless changed). A select with it
   // offers no blank choice.
   defaultValue?: string;
+  // Shown and edited in the form, but not given a column in the department's
+  // list (Accounts' GST %).
+  listHidden?: boolean;
 };
 
 /** Turn a list of strings into { value, label } option objects. */
@@ -533,7 +536,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
       },
       { column: "payment_confirmed_date", label: "Payment Confirmed Date", type: "date" },
       // The GST Accounts applies to the order value: 18% unless changed.
-      { column: "gst_rate", label: "GST %", type: "number", min: 0, defaultValue: "18" },
+      { column: "gst_rate", label: "GST %", type: "number", min: 0, defaultValue: "18", listHidden: true },
       // With GST. It may run past the order value — what came in is recorded.
       { column: "amount_received", label: "Amount Received", type: "number", min: 0 },
       {
@@ -1300,6 +1303,8 @@ export const SO_CONTEXT_FIELDS: OrderField[] = [
 // Payment Terms (owned by Central Visibility) shown read-only in the Accounts
 // workspace.
 export const PAYMENT_TERMS_CONTEXT_FIELDS: OrderField[] = [
+  // Who the SO is for, beside the client's name.
+  { column: "client_code", label: "Client Code", type: "text" },
   ...SO_CONTEXT_FIELDS,
   { column: "payment_terms", label: "Payment Terms", type: "text" },
   // What the payments are counted against: the value, and with GST at the

@@ -20,8 +20,7 @@ import {
   canonicalSelectValue,
   dependsOnSatisfied,
   type ChildTable,
-  type OrderField,
-} from "@/lib/order-schema";
+  type OrderField, billModeLabel } from "@/lib/order-schema";
 import { canAccessDepartment, canCreateOrders, canSeeClient, isCentral } from "@/lib/roles";
 import type { TargetRevision } from "@/lib/target-dates";
 import { ItemSections } from "./item-sections";
@@ -263,7 +262,7 @@ export function OrderOverview({
             <div className="mt-2 flex flex-wrap gap-1.5">
               {[
                 str(order.order_type),
-                str(order.bill_type),
+                billModeLabel(order.bill_mode, order.bill_type),
                 str(order.market_type),
                 str(order.zone),
                 str(order.boi) === "Yes" ? "BOI" : "",

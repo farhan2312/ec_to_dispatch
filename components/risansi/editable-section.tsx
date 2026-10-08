@@ -60,7 +60,10 @@ export function formatDisplay(field: OrderField, value: unknown): string {
     const n = Number(value);
     if (Number.isFinite(n)) return new Intl.NumberFormat("en-IN").format(n);
   }
-  if (field.type === "select") return canonicalSelectValue(field, String(value));
+  if (field.type === "select") {
+    const v = canonicalSelectValue(field, String(value));
+    return field.options?.find((o) => o.value === v)?.label ?? v;
+  }
   return String(value);
 }
 

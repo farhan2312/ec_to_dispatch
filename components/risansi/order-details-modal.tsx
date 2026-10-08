@@ -12,7 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { getOrderCoreAction } from "@/app/risansi/orders/actions";
-import { SECTION_BY_TABLE, dependsOnSatisfied, type OrderField } from "@/lib/order-schema";
+import { SECTION_BY_TABLE, billModeLabel, dependsOnSatisfied, type OrderField } from "@/lib/order-schema";
 import { formatDisplay } from "./editable-section";
 
 const CORE = SECTION_BY_TABLE.get("orders")!;
@@ -103,7 +103,7 @@ export function OrderDetailsModal({
                 </h2>
                 {str(order.client_name) && <p className="truncate text-sm text-muted">{str(order.client_name)}</p>}
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {[str(order.order_type), str(order.bill_mode), str(order.bill_type)]
+                  {[str(order.order_type), billModeLabel(order.bill_mode, order.bill_type)]
                     .filter(Boolean)
                     .map((t) => (
                       <span key={t} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600">

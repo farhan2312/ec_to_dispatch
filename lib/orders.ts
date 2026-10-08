@@ -2239,6 +2239,10 @@ export type BillingQueueRow = {
   pi_docs: Row[];
   /** The SO's payment term lines, in order — each takes one PI (Billing). */
   term_lines: Row[];
+  /** Planning's readiness across the SO's ECs: earliest and latest date, and the status when every EC shares it. */
+  readiness_from: string | null;
+  readiness_to: string | null;
+  readiness_status: string | null;
   invoices: Row[];
   /** The SO's actual packing slips, each with the dispatch it went out on. */
   packing_slips: Row[];
@@ -2280,6 +2284,18 @@ export async function listOrdersForBilling(
                         'days', t.days, 'documents', t.documents) ORDER BY t.seq)
                       FROM order_payment_terms t WHERE t.order_id = o.id),
                      '[]'::jsonb) AS term_lines,
+            -- Planning's readiness, for Billing to see when the SO will be ready.
+            (SELECT to_char(min(rp.planning_readiness_date), 'YYYY-MM-DD')
+               FROM order_items ri JOIN order_planning rp ON rp.item_id = ri.id
+              WHERE ri.order_id = o.id) AS readiness_from,
+            (SELECT to_char(max(rp.planning_readiness_date), 'YYYY-MM-DD')
+               FROM order_items ri JOIN order_planning rp ON rp.item_id = ri.id
+              WHERE ri.order_id = o.id) AS readiness_to,
+            (SELECT CASE WHEN count(DISTINCT st) = 1 AND count(st) = count(*) THEN max(st) END
+               FROM (SELECT COALESCE(NULLIF(rp.actual_spare_status, ''), NULLIF(rp.actual_pump_status, ''),
+                                     NULLIF(rp.planning_status, '')) AS st
+                       FROM order_items ri LEFT JOIN order_planning rp ON rp.item_id = ri.id
+                      WHERE ri.order_id = o.id) s) AS readiness_status,
             COALESCE((SELECT jsonb_agg((to_jsonb(inv) - 'lr_file_data') || jsonb_build_object(
                         'slips', COALESCE((SELECT jsonb_agg(jsonb_build_object(
                          'id', ps.id, 'packing_slip_no', ps.packing_slip_no,

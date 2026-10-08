@@ -1,12 +1,12 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
-import { ChevronDown, MessageSquare, Plus } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import type { BillingQueueRow } from "@/lib/orders";
 import { TermPis } from "./term-pis";
+import { billModeLabel } from "@/lib/order-schema";
 import { OrderDetailsModal } from "./order-details-modal";
-import { DispatchSlipPicker } from "./dispatch-slip-picker";
-import { DispatchList } from "./dispatch-list";
+import { DispatchInline } from "./dispatch-inline";
 import { SortHeader } from "./sort-header";
 import { HoldBadge } from "./hold-badge";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
@@ -84,7 +84,6 @@ export function BillingWorkspace({
   const emptyMessage = getParam("q")
     ? "No orders match your search."
     : "No orders yet.";
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [threadFor, setThreadFor] = useState<{
     orderId: string;
     soLabel: string;
@@ -104,24 +103,8 @@ export function BillingWorkspace({
   const [orderDetailsFor, setOrderDetailsFor] = useState<string | null>(null);
   const pageRows = rows;
 
-  useEffect(() => {
-    if (!openOrderId) return;
-    if (rows.some((r) => r.id === openOrderId)) {
-      setExpanded((prev) => new Set(prev).add(openOrderId));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openOrderId]);
-
   const focusClass = useFocusRow([focusOrderId ?? openOrderId], rows.length > 0);
 
-  function toggle(id: string) {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
 
 
   return (
@@ -147,15 +130,15 @@ export function BillingWorkspace({
           <table className="w-full min-w-[880px] text-sm">
             <thead>
               <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
-                {mode === "dispatch" && <th className="w-8 px-2 py-3" />}
                 <th className="px-4 py-3"><SortHeader label="Sl." sortKey="sl" /></th>
                 <th className="px-4 py-3">SO No.</th>
                 <th className="px-4 py-3">Chat</th>
                 <th className="px-4 py-3"><SortHeader label="SO Date" sortKey="so_date" /></th>
+                {mode === "billing" && <th className="px-4 py-3 whitespace-nowrap">Readiness Date</th>}
                 <th className="px-4 py-3">Order Type</th>
                 <th className="px-4 py-3">Client Name</th>
-                <th className="px-4 py-3">Bill Type</th>
-                <th className="px-4 py-3">{mode === "billing" ? "Payment terms & PIs" : "Payment Terms"}</th>
+                <th className="px-4 py-3">Bill Mode</th>
+                <th className="px-4 py-3">{mode === "billing" ? "Payment terms & PIs" : "Packing slips & dispatches"}</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
                 {mode === "dispatch" && <th className="px-4 py-3">Dispatch Status</th>}
               </tr>
@@ -169,8 +152,6 @@ export function BillingWorkspace({
                 </tr>
               )}
               {pageRows.map((row) => {
-                // Billing works on the row itself; only Dispatch opens one.
-                const isOpen = mode === "dispatch" && expanded.has(row.id);
                 return (
                   <Fragment key={row.id}>
                     <tr
@@ -186,23 +167,6 @@ export function BillingWorkspace({
                         String(row.id)
                       )}`}
                     >
-                      {mode === "dispatch" && (
-                      <td className="px-2 py-3 text-center">
-                        <button
-                          type="button"
-                          onClick={() => toggle(row.id)}
-                          aria-label={isOpen ? "Collapse" : "Expand"}
-                          aria-expanded={isOpen}
-                          className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-input-border text-muted-foreground transition-transform hover:bg-background"
-                        >
-                          {isOpen ? (
-                            <ChevronDown className="h-3.5 w-3.5" />
-                          ) : (
-                            <Plus className="h-3.5 w-3.5" />
-                          )}
-                        </button>
-                      </td>
-                      )}
                       <td className="px-4 py-3 font-medium tabular-nums">{row.sl_no}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{row.so_no ?? "—"}
                         <HoldBadge order={row} />
@@ -226,11 +190,26 @@ export function BillingWorkspace({
                         </button>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDate(row.so_date)}</td>
+                      {/* Planning's readiness date (a range when the ECs differ), and
+                          the status when they all share it. */}
+                      {mode === "billing" && (
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          {row.readiness_from
+                            ? row.readiness_to && row.readiness_to !== row.readiness_from
+                              ? `${formatDate(row.readiness_from)} – ${formatDate(row.readiness_to)}`
+                              : formatDate(row.readiness_from)
+                            : "—"}
+                          {row.readiness_status && (
+                            <div className="text-[11px] text-muted">{row.readiness_status}</div>
+                          )}
+                        </td>
+                      )}
                       <td className="px-4 py-3 whitespace-nowrap">{row.order_type ?? "—"}</td>
                       <td className="px-4 py-3">{row.client_name ?? "—"}</td>
-                      <td className="px-4 py-3">{row.bill_type ?? "—"}</td>
-                      <td className={`px-4 py-3 ${mode === "billing" ? "align-top" : ""}`}>
-                        {/* Billing: each term line with its PI, or "+ PI". */}
+                      <td className="px-4 py-3">{billModeLabel(null, row.bill_type) || "—"}</td>
+                      <td className="px-4 py-3 align-top">
+                        {/* Billing: each term line with its PI, or "+ PI".
+                            Dispatch: each dispatch and the slips still waiting. */}
                         {mode === "billing" ? (
                           <TermPis
                             orderId={row.id}
@@ -240,7 +219,13 @@ export function BillingWorkspace({
                             canEdit={canEdit}
                           />
                         ) : (
-                          row.payment_terms ?? "—"
+                          <DispatchInline
+                            orderId={row.id}
+                            slips={(row.packing_slips ?? []) as Row[]}
+                            invoices={(row.invoices ?? []) as Row[]}
+                            billType={row.bill_type}
+                            canEdit={canEdit}
+                          />
                         )}
                       </td>
                       <td className="px-4 py-3 text-right tabular-nums">
@@ -259,36 +244,6 @@ export function BillingWorkspace({
                       </td>
                       )}
                     </tr>
-                    {isOpen && (
-                      <tr className="bg-background/40">
-                        <td colSpan={12} className="p-0">
-                          <div className="space-y-4 px-4 py-3">
-                            {/* Dispatch — invoice, dispatch and docket
-                                details, one card per dispatch. The SO's
-                                dispatch status derives from these. For Challan
-                                orders the "Invoice" phase collects challan
-                                fields instead (bill_type context gates it). */}
-                            {mode === "dispatch" && (
-                            <DispatchSlipPicker
-                              orderId={row.id}
-                              slips={(row.packing_slips ?? []) as Row[]}
-                              invoices={(row.invoices ?? []) as Row[]}
-                              billType={row.bill_type}
-                              canEdit={canEdit}
-                            />
-                            )}
-                            {mode === "dispatch" && (
-                              <DispatchList
-                                orderId={row.id}
-                                invoices={(row.invoices ?? []) as Row[]}
-                                billType={row.bill_type}
-                                canEdit={canEdit}
-                              />
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
                   </Fragment>
                 );
               })}

@@ -53,6 +53,7 @@ import {
   CHILD_FIELDS,
   ORDER_STATUS_OPTIONS,
   SECTION_BY_TABLE,
+  BILL_TYPE_FOR_MODE,
   ORDER_MAKING_EDITABLE,
   ORDER_MAKING_FIELDS,
   firstMissingAddOnField,
@@ -103,10 +104,7 @@ import { getUsdInrRate } from "@/lib/settings";
 import { lockReason } from "@/lib/order-lock";
 import {
   checkFieldBounds,
-  checkReceivedWithinValue,
   cleanBoiRows,
-  numericValue,
-  orderValueWithGst,
 } from "@/lib/order-validation";
 import {
   childLabel,
@@ -152,6 +150,8 @@ export async function createOrderAction(
   if (!(input.client_code ?? "").trim()) {
     return { ok: false, error: "Client Code is required." };
   }
+  // The bill type follows the Bill Mode.
+  if (input.bill_mode) input = { ...input, bill_type: BILL_TYPE_FOR_MODE[input.bill_mode] ?? input.bill_type };
   if (input.clearance_status === "Hold" && !(input.clearance_hold_reason ?? "").trim()) {
     return { ok: false, error: "Choose a Hold Reason." };
   }
@@ -702,42 +702,16 @@ export async function updateOrderSectionAction(
       // the fields; this is the same rule on the endpoint.
       const locked = lockReason(tbl, before?.order as never, user.role);
       if (locked) return { ok: false, error: locked };
-      // Amount received (with GST) never exceeds the order value with GST —
-      // checked from whichever side is being saved (the amount, the GST rate,
-      // or the order's value), so neither can be moved past the other.
-      const accountsBefore = (before as Record<string, unknown> | null)?.order_accounts as
-        | Record<string, unknown>
-        | null
-        | undefined;
-      if (
-        before &&
-        tbl === "order_accounts" &&
-        ("amount_received" in allowedValues || "gst_rate" in allowedValues)
-      ) {
-        const received = "amount_received" in allowedValues
-          ? allowedValues.amount_received
-          : accountsBefore?.amount_received;
-        const rate = "gst_rate" in allowedValues ? allowedValues.gst_rate : accountsBefore?.gst_rate;
-        const problem = checkReceivedWithinValue(
-          numericValue(received),
-          orderValueWithGst(before.order, rate),
-          "received"
-        );
-        if (problem) return { ok: false, error: problem };
-      }
-      if (
-        before &&
-        tbl === "orders" &&
-        ("order_value" in allowedValues || "order_currency" in allowedValues)
-      ) {
-        const problem = checkReceivedWithinValue(
-          numericValue(accountsBefore?.amount_received),
-          orderValueWithGst({ ...before.order, ...allowedValues }, accountsBefore?.gst_rate),
-          "order value"
-        );
-        if (problem) return { ok: false, error: problem };
-      }
+      // The amount received may exceed the order value (with GST): Accounts
+      // records what actually came in.
       await updateOrderSection(id, tbl, allowedValues);
+      // The bill type follows the Bill Mode (it is no longer chosen on its own).
+      if (tbl === "orders" && "bill_mode" in allowedValues) {
+        await query(`UPDATE orders SET bill_type = $2 WHERE id = $1`, [
+          id,
+          BILL_TYPE_FOR_MODE[allowedValues.bill_mode] ?? null,
+        ]);
+      }
       const after = before ? await getOrderDetail(id) : null;
       const pick = (d: NonNullable<typeof before>) =>
         tbl === "orders"

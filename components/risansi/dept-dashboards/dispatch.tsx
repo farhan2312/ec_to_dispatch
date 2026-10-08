@@ -1,6 +1,7 @@
 "use client";
 
 import { PackageCheck } from "lucide-react";
+import { billModeLabel } from "@/lib/order-schema";
 import {
   DeptStatCards,
   FilterBar,
@@ -64,7 +65,7 @@ export function DispatchDashboard(props: DeptDashboardProps) {
           c.so,
           c.client,
           c.zone,
-          textColumn("bill", "Bill type", (r) => r.bill_type),
+          textColumn("bill", "Bill mode", (r) => billModeLabel(null, r.bill_type)),
           textColumn("packed", "Packed", (r) => (r.so_packed ? "Yes" : "—")),
           c.target,
           c.status,

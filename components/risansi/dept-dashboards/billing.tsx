@@ -1,6 +1,7 @@
 "use client";
 
 import { FileText } from "lucide-react";
+import { billModeLabel } from "@/lib/order-schema";
 import { MultiSelectFilter } from "../multi-select-filter";
 import { useState } from "react";
 import {
@@ -86,7 +87,7 @@ export function BillingDashboard(props: DeptDashboardProps) {
           c.so,
           c.client,
           c.zone,
-          textColumn("bill", "Bill type", (r) => r.bill_type),
+          textColumn("bill", "Bill mode", (r) => billModeLabel(null, r.bill_type)),
           textColumn("terms", "Payment terms", (r) => r.payment_terms),
           c.status,
           c.signOff,

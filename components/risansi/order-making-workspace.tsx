@@ -8,7 +8,6 @@ import { ClearanceChip } from "./orders-table";
 import { DATE_PRESETS, presetRange } from "@/lib/order-list-filter";
 import {
   BILL_MODE_FILTER_OPTIONS,
-  BILL_TYPE_FILTER_OPTIONS,
   OM_DATE_FIELDS,
   OM_FILTER_KEYS,
   isOrderMakingFiltered,
@@ -83,7 +82,6 @@ export function OrderMakingWorkspace({
     { column: "client_name", label: "Client Name" },
     { column: "order_type", label: "Order Type" },
     { column: "bill_mode", label: "Bill Mode" },
-    { column: "bill_type", label: "Bill Type" },
     { column: "po_no", label: "PO No." },
     { column: "order_value", label: "Order Value" },
   ];
@@ -108,13 +106,6 @@ export function OrderMakingWorkspace({
           options={BILL_MODE_FILTER_OPTIONS}
           selected={filter.billModes}
           onChange={(next) => setParams({ bmode: next })}
-        />
-        <MultiSelectFilter
-          label="Bill type"
-          allLabel="Any bill type"
-          options={BILL_TYPE_FILTER_OPTIONS}
-          selected={filter.billTypes}
-          onChange={(next) => setParams({ btype: next })}
         />
         <button
           type="button"
@@ -404,7 +395,7 @@ function OrderMakingEdit({ row, onClose }: { row: OrderMakingRow | null; onClose
 
   // A Challan order is worth 0 INR: its value and currency are set, not typed.
   const challanLocked = (f: OrderField) =>
-    read("bill_type") === "Challan" && (f.column === "order_value" || f.column === "order_currency");
+    read("bill_mode") === "FR" && (f.column === "order_value" || f.column === "order_currency");
   const input = (f: OrderField) => {
     const on = !challanLocked(f);
     return f.type === "select" ? (

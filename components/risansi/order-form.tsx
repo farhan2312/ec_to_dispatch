@@ -12,7 +12,6 @@ import {
   CLEARANCE_HOLD_REASONS,
   CLEARANCE_OPTIONS,
   BILL_MODE_OPTIONS,
-  BILL_TYPE_OPTIONS,
   CURRENCY_OPTIONS,
   ORDER_TYPE_OPTIONS,
   YES_NO_OPTIONS,
@@ -65,12 +64,6 @@ const SECTIONS: Section[] = [
         label: "Bill Mode",
         type: "select",
         options: BILL_MODE_OPTIONS,
-      },
-      {
-        name: "bill_type",
-        label: "Bill Type",
-        type: "select",
-        options: BILL_TYPE_OPTIONS,
       },
       // An FR stands on a complaint, with no quotation or purchase order.
       { name: "complaint_no", label: "Complaint No.", type: "text", dependsOn: { name: "bill_mode", value: "FR" } },
@@ -271,9 +264,9 @@ export function OrderForm() {
   const applies = (field: Field) =>
     !field.dependsOn ||
     ((values[field.dependsOn.name] ?? "") === field.dependsOn.value) === !field.dependsOn.not;
-  // A Challan order is worth 0 INR: its value and currency are set, not typed.
+  // A Challan / FR order is worth 0 INR: its value and currency are set, not typed.
   const challanLocked = (field: Field) =>
-    values.bill_type === "Challan" && (field.name === "order_value" || field.name === "order_currency");
+    values.bill_mode === "FR" && (field.name === "order_value" || field.name === "order_currency");
 
   // Picking a client from the Market Intell directory fills the Client
   // section; everything else on the form is left untouched.

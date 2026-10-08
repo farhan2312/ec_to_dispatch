@@ -69,6 +69,8 @@ export const HOLD_REASON_FILTER_OPTIONS = CLEARANCE_HOLD_REASONS.map((o) => o.va
 
 /** The departments that see those two filters. */
 export const PAYMENT_FILTER_DEPTS: readonly string[] = ["billing", "accounts"];
+/** The departments that filter by Bill Mode: those two, and Planning. */
+export const BILL_MODE_FILTER_DEPTS: readonly string[] = ["billing", "accounts", "planning"];
 
 export const DATE_PRESETS = [
   "Today",
@@ -246,7 +248,7 @@ export function parseOrderListFilter(
         ? list(get("pterm")).filter((v) => PAYMENT_TERM_FILTER_OPTIONS.includes(v))
         : [],
     billModes:
-      dept && PAYMENT_FILTER_DEPTS.includes(dept)
+      dept && BILL_MODE_FILTER_DEPTS.includes(dept)
         ? list(get("bmode")).filter((v) => BILL_MODE_FILTER_OPTIONS.includes(v))
         : [],
     clearance: list(get("clear")).filter((v) => CLEARANCE_FILTER_OPTIONS.includes(v)),

@@ -18,6 +18,7 @@ import {
   DATE_PRESETS,
   FIELD_FILTER_FIELDS,
   PAYMENT_FILTER_DEPTS,
+  BILL_MODE_FILTER_DEPTS,
   PAYMENT_TERM_FILTER_OPTIONS,
   FIELD_STATES,
   ORDER_DATE_FIELDS,
@@ -170,11 +171,12 @@ export function OrderListFilterBar({
             const keepsTarget =
               next && next !== "dispatch" && DEPT_VIEWS[next as DeptFilterKey].hasTarget;
             const keepsPayment = !!next && PAYMENT_FILTER_DEPTS.includes(next);
+            const keepsBillMode = !!next && BILL_MODE_FILTER_DEPTS.includes(next);
             setParams({
               dept: next,
               dstatus: status,
               pterm: keepsPayment ? filter.paymentTerms : null,
-              bmode: keepsPayment ? filter.billModes : null,
+              bmode: keepsBillMode ? filter.billModes : null,
               signoff: next ? filter.signOff : null,
               datefield:
                 filter.dateField === "dept_target" && !keepsTarget
@@ -196,24 +198,25 @@ export function OrderListFilterBar({
             onChange={(next) => setParams({ dstatus: next })}
           />
         )}
-        {/* Billing and Accounts: how the SO is paid, and how it is billed. */}
+        {/* Billing and Accounts: how the SO is paid. */}
         {activeDept && PAYMENT_FILTER_DEPTS.includes(activeDept) && (
-          <>
-            <MultiSelectFilter
-              label="Payment terms"
-              allLabel="Any terms"
-              options={PAYMENT_TERM_FILTER_OPTIONS}
-              selected={filter.paymentTerms}
-              onChange={(next) => setParams({ pterm: next })}
-            />
-            <MultiSelectFilter
-              label="Bill mode"
-              allLabel="Any mode"
-              options={BILL_MODE_FILTER_OPTIONS}
-              selected={filter.billModes}
-              onChange={(next) => setParams({ bmode: next })}
-            />
-          </>
+          <MultiSelectFilter
+            label="Payment terms"
+            allLabel="Any terms"
+            options={PAYMENT_TERM_FILTER_OPTIONS}
+            selected={filter.paymentTerms}
+            onChange={(next) => setParams({ pterm: next })}
+          />
+        )}
+        {/* Billing, Accounts and Planning: how the SO is billed. */}
+        {activeDept && BILL_MODE_FILTER_DEPTS.includes(activeDept) && (
+          <MultiSelectFilter
+            label="Bill mode"
+            allLabel="Any mode"
+            options={BILL_MODE_FILTER_OPTIONS}
+            selected={filter.billModes}
+            onChange={(next) => setParams({ bmode: next })}
+          />
         )}
         {/* The orders list: Central Visibility's clearance, and why SOs are held. */}
         {noDispatchTarget && (

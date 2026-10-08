@@ -85,7 +85,22 @@ export const PUMP_TYPE_OPTIONS = opts(["PCP", "MMP", "RBL", "OLB"]);
 // PI: Tax Invoice → PI No./Date/Value; Challan → Challan No./Date/Value + FR.
 export const BILL_TYPE_OPTIONS = opts(["Tax Invoice", "Challan"]);
 // Whether the order is billed, or an FR — which carries no quotation or PO.
-export const BILL_MODE_OPTIONS = opts(["Billing", "FR"]);
+// Bill Mode is the one choice: Billing goes with a Tax Invoice, FR with a
+// Challan. The bill type is kept on the order, set from it (BILL_TYPE_FOR_MODE),
+// for the rules that read it — the Challan's 0 value, Billing and Accounts.
+export const BILL_MODE_OPTIONS = [
+  { value: "Billing", label: "Billing / Tax Invoice" },
+  { value: "FR", label: "Challan / FR" },
+];
+export const BILL_TYPE_FOR_MODE: Record<string, string> = { Billing: "Tax Invoice", FR: "Challan" };
+
+/** How an SO's Bill Mode reads ("Billing / Tax Invoice"), from either column. */
+export function billModeLabel(billMode: unknown, billType?: unknown): string {
+  const mode =
+    String(billMode ?? "").trim() ||
+    (String(billType ?? "").trim() === "Challan" ? "FR" : String(billType ?? "").trim() === "Tax Invoice" ? "Billing" : "");
+  return BILL_MODE_OPTIONS.find((o) => o.value === mode)?.label ?? "";
+}
 
 // Clearance: Central Visibility releases an SO to the departments (Clear) or
 // holds it, with the reason kept for regular review.
@@ -257,13 +272,6 @@ export const ORDER_SECTIONS: OrderSection[] = [
         label: "Bill Mode",
         type: "select",
         options: BILL_MODE_OPTIONS,
-        group: "Purchase Order",
-      },
-      {
-        column: "bill_type",
-        label: "Bill Type",
-        type: "select",
-        options: BILL_TYPE_OPTIONS,
         group: "Purchase Order",
       },
       // An FR stands on a complaint instead.
@@ -526,8 +534,7 @@ export const ORDER_SECTIONS: OrderSection[] = [
       { column: "payment_confirmed_date", label: "Payment Confirmed Date", type: "date" },
       // The GST Accounts applies to the order value: 18% unless changed.
       { column: "gst_rate", label: "GST %", type: "number", min: 0, defaultValue: "18" },
-      // With GST, and capped at the order value with GST — see
-      // checkReceivedWithinValue.
+      // With GST. It may run past the order value — what came in is recorded.
       { column: "amount_received", label: "Amount Received", type: "number", min: 0 },
       {
         column: "balance_of_payment",
@@ -964,7 +971,11 @@ export function withValueRules<T extends Record<string, unknown>>(
   value: string
 ): T {
   const next: Record<string, unknown> = { ...prev, [column]: value };
-  if (column === "bill_type" && value === "Challan") {
+  // Bill Mode carries the bill type with it.
+  if (column === "bill_mode") {
+    next.bill_type = BILL_TYPE_FOR_MODE[value] ?? "";
+  }
+  if ((column === "bill_type" && value === "Challan") || (column === "bill_mode" && value === "FR")) {
     next.order_value = "0";
     next.order_currency = "INR";
   }
@@ -1360,6 +1371,8 @@ export const PLANNING_CONTEXT_FIELDS: OrderField[] = [
   { column: "ld", label: "LD", type: "select", options: YES_NO },
   { column: "ld_date", label: "LD Date", type: "date" },
   { column: "boi", label: "BOI", type: "select", options: YES_NO },
+  // Billing / Tax Invoice or Challan / FR — what the SO goes out on.
+  { column: "bill_mode", label: "Bill Mode", type: "select", options: BILL_MODE_OPTIONS },
 ];
 
 /** Coerce a raw form string to the storable value for a field type. */

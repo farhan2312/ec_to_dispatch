@@ -97,7 +97,10 @@ function formatValue(field: OrderField, value: unknown): string {
       });
     }
   }
-  if (field.type === "select") return canonicalSelectValue(field, s);
+  if (field.type === "select") {
+    const v = canonicalSelectValue(field, s);
+    return field.options?.find((o) => o.value === v)?.label ?? v;
+  }
   return s;
 }
 

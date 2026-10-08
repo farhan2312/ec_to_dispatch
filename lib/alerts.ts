@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { orderOpenSql, orderStatusSql, spareEcSql } from "@/lib/dept-view";
+import { assemblyDueSql, orderOpenSql, orderStatusSql, spareEcSql } from "@/lib/dept-view";
 
 /** A cancelled or diverted order raises no escalation. `a.id` is the SO. */
 const OPEN_ONLY = `EXISTS (SELECT 1 FROM orders oo WHERE oo.id = a.id AND ${orderOpenSql("oo")})`;
@@ -81,17 +81,17 @@ const ALERTS_SQL = `
      AND qc.qc_doc_actual_date IS NULL
 
   UNION ALL
-  -- Assembly & Packing: the EC is not packed by the packing team's target.
+  -- Assembly & Packing: the EC (or a readiness lot of it) is not packed by
+  -- Planning's readiness date.
   -- Judged on the packing date alone — whether the order has since been
   -- dispatched is Dispatch's arm, below.
   SELECT o.id, it.id, o.sl_no::int, o.so_no, it.ec_no, o.client_name,
          'Assembly & Packing'::text, 'overdue'::text,
-         to_char(o.dispatch_team_target_date, 'YYYY-MM-DD'),
-         (${TODAY_IST} - o.dispatch_team_target_date)::int
+         to_char(a.due, 'YYYY-MM-DD'),
+         (${TODAY_IST} - a.due)::int
     FROM orders o JOIN order_items it ON it.order_id = o.id
-    LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
-   WHERE o.dispatch_team_target_date < ${TODAY_IST}
-     AND ad.actual_packing_date IS NULL
+    CROSS JOIN LATERAL (SELECT ${assemblyDueSql("it")} AS due) a
+   WHERE a.due < ${TODAY_IST}
 
   UNION ALL
   -- Dispatch: the order has not gone out by its dispatch date (a revision

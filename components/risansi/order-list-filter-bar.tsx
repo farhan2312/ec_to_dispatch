@@ -327,8 +327,9 @@ export function OrderListFilterBar({
           options={ORDER_DATE_FIELDS.filter((f) => {
             // Planning reads by its readiness date, not a target.
             if (f.value === "dept_target") return deptTarget && activeDept !== "planning";
-            // Assembly & Packing works from Planning's readiness date too.
-            if (f.value === "readiness") return activeDept === "planning" || activeDept === "assembly";
+            // Assembly & Packing and Billing work from Planning's readiness date too.
+            if (f.value === "readiness")
+              return activeDept === "planning" || activeDept === "assembly" || activeDept === "billing";
             if (f.value === "dispatch_target") return !dept && !noDispatchTarget;
             // Completion dates come from sign-offs, which are switched off.
             if (f.value === "completed_on") return SIGN_OFF_ENABLED;
@@ -340,7 +341,7 @@ export function OrderListFilterBar({
           selected={filter.dateField}
           onChange={(next) => {
             const fallback =
-              dept === "planning"
+              dept === "planning" || dept === "assembly"
                 ? "readiness"
                 : dept
                   ? hasTarget

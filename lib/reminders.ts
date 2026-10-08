@@ -1,5 +1,5 @@
 import { query } from "@/lib/db";
-import { orderOpenSql, orderStatusSql, releasedSql, spareEcSql } from "@/lib/dept-view";
+import { assemblyDueSql, orderOpenSql, orderStatusSql, releasedSql, spareEcSql } from "@/lib/dept-view";
 import { isCentral, reminderDeptForRole, type ReminderDept } from "@/lib/roles";
 
 // The DB session runs in UTC, but the business operates on IST days. Deadlines
@@ -121,21 +121,21 @@ const REMINDERS_SQL = `
    WHERE r.due <= ${TODAY_IST} + 7
 
   UNION ALL
-  -- Assembly & Packing due to complete, against the packing team's target
-  -- date (SO-level). Fires while any EC is still unpacked. Whether the
-  -- order has since gone out is Dispatch's arm, below.
+  -- Assembly & Packing due to complete, against Planning's readiness date:
+  -- the earliest one among the SO's ECs not packed yet — past it, the SO is
+  -- overdue, as Planning's is. Whether the order has since gone out is
+  -- Dispatch's arm, below.
   SELECT o.id, o.sl_no::int, o.so_no, NULL::text AS ec_no, o.client_name,
          'assembly'::text, 'Assembly & Packing'::text,
-         to_char(o.dispatch_team_target_date, 'YYYY-MM-DD'),
-         (o.dispatch_team_target_date - ${TODAY_IST})::int
+         to_char(r.due, 'YYYY-MM-DD'),
+         (r.due - ${TODAY_IST})::int
     FROM orders o
-   WHERE o.dispatch_team_target_date >= ${TODAY_IST}
-     AND o.dispatch_team_target_date <= ${TODAY_IST} + 7
-     AND EXISTS (
-       SELECT 1 FROM order_items it
-        LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
-        WHERE it.order_id = o.id AND ad.actual_packing_date IS NULL
-     )
+    JOIN LATERAL (
+      SELECT min(${assemblyDueSql("it")}) AS due
+        FROM order_items it
+       WHERE it.order_id = o.id
+    ) r ON r.due IS NOT NULL
+   WHERE r.due <= ${TODAY_IST} + 7
 
   UNION ALL
   -- Dispatch due to go out, against the SO's dispatch date (revised if set)

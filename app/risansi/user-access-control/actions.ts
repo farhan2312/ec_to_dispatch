@@ -162,7 +162,7 @@ export async function updateUserDetailsAction(
   const role = input.role as Role;
   if (!fullName) return { ok: false, error: "Full name is required." };
   if (fullName.length > 120) return { ok: false, error: "That name is too long." };
-  if (!/^[^s@]+@[^s@]+.[^s@]+$/.test(email) || email.length > 254) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
     return { ok: false, error: "Enter a valid email address." };
   }
   if (!ALL_ROLES.includes(role)) return { ok: false, error: "Select a valid role." };

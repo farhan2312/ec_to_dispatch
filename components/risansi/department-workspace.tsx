@@ -28,6 +28,7 @@ import { OrderChildList } from "./order-children";
 import { SortHeader } from "./sort-header";
 import { HoldBadge } from "./hold-badge";
 import { TermPis } from "./term-pis";
+import { PackingSlipsInline } from "./packing-slips-inline";
 import { ReadyLotHistoryButton } from "./ready-lot-history";
 import { ReadyLotsEditor } from "./ready-lots-editor";
 import {
@@ -520,7 +521,8 @@ export function DepartmentWorkspace({
 
   const colCount = groupBySo
     ? 4 + (showParty ? 1 : 0) + soContext.length + 1 + // toggle + Sl. + SO + client_name? + context + ECs + chat
-      (soEdit ? 2 + (canEdit ? 1 : 0) : 0) // SO status + date + edit
+      (soEdit ? 2 + (canEdit ? 1 : 0) : 0) + // SO status + date + edit
+      (section?.soChild ? 1 : 0) // packing slips on the row
     : 3 +
       (showEcNo ? 1 : 0) +
       (showParty ? 1 : 0) +
@@ -589,6 +591,7 @@ export function DepartmentWorkspace({
                         {canEdit && <th className="px-4 py-3 text-right">Edit</th>}
                       </>
                     )}
+                    {section?.soChild && <th className="px-4 py-3">{section.soChild.title}</th>}
                   </>
                 ) : (
                   <>
@@ -844,6 +847,26 @@ export function DepartmentWorkspace({
                             </>
                           );
                         })()}
+                        {/* Assembly & Packing: the SO's packing slips, on the row. */}
+                        {section?.soChild && (
+                          <td className="px-4 py-3 align-top">
+                            <PackingSlipsInline
+                              orderId={String(g.head.order_id)}
+                              soLabel={toInput(g.head.so_no) || String(g.head.sl_no ?? "")}
+                              slips={(g.head.so_child_rows ?? []) as Row[]}
+                              context={{
+                                market_type: g.head.market_type,
+                                packing_details_required: g.head.packing_details_required,
+                              }}
+                              gateOk={
+                                !section.soChild.gate ||
+                                toInput(g.head[section.soChild.gate.column]).trim() !== ""
+                              }
+                              canEdit={canEdit}
+                              canEditCentral={canEditCentral}
+                            />
+                          </td>
+                        )}
                       </tr>
                       {isOpen && (
                         <tr className="bg-background/40">
@@ -968,33 +991,7 @@ export function DepartmentWorkspace({
                             )}
 
                             <div className="px-4 py-3">
-                              {/* Sections with a per-EC child list (Planning /
-                                  Packing → packing slips) render it per EC. */}
-                              {section?.soChild && (
-                                <div className="mt-4 space-y-4">
-                                  {section.soChild.gate &&
-                                  toInput(g.head[section.soChild.gate.column]).trim() === "" ? (
-                                    <p className="text-xs text-muted">
-                                      Set Market Type on this order to record packing slips.
-                                    </p>
-                                  ) : (
-                                    <OrderChildList
-                                      orderId={String(g.head.order_id)}
-                                      table={section.soChild.table}
-                                      title={section.soChild.title}
-                                      fields={CHILD_FIELDS[section.soChild.table]}
-                                      rows={(g.head.so_child_rows ?? []) as Row[]}
-                                      canEdit={canEdit}
-                                      canEditCentral={canEditCentral}
-                                      kind={section.soChild.kind}
-                                      context={{
-                                        market_type: g.head.market_type,
-                                        packing_details_required: g.head.packing_details_required,
-                                      }}
-                                    />
-                                  )}
-                                </div>
-                              )}
+                              {/* Sections with a per-EC child list render it per EC. */}
                               {childTable && (
                                 <div className="mt-4 space-y-4">
                                   {!childGateOkFor(g.head) ? (

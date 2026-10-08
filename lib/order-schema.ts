@@ -793,7 +793,7 @@ export const PACKING_SLIP_FIELDS: OrderField[] = [
   { column: "packing_slip_date", label: "Packing Slip Date", type: "date" },
   { column: "box_size", label: "Box Size", type: "text", dependsOn: PACKING_DETAILS_YES },
   { column: "marking_on_case", label: "Marking on Case", type: "text", dependsOn: PACKING_DETAILS_YES },
-  { column: "description", label: "Description (Pump/Spare)", type: "text", dependsOn: PACKING_DETAILS_YES },
+  { column: "description", label: "Description", type: "text", dependsOn: PACKING_DETAILS_YES },
   { column: "quantity", label: "Qty", type: "int", dependsOn: PACKING_DETAILS_YES },
   { column: "item_weight", label: "Item Weight", type: "number", dependsOn: PACKING_DETAILS_YES },
   { column: "gross_weight", label: "Gross Weight", type: "number", dependsOn: PACKING_DETAILS_YES },
@@ -1347,6 +1347,8 @@ export const ASSEMBLY_CONTEXT_FIELDS: OrderField[] = [
     label: "Target Date for Packing Team",
     type: "date",
   },
+  // Billing / Tax Invoice or Challan / FR — what the SO goes out on.
+  { column: "bill_mode", label: "Bill Mode", type: "select", options: BILL_MODE_OPTIONS },
   // Planning schedules the assembly; Assembly & Packing works to that date, so
   // it's mirrored here read-only (they're also notified when it's set).
   // A Spare has no assembly to plan: it is packed against its readiness lots.

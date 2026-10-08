@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { ExternalLink, Loader2, Pencil, Trash2, Truck } from "lucide-react";
+import { CheckCircle2, Circle, ExternalLink, Loader2, Pencil, Trash2, Truck } from "lucide-react";
 import { deleteOrderChildAction } from "@/app/risansi/orders/actions";
 import { nextStep, stepsDone, type DispatchStepKey } from "@/lib/dispatch-steps";
 import { DispatchWizard } from "./dispatch-wizard";
@@ -19,9 +19,6 @@ function day(v: unknown): string {
     ? s
     : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
 }
-
-/** "a · b", skipping the blanks. */
-const line = (...parts: (string | false | null | undefined)[]) => parts.filter(Boolean).join(" · ");
 
 /**
  * Dispatch's view of an SO, on the queue row itself: one line per dispatch —
@@ -71,32 +68,45 @@ export function DispatchInline({
     return <span className="text-xs text-muted">No packing slip yet</span>;
   }
 
-  const step = (done: boolean, text: string) =>
-    text ? (
-      <span className={done ? "text-foreground" : "text-amber-700"}>{text}</span>
-    ) : (
-      <span className="text-muted-foreground">—</span>
-    );
+  // One step of a dispatch: a tick and what was filled in, or a hollow
+  // circle and "Pending".
+  const step = (done: boolean, main: string, sub?: ReactNode) => (
+    <div className="flex items-start gap-1.5">
+      {done ? (
+        <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0 text-emerald-600" />
+      ) : (
+        <Circle className="mt-px h-3.5 w-3.5 shrink-0 text-amber-500" />
+      )}
+      <div className="min-w-0">
+        {main ? (
+          <div className="break-words font-medium text-foreground">{main}</div>
+        ) : (
+          <div className="text-amber-700">Pending</div>
+        )}
+        {sub && <div className="text-[11px] text-muted">{sub}</div>}
+      </div>
+    </div>
+  );
 
   return (
-    <div className="w-[40rem]">
+    <div className="w-[44rem]">
       <table className="w-full table-fixed text-xs">
         <colgroup>
-          <col className="w-[1.75rem]" />
-          <col className="w-[8.5rem]" />
-          <col className="w-[9rem]" />
           <col className="w-[8rem]" />
+          <col className="w-[8.5rem]" />
+          <col className="w-[8.5rem]" />
           <col className="w-[7.5rem]" />
+          <col className="w-[6.5rem]" />
           <col />
         </colgroup>
         <thead>
           <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-            <th className="pb-1" />
-            <th className="pb-1 pr-1.5 whitespace-nowrap">Packing slip</th>
-            <th className="pb-1 pr-1.5 whitespace-nowrap">{challan ? "Challan" : "Invoice"}</th>
-            <th className="pb-1 pr-1.5 whitespace-nowrap">Dispatch</th>
-            <th className="pb-1 pr-1.5 whitespace-nowrap">Docket &amp; LR</th>
-            <th className="pb-1" />
+            <th className="pb-1.5 pl-2 pr-2 whitespace-nowrap">Dispatch</th>
+            <th className="pb-1.5 pr-2 whitespace-nowrap">1 · {challan ? "Challan" : "Invoice"}</th>
+            <th className="pb-1.5 pr-2 whitespace-nowrap">2 · Sent</th>
+            <th className="pb-1.5 pr-2 whitespace-nowrap">3 · Docket / LR</th>
+            <th className="pb-1.5 pr-2 whitespace-nowrap">Status</th>
+            <th className="pb-1.5" />
           </tr>
         </thead>
         <tbody className="[&>tr:nth-child(odd)]:bg-slate-100/70 dark:[&>tr:nth-child(odd)]:bg-white/[0.04]">
@@ -104,33 +114,52 @@ export function DispatchInline({
             const n = i + 1;
             const done = stepsDone(inv, billType);
             const all = done.invoice && done.dispatch && done.docket;
-            const invoiceText = challan
-              ? line(str(inv.challan_no), day(inv.challan_date))
-              : line(str(inv.invoice_no), day(inv.invoice_date));
-            const dispatchText = line(str(inv.delivery_mode), day(inv.delivery_date));
+            const docNo = challan ? str(inv.challan_no) : str(inv.invoice_no);
+            const docDate = day(challan ? inv.challan_date : inv.invoice_date);
             const lr = str(inv.lr_link);
             const lrHref = /^https?:\/\//i.test(lr) ? lr : "";
+            const next = nextStep(inv, billType);
+            const nextLabel =
+              next === "invoice" ? (challan ? "Challan" : "Invoice") : next === "dispatch" ? "Sending" : "Docket / LR";
             return (
               <tr key={str(inv.id) || i} className="align-top">
-                <td className="rounded-l-md py-1.5 pl-1.5 text-[10px] font-semibold text-muted-foreground">#{n}</td>
-                <td className="py-1.5 pr-1.5 break-words font-medium text-foreground">{slipsOf(inv)}</td>
-                <td className="py-1.5 pr-1.5 break-words">{step(done.invoice, invoiceText)}</td>
-                <td className="py-1.5 pr-1.5 break-words">{step(done.dispatch, dispatchText)}</td>
-                <td className="py-1.5 pr-1.5 break-words">
-                  {step(done.docket, str(inv.docket_no))}
-                  {lrHref && (
-                    <a
-                      href={lrHref}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ml-1 inline-flex items-center gap-0.5 font-medium text-primary hover:underline"
-                    >
-                      LR
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
+                <td className="rounded-l-md py-2 pl-2 pr-2">
+                  <div className="font-semibold text-foreground">Dispatch #{n}</div>
+                  <div className="break-words text-[11px] text-muted">Slip {slipsOf(inv)}</div>
+                </td>
+                <td className="py-2 pr-2">{step(done.invoice, docNo, docDate)}</td>
+                <td className="py-2 pr-2">
+                  {step(done.dispatch, str(inv.delivery_mode), day(inv.delivery_date))}
+                </td>
+                <td className="py-2 pr-2">
+                  {step(
+                    done.docket,
+                    str(inv.docket_no),
+                    lrHref ? (
+                      <a
+                        href={lrHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-0.5 font-medium text-primary hover:underline"
+                      >
+                        LR copy
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : undefined
                   )}
                 </td>
-                <td className="py-1.5 pr-1 text-right whitespace-nowrap">
+                <td className="py-2 pr-2">
+                  {all ? (
+                    <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
+                      Dispatched
+                    </span>
+                  ) : (
+                    <span className="inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
+                      Next: {nextLabel}
+                    </span>
+                  )}
+                </td>
+                <td className="rounded-r-md py-2 pr-1.5 text-right whitespace-nowrap">
                   {canEdit && (
                     <span className="inline-flex items-center gap-0.5">
                       <button
@@ -172,7 +201,8 @@ export function DispatchInline({
             const id = str(s.id);
             return (
               <tr key={id} className="align-top">
-                <td className="rounded-l-md py-1.5 pl-1.5">
+                <td className="rounded-l-md py-2 pl-2 pr-2">
+                  <label className="flex items-start gap-1.5">
                   {canEdit && (
                     <input
                       type="checkbox"
@@ -186,19 +216,23 @@ export function DispatchInline({
                           return next;
                         })
                       }
-                      className="h-3.5 w-3.5 accent-primary"
+                      className="mt-px h-3.5 w-3.5 shrink-0 accent-primary"
                     />
                   )}
+                  <span className="min-w-0">
+                    <span className="block break-words font-semibold text-foreground">Slip {slipName(s)}</span>
+                    {day(s.packing_slip_date) && (
+                      <span className="block text-[11px] text-muted">{day(s.packing_slip_date)}</span>
+                    )}
+                  </span>
+                  </label>
                 </td>
-                <td className="py-1.5 pr-1.5 break-words font-medium text-foreground">
-                  {slipName(s)}
-                  {day(s.packing_slip_date) && (
-                    <span className="block text-[11px] font-normal text-muted">{day(s.packing_slip_date)}</span>
-                  )}
+                <td colSpan={3} className="py-2 pr-2 text-[11px] text-muted">
+                  {canEdit ? "Tick to send it on a new dispatch" : "Not on a dispatch yet"}
                 </td>
-                <td colSpan={4} className="py-1.5 pr-1.5">
-                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                    Waiting to dispatch
+                <td colSpan={2} className="rounded-r-md py-2 pr-2">
+                  <span className="inline-flex rounded-full border border-slate-300 bg-surface px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:border-white/20 dark:text-slate-300">
+                    Waiting
                   </span>
                 </td>
               </tr>

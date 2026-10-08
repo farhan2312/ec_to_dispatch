@@ -19,6 +19,7 @@ import {
   orderOpenSql,
   orderStatusSql,
   spareEcSql,
+  assemblyDueSql,
 } from "@/lib/dept-view";
 import { autoTargets } from "@/lib/target-rules";
 import { DEFAULT_GST_RATE } from "@/lib/order-validation";
@@ -2189,7 +2190,11 @@ export async function listItemsForSection(
       ? `, COALESCE((SELECT jsonb_agg(to_jsonb(rl) ORDER BY rl.seq)
                      FROM order_ready_lots rl WHERE rl.item_id = it.id),
                   '[]'::jsonb) AS ready_lots${
-           table === "order_planning" ? ", d.readiness_date_status" : ""
+           table === "order_planning"
+             ? ", d.readiness_date_status"
+             : // Assembly & Packing is overdue against Planning's readiness date.
+               `, (SELECT to_char(rpl.planning_readiness_date, 'YYYY-MM-DD')
+                    FROM order_planning rpl WHERE rpl.item_id = it.id) AS planning_readiness_date`
          }`
       : "";
 
@@ -2726,6 +2731,13 @@ function deptOverduePredicate(dept: DeptFilterKey): string {
                     WHERE it.order_id = o.id
                       AND opl.planning_readiness_date < ${TODAY_IST}
                       AND NOT (${PLANNING_READY_SQL("opl")}))`;
+  }
+  // Assembly & Packing is late against Planning's readiness date: an EC (or
+  // a readiness lot of it) past that date and not packed yet.
+  if (dept === "assembly") {
+    return `EXISTS (SELECT 1 FROM order_items it
+                    WHERE it.order_id = o.id
+                      AND ${assemblyDueSql("it")} < ${TODAY_IST})`;
   }
   const column = DEPT_TARGET_COLUMN[dept];
   if (!column) return "FALSE";

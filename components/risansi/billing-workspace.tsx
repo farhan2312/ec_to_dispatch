@@ -134,7 +134,11 @@ export function BillingWorkspace({
                 <th className="px-4 py-3">SO No.</th>
                 <th className="px-4 py-3">Chat</th>
                 <th className="px-4 py-3"><SortHeader label="SO Date" sortKey="so_date" /></th>
-                {mode === "billing" && <th className="px-4 py-3 whitespace-nowrap">Readiness Date</th>}
+                {mode === "billing" && (
+                  <th className="px-4 py-3 whitespace-nowrap">
+                    <SortHeader label="Readiness Date" sortKey="readiness" />
+                  </th>
+                )}
                 <th className="px-4 py-3">Order Type</th>
                 <th className="px-4 py-3">Client Name</th>
                 <th className="px-4 py-3">Bill Mode</th>

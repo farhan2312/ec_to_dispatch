@@ -211,7 +211,7 @@ export function parseOrderListFilter(
   const dateField: OrderDateField =
     dateFieldRaw === "dept_target" && (!dept || dept === "dispatch")
       ? (dept ? "so_date" : fallbackDate)
-      : dateFieldRaw === "readiness" && dept !== "planning" && dept !== "assembly"
+      : dateFieldRaw === "readiness" && dept !== "planning" && dept !== "assembly" && dept !== "billing"
         ? (dept ? "so_date" : fallbackDate)
         : dateFieldRaw;
 
@@ -359,10 +359,11 @@ export function parseDeptFilter(
     // all (Billing, Accounts), when the order's own date is the useful one.
     // An explicit choice still wins.
     if (key === "datefield" && dept) {
-      // Planning reads by its readiness date rather than a target.
+      // Planning, and Assembly & Packing after it, read by the readiness date
+      // rather than a target.
       return (
         get(key) ??
-        (dept === "planning"
+        (dept === "planning" || dept === "assembly"
           ? "readiness"
           : DEPT_VIEWS[dept].hasTarget && dept !== "dispatch"
             ? "dept_target"

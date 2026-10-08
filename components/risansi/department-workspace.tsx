@@ -382,18 +382,30 @@ export function DepartmentWorkspace({
   /** The date column's name: what the date is. */
   const soDateLabel = table === "order_planning" ? "Readiness Date" : "Ready / Packed On";
   /**
-   * How many days Planning is late on an SO: from the earliest readiness date
-   * among its ECs not yet ready (a Spare Fully ready, a Pump Assembled or
-   * Packed) — the rule its reminders and Overdue filter use. 0 when on time.
+   * How many days an SO is late against Planning's readiness date: from the
+   * earliest one among its ECs not done yet — for Planning, not ready (a Spare
+   * Fully ready, a Pump Assembled or Packed); for Assembly & Packing, not
+   * packed. The rule each Overdue filter uses. 0 when on time.
    */
-  const planningOverdueDays = (ecs: Row[]) => {
+  const readinessOverdueDays = (ecs: Row[]) => {
     const ready = (ec: Row) =>
       ["fully ready", "assembled", "packed"].includes(
         (toInput(ec.actual_spare_status) || toInput(ec.actual_pump_status)).trim().toLowerCase()
       );
-    const dates = ecs
-      .filter((ec) => !ready(ec))
-      .map((ec) => toInput(ec.planning_readiness_date).slice(0, 10))
+    // What Assembly & Packing owes on an EC (lib/dept-view assemblyDueSql): its
+    // unpacked lots' ready dates, or the readiness date until it is packed.
+    const owed = (ec: Row): string[] => {
+      const lots = Array.isArray(ec.ready_lots) ? (ec.ready_lots as Row[]) : [];
+      if (lots.length) {
+        return lots.filter((l) => !toInput(l.packed_date)).map((l) => toInput(l.ready_date).slice(0, 10));
+      }
+      return toInput(ec.actual_packing_date) ? [] : [toInput(ec.planning_readiness_date).slice(0, 10)];
+    };
+    const dates = (
+      table === "order_assembly_dispatch"
+        ? ecs.flatMap(owed)
+        : ecs.filter((ec) => !ready(ec)).map((ec) => toInput(ec.planning_readiness_date).slice(0, 10))
+    )
       .filter(Boolean)
       .sort();
     if (dates.length === 0) return 0;
@@ -808,8 +820,8 @@ export function DepartmentWorkspace({
                                 ) : (
                                   sum.date
                                 )}
-                                {table === "order_planning" && (() => {
-                                  const late = planningOverdueDays(g.ecs);
+                                {(table === "order_planning" || table === "order_assembly_dispatch") && (() => {
+                                  const late = readinessOverdueDays(g.ecs);
                                   return late > 0 ? (
                                     <div className="mt-0.5 text-[11px] font-medium text-rose-600">
                                       Overdue by {late} day{late === 1 ? "" : "s"}

@@ -2315,7 +2315,11 @@ export async function listOrdersForBilling(
                         'packing_slip_date', ps.packing_slip_date, 'quantity', ps.quantity,
                         'invoice_id', (SELECT l.invoice_id FROM order_invoice_slips l WHERE l.packing_slip_id = ps.id))
                         ORDER BY ps.seq)
-                      FROM order_packing_slips ps WHERE ps.order_id = o.id AND ps.kind = 'actual'),
+                      FROM order_packing_slips ps WHERE ps.order_id = o.id AND ps.kind = 'actual'
+                       -- A blank slip (no number yet) is not ready to go; one already on a
+                       -- dispatch still shows there.
+                       AND (NULLIF(btrim(ps.packing_slip_no), '') IS NOT NULL
+                            OR EXISTS (SELECT 1 FROM order_invoice_slips l WHERE l.packing_slip_id = ps.id))),
                      '[]'::jsonb) AS packing_slips
        FROM orders o
        LEFT JOIN order_billing b ON b.order_id = o.id
@@ -3362,7 +3366,7 @@ export async function listOrdersForBillingPage(opts: {
   search: string;
   focusOrderId?: string | null;
   filter?: OrderListFilter;
-  /** Dispatch: only SOs with a packing slip — there is nothing to send before. */
+  /** Dispatch: only SOs with a filled-in packing slip (a number) — there is nothing to send before. */
   onlyPacked?: boolean;
   sort?: QueueSort | null;
 }): Promise<PageResult<BillingQueueRow>> {
@@ -3374,7 +3378,8 @@ export async function listOrdersForBillingPage(opts: {
     // A cancelled or diverted order is no longer Billing's or Dispatch's work.
     restrict: opts.onlyPacked
       ? `${orderOpenSql("o")} AND ${releasedSql("o")} AND EXISTS (SELECT 1 FROM order_packing_slips ps
-                                           WHERE ps.order_id = o.id AND ps.kind = 'actual')`
+                                           WHERE ps.order_id = o.id AND ps.kind = 'actual'
+                                             AND NULLIF(btrim(ps.packing_slip_no), '') IS NOT NULL)`
       // Billing: not a Challan order — there is no PI to raise on one.
       : deptQueueSql("billing"),
     searchable: (term) =>

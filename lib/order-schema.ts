@@ -843,8 +843,9 @@ export const INVOICE_FIELDS: OrderField[] = [
     options: DELIVERY_MODE_OPTIONS,
     group: "Dispatch",
   },
-  // Transport → name / freight / delivery date. By BUS → name / vehicle no /
-  // freight. Direct Vehicle → weight / size / vehicle no / freight / date.
+  // Transport → name / freight. By BUS → name / vehicle no / freight.
+  // Direct Vehicle → weight / size / vehicle no / freight. (The delivery date
+  // is filled with the docket, once the goods have reached.)
   // By Courier → courier mode / docket no / freight.
   {
     column: "transporter_name",
@@ -883,7 +884,6 @@ export const INVOICE_FIELDS: OrderField[] = [
     group: "Dispatch",
   },
   { column: "freight_value", label: "Freight Value", type: "number", group: "Dispatch" },
-  { column: "delivery_date", label: "Delivery Date", type: "date", group: "Dispatch" },
 
   // Phase 3 — docket / LR details.
   {
@@ -897,9 +897,8 @@ export const INVOICE_FIELDS: OrderField[] = [
   { column: "booking_date", label: "Booking Date", type: "date", group: "Docket" },
   { column: "material_weight", label: "Weight of Material", type: "number", group: "Docket" },
   { column: "per_kg_rate", label: "Per KG Rate", type: "number", group: "Docket" },
-  { column: "so_freight_terms", label: "SO Freight Terms", type: "text", group: "Docket" },
-  { column: "delivery_charges", label: "Delivery Charges", type: "number", group: "Docket" },
-  { column: "other_charges", label: "Other Charges", type: "number", group: "Docket" },
+  { column: "so_freight_terms", label: "LR Freight Terms", type: "text", group: "Docket" },
+  { column: "delivery_date", label: "Delivery Date", type: "date", group: "Docket" },
   { column: "lr_link", label: "LR Link (SharePoint)", type: "text", group: "Docket" },
 ];
 

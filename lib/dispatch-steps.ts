@@ -3,7 +3,7 @@
 // its key fields are in:
 //
 //   Invoice       Invoice No. + Invoice Date   (a Challan order: Challan No. + Date)
-//   Dispatch      Delivery Mode + Delivery Date
+//   Dispatch      Delivery Mode
 //   Docket & LR   Docket No.
 //
 // Plain module (no server imports): the pop-up, the summary cards and the
@@ -35,7 +35,7 @@ export function stepsDone(inv: Row, billType: unknown): Record<DispatchStepKey, 
     invoice: challan
       ? has(inv.challan_no) && has(inv.challan_date)
       : has(inv.invoice_no) && has(inv.invoice_date),
-    dispatch: has(inv.delivery_mode) && has(inv.delivery_date),
+    dispatch: has(inv.delivery_mode),
     docket: has(inv.docket_no),
   };
 }

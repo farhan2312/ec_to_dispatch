@@ -9,6 +9,7 @@ import {
   PenTool,
   Receipt,
   ScrollText,
+  ChartPie,
   ShieldCheck,
   PackageCheck,
   Truck,
@@ -95,6 +96,7 @@ export const ADMIN_NAV: NavItem[] = [
     icon: ShieldCheck,
   },
   { label: "Audit Log", href: "/risansi/audit-log", icon: ScrollText },
+  { label: "Reports", href: "/risansi/reports", icon: ChartPie },
   { label: "Bug Tracker", href: "/risansi/bug-reports", icon: Bug },
 ];
 

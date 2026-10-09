@@ -84,13 +84,13 @@ export function DispatchList({
           str(inv.vehicle_no),
           str(inv.courier_mode),
           str(inv.delivery_type),
-          day(inv.delivery_date) && `on ${day(inv.delivery_date)}`,
           str(inv.freight_value) && `Freight ₹${money.format(Number(inv.freight_value))}`
         );
         const docketLine = line(
           str(inv.docket_no) && `Docket ${str(inv.docket_no)}`,
           str(inv.docket_type),
-          day(inv.booking_date) && `booked ${day(inv.booking_date)}`
+          day(inv.booking_date) && `booked ${day(inv.booking_date)}`,
+          day(inv.delivery_date) && `delivered ${day(inv.delivery_date)}`
         );
         const lr = str(inv.lr_link);
         const lrHref = /^https?:\/\//i.test(lr) ? lr : "";

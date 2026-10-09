@@ -129,13 +129,20 @@ export function DispatchInline({
                 </td>
                 <td className="py-2 pr-2">{step(done.invoice, docNo, docDate)}</td>
                 <td className="py-2 pr-2">
-                  {step(done.dispatch, str(inv.delivery_mode), day(inv.delivery_date))}
+                  {step(
+                    done.dispatch,
+                    str(inv.delivery_mode),
+                    str(inv.transporter_name) || str(inv.courier_mode) || str(inv.vehicle_no) || undefined
+                  )}
                 </td>
                 <td className="py-2 pr-2">
                   {step(
                     done.docket,
                     str(inv.docket_no),
-                    lrHref ? (
+                    lrHref || day(inv.delivery_date) ? (
+                      <>
+                      {day(inv.delivery_date) && <span className="block">Delivered {day(inv.delivery_date)}</span>}
+                      {lrHref && (
                       <a
                         href={lrHref}
                         target="_blank"
@@ -145,6 +152,8 @@ export function DispatchInline({
                         LR copy
                         <ExternalLink className="h-3 w-3" />
                       </a>
+                      )}
+                      </>
                     ) : undefined
                   )}
                 </td>

@@ -37,6 +37,7 @@ const ROUTE_LABELS: Record<string, Crumb> = {
   "/risansi/departments/dispatch": { label: "Dispatch", parent: "Departments" },
   "/risansi/user-access-control": { label: "User Access Control", parent: "Central Admin" },
   "/risansi/audit-log": { label: "Audit Log", parent: "Central Admin" },
+  "/risansi/reports": { label: "Reports", parent: "Central Admin" },
   "/risansi/bug-reports": { label: "Bug Reports" },
   "/risansi/settings": { label: "USD to INR" },
 };

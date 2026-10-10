@@ -14,6 +14,7 @@ import type { User, UserListRow, UserStatus } from "@/lib/users";
 import {
   addUserAction,
   deleteUserAction,
+  lookupRepContactAction,
   resetPasswordAction,
   setStatusAction,
   updateUserDetailsAction,
@@ -424,6 +425,7 @@ function AddUserModal({ onClose, repNames }: { onClose: () => void; repNames: st
             value={values.repName}
             repNames={repNames}
             onChange={(repName) => setValues((v) => ({ ...v, repName }))}
+            onContact={(c) => setValues((v) => ({ ...v, fullName: c.name, email: c.email ?? v.email }))}
           />
         )}
         <div className="flex gap-3">
@@ -619,6 +621,9 @@ function EditUserModal({
                 value={values.repName}
                 repNames={repNames}
                 onChange={(repName) => setValues((v) => ({ ...v, repName }))}
+                onContact={(c) =>
+                  setValues((v) => ({ ...v, fullName: c.name, email: emailLocked ? v.email : (c.email ?? v.email) }))
+                }
               />
             )}
             <div className="flex gap-3">
@@ -721,22 +726,44 @@ function ModalShell({
   );
 }
 
-/** Which rep a Rep user is: the name as it appears on orders. They see only those SOs. */
+/**
+ * Which rep a Rep user is: the name as it appears on orders. They see only
+ * those SOs. Picking one fills the name and email from the sales portal.
+ */
 function RepPicker({
   value,
   repNames,
   onChange,
+  onContact,
 }: {
   value: string;
   repNames: string[];
   onChange: (next: string) => void;
+  onContact: (contact: { name: string; email: string | null }) => void;
 }) {
+  const [looking, setLooking] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   const names = [...new Set([...repNames, ...(value ? [value] : [])])].sort((a, b) => a.localeCompare(b));
+  async function pick(next: string) {
+    onChange(next);
+    setNote(null);
+    if (!next) return;
+    setLooking(true);
+    const c = await lookupRepContactAction(next);
+    setLooking(false);
+    if (c) {
+      onContact(c);
+      setNote(c.email ? "Name and email filled from the sales portal." : "Name filled; no email in the sales portal.");
+    } else {
+      onContact({ name: next, email: null });
+      setNote("Not found in the sales portal — enter the email.");
+    }
+  }
   return (
     <>
       <label className={labelClass}>Rep</label>
       <div className="mb-6">
-        <select className={`${inputClass} cursor-pointer`} value={value} onChange={(e) => onChange(e.target.value)}>
+        <select className={`${inputClass} cursor-pointer`} value={value} onChange={(e) => void pick(e.target.value)}>
           <option value="">Select the rep</option>
           {names.map((n) => (
             <option key={n} value={n}>
@@ -745,6 +772,12 @@ function RepPicker({
           ))}
         </select>
         <p className="mt-1.5 text-xs text-muted">They see only the SOs whose Rep is this name — read-only.</p>
+        {(looking || note) && (
+          <p className="mt-1 flex items-center gap-1.5 text-xs text-primary">
+            {looking && <Loader2 className="h-3 w-3 animate-spin" />}
+            {looking ? "Looking up the sales portal…" : note}
+          </p>
+        )}
       </div>
     </>
   );

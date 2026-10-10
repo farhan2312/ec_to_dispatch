@@ -134,3 +134,24 @@ export async function getClientByCode(
   );
   return result.rows[0] ?? null;
 }
+
+export type MarketIntellRep = { name: string; email: string | null };
+
+/**
+ * A rep's name and email as Market Intell has them, matched on the name the
+ * orders carry (trimmed, case-insensitive). An active account wins over an
+ * inactive one. Only name and email are read.
+ */
+export async function getRepContact(repName: string): Promise<MarketIntellRep | null> {
+  const n = repName.trim();
+  if (!n) return null;
+  const result = await getPool().query<MarketIntellRep>(
+    `SELECT trim(u.name) AS name, NULLIF(trim(u.email), '') AS email
+       FROM public.users u
+      WHERE lower(trim(u.name)) = lower($1)
+      ORDER BY (u.is_active IS TRUE) DESC, (NULLIF(trim(u.email), '') IS NOT NULL) DESC, u.id
+      LIMIT 1`,
+    [n]
+  );
+  return result.rows[0] ?? null;
+}

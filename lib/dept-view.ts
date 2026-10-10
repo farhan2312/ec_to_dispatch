@@ -366,6 +366,13 @@ function deptOwnInvolvementSql(dept: DeptKey, alias: string): string {
  * every order. Used to keep an order that is none of a department's business
  * off its screens entirely, URL included.
  */
+/** An SO that has gone out in full: its row is green in every list. */
+export function isFullyDispatched(row: Record<string, unknown>): boolean {
+  return String(row.so_dispatch_status ?? row.dispatch_status ?? "").trim().toLowerCase() === "fully dispatch";
+}
+export const FULLY_DISPATCHED_ROW =
+  "bg-emerald-50 hover:bg-emerald-100/70 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/15";
+
 /** Whether an SO's Rep is this Rep (trimmed, case-insensitive). No name sees nothing. */
 export function repMatches(orderRep: unknown, repName: string | null | undefined): boolean {
   const mine = (repName ?? "").trim().toLowerCase();

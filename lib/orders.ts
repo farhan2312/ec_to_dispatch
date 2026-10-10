@@ -2321,6 +2321,7 @@ export async function listOrdersForSection(
             NULL::text AS ec_no,
             o.client_name,
             o.clearance_status, o.clearance_hold_reason, o.clearance_remarks,
+            ${DISPATCH_STATUS} AS so_dispatch_status,
             o.accounts_hold_status, o.accounts_hold_reason, o.accounts_hold_remarks,
             -- The order value's currency, shown beside it (Accounts).
             o.order_currency,
@@ -2442,11 +2443,10 @@ export async function listItemsForSection(
                      FROM order_ready_lots rl WHERE rl.item_id = it.id),
                   '[]'::jsonb) AS ready_lots${
            table === "order_planning"
-             ? // …and where Assembly & Packing and Dispatch have got to on it.
+             ? // …and where Assembly & Packing has got to on it.
                `, d.readiness_date_status, ${ASSEMBLY_STATE_SQL("it")} AS assembly_state,
                  (SELECT to_char(pad.actual_packing_date, 'YYYY-MM-DD')
-                    FROM order_assembly_dispatch pad WHERE pad.item_id = it.id) AS actual_packing_date,
-                 ${orderStatusSql("o")} AS so_dispatch_status`
+                    FROM order_assembly_dispatch pad WHERE pad.item_id = it.id) AS actual_packing_date`
              : // Assembly & Packing is overdue against Planning's readiness date.
                `, (SELECT to_char(rpl.planning_readiness_date, 'YYYY-MM-DD')
                     FROM order_planning rpl WHERE rpl.item_id = it.id) AS planning_readiness_date`
@@ -2463,6 +2463,7 @@ export async function listItemsForSection(
             it.item_type,
             o.client_name,
             o.clearance_status, o.clearance_hold_reason, o.clearance_remarks,
+            ${DISPATCH_STATUS} AS so_dispatch_status,
             o.accounts_hold_status, o.accounts_hold_reason, o.accounts_hold_remarks
             ${childSelect}${soChildSelect}${readyLotsSelect}${detailSelects ? `,\n            ${detailSelects}` : ""}${contextSelects}
        FROM order_items it
@@ -2525,6 +2526,7 @@ export async function listOrdersForBilling(
             o.order_type,
             o.client_name,
             o.clearance_status, o.clearance_hold_reason, o.clearance_remarks,
+            ${DISPATCH_STATUS} AS so_dispatch_status,
             o.accounts_hold_status, o.accounts_hold_reason, o.accounts_hold_remarks,
             o.bill_type,
             ${PAYMENT_TERMS_SQL("o")} AS payment_terms,
@@ -2623,6 +2625,7 @@ export async function listItemsForPurchase(
             o.order_type,
             it.ec_no,
             o.clearance_status, o.clearance_hold_reason, o.clearance_remarks,
+            ${DISPATCH_STATUS} AS so_dispatch_status,
             o.accounts_hold_status, o.accounts_hold_reason, o.accounts_hold_remarks,
             o.boi,
             o.ld,

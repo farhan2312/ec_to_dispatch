@@ -9,7 +9,7 @@ import { OrderChildList } from "./order-children";
 import { EcDrawingDocsButton } from "./drawing-docs";
 import { SortHeader } from "./sort-header";
 import { HoldBadge } from "./hold-badge";
-import { FULLY_DISPATCHED_ROW, isFullyDispatched } from "@/lib/dept-view";
+import { dispatchRowTone } from "@/lib/dept-view";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import type { OrderListOptions } from "@/lib/orders";
@@ -182,7 +182,7 @@ export function PurchaseWorkspace({
                     <tr
                       data-focus-row={String(g.head.order_id)}
                       className={`text-foreground transition-colors ${
-                        isFullyDispatched(g.head) ? FULLY_DISPATCHED_ROW : "hover:bg-background/60"
+                        dispatchRowTone(g.head) ?? "hover:bg-background/60"
                       } ${focusClass(String(g.head.order_id))}`}
                     >
                       <td className="px-2 py-3 text-center">

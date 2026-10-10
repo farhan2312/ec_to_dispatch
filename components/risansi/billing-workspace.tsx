@@ -10,7 +10,7 @@ import { DispatchInline } from "./dispatch-inline";
 import { SortHeader } from "./sort-header";
 import { HoldBadge } from "./hold-badge";
 import { DispatchStatusPill } from "./dispatch-status-pill";
-import { FULLY_DISPATCHED_ROW, isFullyDispatched } from "@/lib/dept-view";
+import { dispatchRowTone } from "@/lib/dept-view";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import type { OrderListOptions } from "@/lib/orders";
@@ -170,7 +170,7 @@ export function BillingWorkspace({
                       }}
                       title="Click for order details"
                       className={`cursor-pointer text-foreground transition-colors ${
-                        isFullyDispatched(row as unknown as Record<string, unknown>) ? FULLY_DISPATCHED_ROW : "hover:bg-background/60"
+                        dispatchRowTone(row as unknown as Record<string, unknown>) ?? "hover:bg-background/60"
                       } ${focusClass(String(row.id))}`}
                     >
                       <td className="px-4 py-3 font-medium tabular-nums">{row.sl_no}</td>

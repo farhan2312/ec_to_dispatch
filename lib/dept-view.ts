@@ -370,6 +370,15 @@ function deptOwnInvolvementSql(dept: DeptKey, alias: string): string {
 export function isFullyDispatched(row: Record<string, unknown>): boolean {
   return String(row.so_dispatch_status ?? row.dispatch_status ?? "").trim().toLowerCase() === "fully dispatch";
 }
+/**
+ * A row's colour from the SO's dispatch status: green once it has gone out
+ * in full, blue while it has gone out in lots; nothing otherwise.
+ */
+export function dispatchRowTone(row: Record<string, unknown>): string | null {
+  const s = String(row.so_dispatch_status ?? row.dispatch_status ?? "").trim().toLowerCase();
+  return s === "fully dispatch" ? FULLY_DISPATCHED_ROW : s === "lot dispatch" ? LOT_DISPATCHED_ROW : null;
+}
+export const LOT_DISPATCHED_ROW = "bg-sky-50 hover:bg-sky-100/70 dark:bg-sky-500/10 dark:hover:bg-sky-500/15";
 export const FULLY_DISPATCHED_ROW =
   "bg-emerald-50 hover:bg-emerald-100/70 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/15";
 

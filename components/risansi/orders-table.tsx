@@ -9,7 +9,7 @@ import { TermPis } from "./term-pis";
 import { OrderThreadModal } from "./order-thread-modal";
 import { OrderDetailsModal } from "./order-details-modal";
 import { billModeLabel } from "@/lib/order-schema";
-import { FULLY_DISPATCHED_ROW } from "@/lib/dept-view";
+import { dispatchRowTone } from "@/lib/dept-view";
 import type { DeptCell, ItemSummary, OrderListOptions, OrderListRow, SoDeptStatus } from "@/lib/orders";
 import { deleteOrderAction } from "@/app/risansi/orders/actions";
 import { UrlPagination, useUrlTable } from "./url-table";
@@ -358,9 +358,7 @@ export function OrdersTable({
                       className={`cursor-pointer align-top text-foreground transition-colors ${
                         closed
                           ? "bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/15 dark:hover:bg-rose-500/20"
-                          : dispatch === "Fully dispatch"
-                            ? FULLY_DISPATCHED_ROW
-                            : "hover:bg-background/60"
+                          : (dispatchRowTone({ dispatch_status: dispatch }) ?? "hover:bg-background/60")
                       }`}
                     >
                       <td className="px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>

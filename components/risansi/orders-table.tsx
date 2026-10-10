@@ -8,6 +8,7 @@ import { ClearanceBadge, OrderPopupHost, type PopupKind } from "./order-popups";
 import { TermPis } from "./term-pis";
 import { OrderThreadModal } from "./order-thread-modal";
 import { OrderDetailsModal } from "./order-details-modal";
+import { billModeLabel } from "@/lib/order-schema";
 import type { DeptCell, ItemSummary, OrderListOptions, OrderListRow, SoDeptStatus } from "@/lib/orders";
 import { deleteOrderAction } from "@/app/risansi/orders/actions";
 import { UrlPagination, useUrlTable } from "./url-table";
@@ -254,8 +255,8 @@ export function OrdersTable({
     parseOrderListFilter((key) => getParam(key) || undefined)
   );
   const pageRows = orders;
-  // expand-toggle + 15 data columns + open/add-on + optional delete.
-  const baseCols = 17;
+  // expand-toggle + 18 data columns + open/add-on + optional delete.
+  const baseCols = 20;
   const colSpan = baseCols + (canDelete ? 1 : 0);
   function toggle(id: string) {
     setExpanded((prev) => {
@@ -299,10 +300,13 @@ export function OrdersTable({
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Client Name</th>
                 <th className="px-4 py-3">Client Code</th>
+                <th className="px-4 py-3">Rep</th>
+                <th className="px-4 py-3">Zone</th>
+                <th className="px-4 py-3">Bill Mode</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
                 <th className="px-4 py-3">Departments</th>
                 <th className="px-4 py-3">Payment terms, PIs &amp; payment</th>
-                <th className="px-4 py-3">Readiness Date</th>
+                <th className="px-4 py-3 whitespace-nowrap"><SortHeader label="Readiness Date" sortKey="readiness" /></th>
                 <th className="px-4 py-3">Planning</th>
                 <th className="px-4 py-3">Assembly &amp; Packing</th>
                 <th className="px-4 py-3">Dispatch</th>
@@ -397,6 +401,9 @@ export function OrdersTable({
                       <td className="px-4 py-3 whitespace-nowrap">{cell(order.order_type)}</td>
                       <td className="min-w-[14rem] px-4 py-3">{cell(order.client_name)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{cell(order.client_code)}</td>
+                      <td className="px-4 py-3">{cell(order.reps)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{cell(order.zone)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{billModeLabel(order.bill_mode, order.bill_type) || "—"}</td>
                       <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
                         {/* With its unit; a USD order shows its INR figure beneath. */}
                         {order.order_value ? (

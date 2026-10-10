@@ -355,8 +355,8 @@ export function DepartmentWorkspace({
       : d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
   };
   /** One EC's status and date as its department reads it. */
-  const ecStatusDate = (ec: Row): { status: string; date: string } => {
-    if (table === "order_planning") {
+  const ecStatusDate = (ec: Row, dept: string = table): { status: string; date: string } => {
+    if (dept === "order_planning") {
       return {
         status:
           toInput(ec.actual_spare_status) ||
@@ -421,8 +421,8 @@ export function DepartmentWorkspace({
     return days > 0 ? days : 0;
   };
   /** The SO's: its ECs' status and date when they agree, "Mixed" when not. */
-  const soSummary = (ecs: Row[]) => {
-    const each = ecs.map(ecStatusDate);
+  const soSummary = (ecs: Row[], dept: string = table) => {
+    const each = ecs.map((ec) => ecStatusDate(ec, dept));
     const one = (k: "status" | "date") => {
       const set = new Set(each.map((e) => e[k]));
       return set.size === 1 ? [...set][0] || "—" : "Mixed";
@@ -538,7 +538,7 @@ export function DepartmentWorkspace({
 
   const colCount = groupBySo
     ? 4 + (showParty ? 1 : 0) + soContext.length + 1 + // toggle + Sl. + SO + client_name? + context + ECs + chat
-      (soEdit ? 2 + (canEdit ? 1 : 0) : 0) + // SO status + date + edit
+      (soEdit ? 2 + (canEdit ? 1 : 0) + (table === "order_planning" ? 2 : 0) : 0) + // SO status + date (+ assembly, dispatch) + edit
       (section?.soChild ? 1 : 0) // packing slips on the row
     : 3 +
       (showEcNo ? 1 : 0) +
@@ -605,6 +605,13 @@ export function DepartmentWorkspace({
                             soDateLabel
                           )}
                         </th>
+                        {/* Planning sees how far Assembly & Packing and Dispatch have got. */}
+                        {table === "order_planning" && (
+                          <>
+                            <th className="px-4 py-3 whitespace-nowrap">Assembly &amp; Packing</th>
+                            <th className="px-4 py-3">Dispatch</th>
+                          </>
+                        )}
                         {canEdit && <th className="px-4 py-3 text-right">Edit</th>}
                       </>
                     )}
@@ -841,6 +848,20 @@ export function DepartmentWorkspace({
                                   ) : null;
                                 })()}
                               </td>
+                              {table === "order_planning" && (() => {
+                                const asm = soSummary(g.ecs, "order_assembly_dispatch");
+                                return (
+                                  <>
+                                    <td className="px-4 py-3 whitespace-nowrap">
+                                      {asm.status}
+                                      {asm.date !== "—" && asm.date !== "Mixed" && (
+                                        <div className="text-[11px] text-muted">{asm.date}</div>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-3 whitespace-nowrap">{toInput(g.head.so_dispatch_status) || "Pending"}</td>
+                                  </>
+                                );
+                              })()}
                               {canEdit && (
                                 <td className="px-4 py-3 text-right">
                                   {mixed || lockReason(table, g.head) ? (

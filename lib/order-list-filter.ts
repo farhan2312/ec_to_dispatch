@@ -211,7 +211,7 @@ export function parseOrderListFilter(
   const dateField: OrderDateField =
     dateFieldRaw === "dept_target" && (!dept || dept === "dispatch")
       ? (dept ? "so_date" : fallbackDate)
-      : dateFieldRaw === "readiness" && dept !== "planning" && dept !== "assembly" && dept !== "billing"
+      : dateFieldRaw === "readiness" && dept && dept !== "planning" && dept !== "assembly" && dept !== "billing"
         ? (dept ? "so_date" : fallbackDate)
         : dateFieldRaw;
 
@@ -243,12 +243,13 @@ export function parseOrderListFilter(
     field,
     // Only where the controls are shown — a hidden filter would narrow
     // without saying so.
+    // The Orders list (no department) offers them too.
     paymentTerms:
-      dept && PAYMENT_FILTER_DEPTS.includes(dept)
+      !dept || PAYMENT_FILTER_DEPTS.includes(dept)
         ? list(get("pterm")).filter((v) => PAYMENT_TERM_FILTER_OPTIONS.includes(v))
         : [],
     billModes:
-      dept && BILL_MODE_FILTER_DEPTS.includes(dept)
+      !dept || BILL_MODE_FILTER_DEPTS.includes(dept)
         ? list(get("bmode")).filter((v) => BILL_MODE_FILTER_OPTIONS.includes(v))
         : [],
     clearance: list(get("clear")).filter((v) => CLEARANCE_FILTER_OPTIONS.includes(v)),

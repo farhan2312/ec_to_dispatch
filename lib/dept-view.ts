@@ -366,9 +366,17 @@ function deptOwnInvolvementSql(dept: DeptKey, alias: string): string {
  * every order. Used to keep an order that is none of a department's business
  * off its screens entirely, URL included.
  */
+/** Whether an SO's Rep is this Rep (trimmed, case-insensitive). No name sees nothing. */
+export function repMatches(orderRep: unknown, repName: string | null | undefined): boolean {
+  const mine = (repName ?? "").trim().toLowerCase();
+  return !!mine && String(orderRep ?? "").trim().toLowerCase() === mine;
+}
+
 export function roleSeesOrder(
   role: string,
   order: {
+    /** The SO's rep — a Rep sees only their own SOs. */
+    reps?: unknown;
     boi?: unknown;
     qc_required?: unknown;
     bill_type?: unknown;
@@ -380,11 +388,15 @@ export function roleSeesOrder(
      * EC page. Drawing reaches the page while any of them is not a Spare.
      */
     ec_types?: unknown[];
-  }
+  },
+  // A Rep's own name (users.rep_name).
+  repName?: string | null
 ): boolean {
   // Order Making fills Client and PO details from its own page; the SO's
   // pages carry everything else.
   if (role === "order_making") return false;
+  // A Rep: their own SOs only.
+  if (role === "rep") return repMatches(order.reps, repName);
   const view = deptViewForRole(role);
   if (!view) return true;
   // Not yet cleared or held: not theirs to see.

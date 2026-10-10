@@ -124,11 +124,14 @@ export function UsersAccessView({
   result,
   currentEmail,
   platformAdminEmail,
+  repNames = [],
 }: {
   // One server-fetched page, plus per-status totals for the whole table.
   result: PageResult<UserListRow> & { counts: Record<string, number> };
   currentEmail: string;
   platformAdminEmail: string;
+  // The rep names on orders, for linking a Rep user.
+  repNames?: string[];
 }) {
   const router = useRouter();
   const users = result.rows;
@@ -225,6 +228,7 @@ export function UsersAccessView({
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
                         {roleLabel(u.role)}
+                        {u.role === "rep" && u.rep_name ? ` · ${u.rep_name}` : ""}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -317,7 +321,7 @@ export function UsersAccessView({
         />
       </div>
 
-      {showAdd && <AddUserModal onClose={() => setShowAdd(false)} />}
+      {showAdd && <AddUserModal repNames={repNames} onClose={() => setShowAdd(false)} />}
       {editUser && (
         <EditUserModal
           user={editUser}
@@ -325,6 +329,7 @@ export function UsersAccessView({
             editUser.email.toLowerCase() === platformAdminEmail.toLowerCase()
           }
           isSelf={editUser.email.toLowerCase() === currentEmail.toLowerCase()}
+          repNames={repNames}
           onClose={() => setEditUser(null)}
         />
       )}
@@ -336,13 +341,14 @@ const inputClass =
   "h-11 w-full rounded-[10px] border border-input-border bg-surface px-[15px] text-[14px] text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
 const labelClass = "mb-1.5 block text-[13px] font-semibold text-brand-label";
 
-function AddUserModal({ onClose }: { onClose: () => void }) {
+function AddUserModal({ onClose, repNames }: { onClose: () => void; repNames: string[] }) {
   const router = useRouter();
   const [values, setValues] = useState({
     fullName: "",
     email: "",
     password: "",
     role: "",
+    repName: "",
   });
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -413,6 +419,13 @@ function AddUserModal({ onClose }: { onClose: () => void }) {
             ))}
           </select>
         </div>
+        {values.role === "rep" && (
+          <RepPicker
+            value={values.repName}
+            repNames={repNames}
+            onChange={(repName) => setValues((v) => ({ ...v, repName }))}
+          />
+        )}
         <div className="flex gap-3">
           <button
             type="button"
@@ -444,11 +457,13 @@ function EditUserModal({
   user,
   isProtected,
   isSelf,
+  repNames,
   onClose,
 }: {
   user: User;
   isProtected: boolean;
   isSelf: boolean;
+  repNames: string[];
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -456,6 +471,7 @@ function EditUserModal({
     fullName: user.full_name,
     email: user.email,
     role: user.role as string,
+    repName: user.rep_name ?? "",
   });
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -598,6 +614,13 @@ function EditUserModal({
                 </p>
               )}
             </div>
+            {values.role === "rep" && (
+              <RepPicker
+                value={values.repName}
+                repNames={repNames}
+                onChange={(repName) => setValues((v) => ({ ...v, repName }))}
+              />
+            )}
             <div className="flex gap-3">
               <button
                 type="button"
@@ -695,5 +718,34 @@ function ModalShell({
         {children}
       </div>
     </div>
+  );
+}
+
+/** Which rep a Rep user is: the name as it appears on orders. They see only those SOs. */
+function RepPicker({
+  value,
+  repNames,
+  onChange,
+}: {
+  value: string;
+  repNames: string[];
+  onChange: (next: string) => void;
+}) {
+  const names = [...new Set([...repNames, ...(value ? [value] : [])])].sort((a, b) => a.localeCompare(b));
+  return (
+    <>
+      <label className={labelClass}>Rep</label>
+      <div className="mb-6">
+        <select className={`${inputClass} cursor-pointer`} value={value} onChange={(e) => onChange(e.target.value)}>
+          <option value="">Select the rep</option>
+          {names.map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1.5 text-xs text-muted">They see only the SOs whose Rep is this name — read-only.</p>
+      </div>
+    </>
   );
 }

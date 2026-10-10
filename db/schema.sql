@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
     role          TEXT         NOT NULL
                                CHECK (role IN ('admin', 'central_visibility', 'operations',
                                                'accounts', 'drawing', 'planning', 'purchase',
-                                               'qc', 'assembly', 'dispatch', 'order_making')),
+                                               'qc', 'assembly', 'dispatch', 'order_making', 'rep')),
     status        TEXT         NOT NULL DEFAULT 'pending'
                                CHECK (status IN ('pending', 'approved', 'rejected', 'disabled')),
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -38,7 +38,7 @@ ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD  CONSTRAINT users_role_check
     CHECK (role IN ('admin', 'central_visibility', 'operations', 'accounts',
                     'drawing', 'planning', 'purchase', 'qc',
-                    'assembly', 'dispatch', 'order_making'));
+                    'assembly', 'dispatch', 'order_making', 'rep'));
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_status_check;
 ALTER TABLE users ADD  CONSTRAINT users_status_check
     CHECK (status IN ('pending', 'approved', 'rejected', 'disabled'));
@@ -2411,3 +2411,7 @@ CREATE TABLE IF NOT EXISTS accounts_hold_reasons (
 INSERT INTO accounts_hold_reasons (label) VALUES
     ('Old Outstanding'), ('Current year Outstanding'), ('Previous PBG Pending')
 ON CONFLICT (label) DO NOTHING;
+
+-- A Rep sees what Central Visibility sees, read-only, for their own SOs only:
+-- orders whose Rep (orders.reps) is the name Admin linked to the user.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS rep_name TEXT;

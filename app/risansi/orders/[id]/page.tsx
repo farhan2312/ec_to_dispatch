@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getOrderDeptStatus, getOrderDetail, listItemDetails, listTargetRevisions } from "@/lib/orders";
 import { getCurrentUser } from "@/lib/session";
-import { isCentral } from "@/lib/roles";
+import { canViewAll } from "@/lib/roles";
 import { roleSeesOrder } from "@/lib/dept-view";
 import { OrderDetail } from "@/components/risansi/order-detail";
 
@@ -28,7 +28,7 @@ export default async function OrderDetailPage({
   // only shown once the order has passed the checks below.
   // Central Visibility and Admin also get every EC's departments, for the
   // grid that opens each one in a pop-up.
-  const central = isCentral(user.role);
+  const central = canViewAll(user.role);
   const [detail, targetRevisions, gridItems, gridStatus] = await Promise.all([
     getOrderDetail(id),
     listTargetRevisions(id),
@@ -40,7 +40,7 @@ export default async function OrderDetailPage({
     !roleSeesOrder(user.role, {
       ...detail.order,
       ec_types: detail.items.map((i) => i.item_type),
-    })
+    }, user.rep_name)
   ) {
     notFound();
   }

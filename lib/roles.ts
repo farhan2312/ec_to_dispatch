@@ -20,6 +20,10 @@ export const ROLE_LABELS = {
   // Creates SOs (form or Excel) and fills their Client and Purchase Order
   // details; Central Visibility does the rest. Sees nothing beyond those.
   order_making: "Order Making",
+  // Sees what Central Visibility sees, read-only, for their own SOs only (the
+  // orders whose Rep is the name Admin linked to the user). May post in an
+  // SO's discussion.
+  rep: "Rep",
 } as const;
 
 export type Role = keyof typeof ROLE_LABELS;
@@ -64,6 +68,21 @@ const TABLE_OWNER: Record<OrderTable, Role> = {
 /** Admin and Central Visibility (Mitali). Own `centralOnly` fields. */
 export function isCentral(role: string): boolean {
   return role === "admin" || role === "central_visibility";
+}
+
+/** A sales Rep: Central's view, read-only, of their own SOs. */
+export function isRep(role: string): boolean {
+  return role === "rep";
+}
+
+/** Sees the whole tracker's screens (the Orders list, every department): Central, Admin, a Rep. */
+export function canViewAll(role: string): boolean {
+  return isCentral(role) || isRep(role);
+}
+
+/** May open a department's queue — its own, or (Central, Admin, a Rep) any. Editing is canEditSection. */
+export function canViewDepartment(role: string, table: OrderTable): boolean {
+  return canAccessDepartment(role, table) || isRep(role);
 }
 
 /** Admin and Central Visibility can edit any section; others only their own. */
@@ -116,7 +135,7 @@ export function canSeeEscalations(role: string): boolean {
 
 /** The central full-visibility dashboard is for Central Visibility and Admin. */
 export function canSeeCentralDashboard(role: string): boolean {
-  return role === "admin" || role === "central_visibility";
+  return role === "admin" || role === "central_visibility" || role === "rep";
 }
 
 /**

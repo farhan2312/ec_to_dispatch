@@ -15,6 +15,7 @@ import {
   CLEARANCE_FILTER_OPTIONS,
   HOLD_REASON_FILTER_OPTIONS,
   BILL_MODE_FILTER_OPTIONS,
+  PAYMENT_STATUS_FILTER_OPTIONS,
   DATE_PRESETS,
   FIELD_FILTER_FIELDS,
   PAYMENT_FILTER_DEPTS,
@@ -49,6 +50,7 @@ const FILTER_KEYS = [
   "fstate",
   "pterm",
   "bmode",
+  "pstat",
   "clear",
   "hreason",
 ];
@@ -222,6 +224,16 @@ export function OrderListFilterBar({
             options={BILL_MODE_FILTER_OPTIONS}
             selected={filter.billModes}
             onChange={(next) => setParams({ bmode: next })}
+          />
+        )}
+        {/* The orders list: Accounts' payment status. */}
+        {!dept && (
+          <MultiSelectFilter
+            label="Payment status"
+            allLabel="Any payment status"
+            options={PAYMENT_STATUS_FILTER_OPTIONS}
+            selected={filter.paymentStatuses}
+            onChange={(next) => setParams({ pstat: next })}
           />
         )}
         {/* The orders list: Central Visibility's clearance, and why SOs are held. */}

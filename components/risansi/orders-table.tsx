@@ -248,6 +248,8 @@ export function OrdersTable({
   const [popup, setPopup] = useState<{ order: OrderListRow; what: PopupKind } | null>(null);
   const [chatFor, setChatFor] = useState<OrderListRow | null>(null);
   const [detailsFor, setDetailsFor] = useState<OrderListRow | null>(null);
+  // A Rep views the list; nothing on it changes anything.
+  const readOnly = role === "rep";
   // The filter lives in the URL, so it narrows the whole table rather than
   // only the page already loaded.
   const { get: getParam } = useUrlTable();
@@ -310,7 +312,7 @@ export function OrdersTable({
                 <th className="px-4 py-3">Planning</th>
                 <th className="px-4 py-3">Assembly &amp; Packing</th>
                 <th className="px-4 py-3">Dispatch</th>
-                <th className="px-4 py-3 text-center normal-case">ECs</th>
+                <th className="px-4 py-3 text-center normal-case"><SortHeader label="ECs" sortKey="ecs" /></th>
                 <th className="px-4 py-3" />
                 {canDelete && <th className="px-4 py-3" />}
               </tr>
@@ -374,7 +376,7 @@ export function OrdersTable({
                       <td className="px-4 py-3 whitespace-nowrap align-top">
                         <div className="font-medium">{cell(order.so_no)}</div>
                         <span onClick={(e) => e.stopPropagation()}>
-                          <ClearanceBadge order={order as unknown as Record<string, unknown>} />
+                          <ClearanceBadge order={order as unknown as Record<string, unknown>} readOnly={readOnly} />
                         </span>
                         {order.accounts_hold_status === "Hold" && (
                           <span
@@ -568,7 +570,7 @@ export function OrdersTable({
             setDetailsFor(null);
             setAddFor(order);
           }}
-          onEdit={() => {
+          onEdit={readOnly ? undefined : () => {
             const order = detailsFor;
             setDetailsFor(null);
             setPopup({ order, what: { kind: "so", section: "orders", title: "Order details" } });

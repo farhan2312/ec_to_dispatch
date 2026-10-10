@@ -322,7 +322,8 @@ export default async function NotificationsPage({
     listNotificationsPage(
       recipientRolesForUser(user.role),
       parsePage(params.npage),
-      user.id
+      user.id,
+      user.role === "rep" ? user.rep_name?.trim() || "(no rep linked)" : null
     ),
     oversight
       ? listAlertsPage(parsePage(params.epage))

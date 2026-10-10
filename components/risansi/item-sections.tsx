@@ -9,7 +9,7 @@ import {
   ITEM_SECTIONS,
 } from "@/lib/order-schema";
 import {
-  canAccessDepartment,
+  canViewDepartment,
   canCreateOrders,
   canEditChild,
   canEditQcDocuments,
@@ -61,7 +61,8 @@ export function ItemSections({
   });
   const visibleSections = ITEM_SECTIONS.filter(
     (s) =>
-      canAccessDepartment(role, s.table) &&
+      // A Rep sees every section, read-only.
+      canViewDepartment(role, s.table) &&
       (s.table !== "order_qc" || qcNeeded) &&
       (s.table !== "order_drawing" || drawingNeeded) &&
       (!only || s.table === only)

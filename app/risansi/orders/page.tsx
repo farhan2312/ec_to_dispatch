@@ -8,9 +8,10 @@ import {
   isOrderListFiltered,
   orderListFilterParams,
   parseOrderListFilter,
+  scopeToRep,
 } from "@/lib/order-list-filter";
 import { getCurrentUser } from "@/lib/session";
-import { canCreateOrders, isCentral } from "@/lib/roles";
+import { canCreateOrders, canViewAll, isRep } from "@/lib/roles";
 import { OrdersTable } from "@/components/risansi/orders-table";
 import { MissingDetailsButton } from "@/components/risansi/missing-details-modal";
 
@@ -29,17 +30,21 @@ export default async function OrdersPage({
   if (!user) redirect("/login");
   // The whole-order list/summary is Central Visibility & Admin only;
   // department roles use their own workspace instead.
-  if (!isCentral(user.role)) redirect("/risansi/dashboard");
+  if (!canViewAll(user.role)) redirect("/risansi/dashboard");
+  const rep = isRep(user.role);
 
   const params = await searchParams;
   // The central dashboard's filter set, read from the URL so it narrows the
   // whole table in SQL — see lib/order-list-filter.ts.
-  const filter = parseOrderListFilter((key) => params[key], { noDispatchTarget: true });
-  const result = await listOrdersPage({
+  // A Rep sees only their own SOs.
+  const filter = scopeToRep(parseOrderListFilter((key) => params[key], { noDispatchTarget: true }), user);
+  const listed = await listOrdersPage({
     page: parsePage(params.page),
     filter,
     sort: parseQueueSort(params.sort),
   });
+  // …and the Rep filter offers only their own name.
+  const result = rep ? { ...listed, options: { ...listed.options, reps: filter.reps } } : listed;
   const canCreate = canCreateOrders(user.role);
   // Every department on each SO of this page, for the row's tags.
   const deptStatuses = Object.fromEntries(await listOrderDeptStatuses(result.rows.map((r) => r.id)));
@@ -73,7 +78,7 @@ export default async function OrdersPage({
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           {/* What the tracker is still waiting on, across every SO — see
               lib/order-gaps.ts. */}
-          <MissingDetailsButton />
+          {!rep && <MissingDetailsButton />}
           <a
             href={exportHref}
             className="inline-flex h-10 items-center gap-2 rounded-lg border border-input-border bg-surface px-4 text-sm font-semibold text-foreground transition-colors hover:bg-background"

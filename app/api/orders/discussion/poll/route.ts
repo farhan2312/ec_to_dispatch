@@ -1,5 +1,7 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/session";
+import { getOrderRep } from "@/lib/orders";
+import { repMatches } from "@/lib/dept-view";
 import {
   canUsePeer,
   countDiscussionUnread,
@@ -45,6 +47,10 @@ export async function GET(req: NextRequest) {
   // The peer is authorized here too: this is a public endpoint, whatever the
   // UI happens to be showing.
   if (orderId && peer && !canUsePeer(user.role, peer)) {
+    return new Response("Forbidden", { status: 403 });
+  }
+  // A Rep watches only their own SOs.
+  if (orderId && user.role === "rep" && !repMatches(await getOrderRep(orderId), user.rep_name)) {
     return new Response("Forbidden", { status: 403 });
   }
 

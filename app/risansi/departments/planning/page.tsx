@@ -2,7 +2,13 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { CalendarClock, Download, FileText } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canEditSection, isCentral, reminderDeptForTable } from "@/lib/roles";
+import {
+  canEditSection,
+  canViewDepartment,
+  isCentral,
+  isRep,
+  reminderDeptForTable,
+} from "@/lib/roles";
 import { listItemsForSectionPage,
   parseQueueSort,
   resolveFocusOrderId,
@@ -10,7 +16,7 @@ import { listItemsForSectionPage,
   listOrderListOptions,
 } from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
-import { parseDeptFilter } from "@/lib/order-list-filter";
+import { parseDeptFilter, scopeToRep } from "@/lib/order-list-filter";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import { PLANNING_CONTEXT_FIELDS, SECTION_BY_TABLE } from "@/lib/order-schema";
 import { unreadByOrder } from "@/lib/order-messages";
@@ -33,12 +39,13 @@ export default async function PlanningWorkspacePage({
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
+  if (!canViewDepartment(user.role, TABLE)) redirect("/risansi/dashboard");
 
   const params = await searchParams;
   const { edit, thread, page, q } = params;
   // This department's own filter bar, with the department pinned.
-  const filter = parseDeptFilter((key) => params[key], "planning");
+  // A Rep sees only their own SOs.
+  const filter = scopeToRep(parseDeptFilter((key) => params[key], "planning"), user);
   // A notification links to an EC (item id) or an SO; either way the queue
   // must open on the page that holds it.
   // Which SO a notification link should open on. Without a link this is
@@ -65,7 +72,7 @@ export default async function PlanningWorkspacePage({
         sort: parseQueueSort(params.sort),
       }
     ),
-    listRemindersForDepartment(reminderDeptForTable(TABLE)!),
+    isRep(user.role) ? Promise.resolve([]) : listRemindersForDepartment(reminderDeptForTable(TABLE)!),
     listOrderListOptions(),
   ]);
 
@@ -130,6 +137,7 @@ export default async function PlanningWorkspacePage({
       <RemindersPanel reminders={reminders} showClient={false} focusInQueue />
 
       <DepartmentWorkspace
+        canEdit={canEditSection(user.role, TABLE)}
         completions={completions}
         openThreadId={thread}
         focusOrderId={focusOrderId ?? undefined}

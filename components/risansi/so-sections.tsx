@@ -50,6 +50,7 @@ export function SoSections({
   role,
   targetRevisions,
   middle,
+  only,
 }: {
   detail: OrderDetailData;
   orderId: string;
@@ -57,6 +58,8 @@ export function SoSections({
   targetRevisions: TargetRevision[];
   /** Rendered between Order details and the other SO sections. */
   middle?: React.ReactNode;
+  /** Just this section (a table, or "order_packing_slips") — the Orders list's quick view pop-up. */
+  only?: string;
 }) {
   const order = detail.order;
   const central = isCentral(role);
@@ -69,7 +72,8 @@ export function SoSections({
   const visibleSections = SO_SECTIONS.filter(
     (s) =>
       canAccessDepartment(role, s.table) &&
-      !(s.table === "order_accounts" && isChallanOrder)
+      !(s.table === "order_accounts" && isChallanOrder) &&
+      (!only || s.table === only)
   );
   // Split so the EC panel can sit between Order details (core) and the other
   // SO sections (Billing & Operations, Accounts).
@@ -192,10 +196,11 @@ export function SoSections({
   return (
     <>
       {coreSections.map(renderSection)}
-      {middle}
+      {!only && middle}
       {/* Assembly & Packing's packing slips belong to the SO, so they are
           kept here, once, rather than under each EC. */}
       {canAccessDepartment(role, "order_assembly_dispatch") &&
+        (!only || only === "order_packing_slips") &&
         (String(order.market_type ?? "").trim() !== "" ? (
           <OrderChildList
             orderId={orderId}

@@ -3,8 +3,12 @@
 import { Fragment, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronRight, Loader2, Plus, Trash2 } from "lucide-react";
-import type { ItemSummary, OrderListOptions, OrderListRow } from "@/lib/orders";
+import { ChevronDown, ChevronRight, Loader2, MessageSquare, Plus, Trash2 } from "lucide-react";
+import { ClearanceBadge, OrderPopupHost, type PopupKind } from "./order-popups";
+import { TermPis } from "./term-pis";
+import { OrderThreadModal } from "./order-thread-modal";
+import { OrderDetailsModal } from "./order-details-modal";
+import type { DeptCell, ItemSummary, OrderListOptions, OrderListRow, SoDeptStatus } from "@/lib/orders";
 import { deleteOrderAction } from "@/app/risansi/orders/actions";
 import { UrlPagination, useUrlTable } from "./url-table";
 import type { PageResult } from "@/lib/pagination";
@@ -34,29 +38,6 @@ function formatDate(value: string | null): string {
 
 function cell(value: string | null): string {
   return value && value.trim() !== "" ? value : "—";
-}
-
-/** The order status; a cancelled or diverted order stands out. */
-const STATUS_TONE: Record<string, string> = {
-  "Cancelled by client": "bg-rose-50 text-rose-700",
-  Diverted: "bg-amber-50 text-amber-700",
-  "Fully dispatch": "bg-emerald-50 text-emerald-700",
-  "LOT dispatch": "bg-blue-50 text-blue-700",
-};
-
-function StatusChip({ value }: { value: string | null }) {
-  if (!value || value.trim() === "") {
-    return <span className="text-muted-foreground">—</span>;
-  }
-  return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-        STATUS_TONE[value.trim()] ?? "bg-slate-100 text-slate-600"
-      }`}
-    >
-      {value}
-    </span>
-  );
 }
 
 /**
@@ -124,6 +105,112 @@ function ItemRows({
   );
 }
 
+/** Planning is done once the ECs are ready, not as soon as they have a status. */
+const READY = ["fully ready", "assembled", "packed"];
+
+/** An EC department across the SO's ECs: their shared state, or how many are done. */
+function acrossEcs(status: SoDeptStatus | undefined, key: "drawing" | "purchase" | "quality" | "planning" | "assembly"): DeptCell | null {
+  if (!status) return null;
+  const cells = status.ecs
+    .map((e) => e[key])
+    .filter((c) => c.state !== "na")
+    .map((c) => (key === "planning" && !READY.includes(c.label.toLowerCase()) ? { ...c, state: "pending" as const } : c));
+  if (cells.length === 0) return null;
+  if (new Set(cells.map((c) => `${c.state}|${c.label}`)).size === 1) return cells[0];
+  const done = cells.filter((c) => c.state === "done").length;
+  return { state: done === cells.length ? "done" : "pending", label: `${done}/${cells.length} ECs done` };
+}
+
+
+const TEXT_TONE: Record<DeptCell["state"], string> = {
+  done: "text-emerald-700 dark:text-emerald-400",
+  pending: "text-foreground",
+  na: "text-muted-foreground",
+};
+
+/** A status as text (no pill) that opens its department, with a line under it. */
+function StatusText({ text, tone = "pending", line, onClick }: {
+  text: string | null;
+  tone?: DeptCell["state"];
+  line?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title="Open"
+      className="-m-1 flex flex-col items-start rounded-md p-1 text-left transition-colors hover:bg-background"
+    >
+      {text ? (
+        <span className={`text-[13px] font-medium ${TEXT_TONE[tone]}`}>{text}</span>
+      ) : (
+        <span className="text-xs text-muted-foreground">—</span>
+      )}
+      {line && <span className="text-[11px] text-muted">{line}</span>}
+    </button>
+  );
+}
+
+/** A department the SO has reached, as a tag that opens it. */
+type DeptTag = { key: string; name: string; cell: DeptCell; what: PopupKind };
+
+const EC_TAG_NAMES = { drawing: "Drawing", purchase: "Purchase", quality: "Quality", planning: "Planning", assembly: "Packing" } as const;
+/** The order statuses that close an SO. */
+const CLOSED = ["Cancelled by client", "Diverted"];
+const READY_OR_BEYOND = ["partial ready", "fully ready", "assembled", "packed"];
+
+/**
+ * The departments an SO has reached — the ones whose queue it sits in now.
+ * Packing appears once something is ready (not while Planning is still
+ * planning), Dispatch once a numbered packing slip exists, Billing once there
+ * are terms or PIs, Accounts once there is a PI or a payment.
+ */
+function reachedDepts(order: OrderListRow, status: SoDeptStatus | undefined): DeptTag[] {
+  const tags: DeptTag[] = [];
+  if (!status) return tags;
+  // Accounts is not involved only on a Challan order — nor is Billing's PI list.
+  const challan = status.accounts.state === "na";
+  for (const key of ["drawing", "purchase", "quality", "planning"] as const) {
+    const cell = acrossEcs(status, key);
+    const anyInvolved = status.ecs.some((e) => e[key].state !== "na");
+    if (!anyInvolved) continue;
+    tags.push({
+      key,
+      name: EC_TAG_NAMES[key],
+      cell: cell!,
+      what: { kind: "ec", dept: key },
+    });
+  }
+  const reachedPacking = status.ecs.some(
+    (e) =>
+      e.assembly.label.toLowerCase() !== "pending" ||
+      READY_OR_BEYOND.includes(e.planning.label.toLowerCase())
+  );
+  if (reachedPacking) {
+    const cell = acrossEcs(status, "assembly");
+    if (cell) tags.push({ key: "assembly", name: "Packing", cell, what: { kind: "ec", dept: "assembly" } });
+  }
+  const hasTerms = (order.term_lines ?? []).length > 0;
+  const hasPi = (order.pi_docs ?? []).length > 0;
+  if (!challan && status.billing.state !== "na" && (hasTerms || hasPi)) {
+    tags.push({ key: "billing", name: "Billing", cell: status.billing, what: { kind: "so", section: "order_billing", title: "Billing & Operations" } });
+  }
+  if (status.accounts.state !== "na" && (hasPi || status.accounts.state === "done")) {
+    tags.push({ key: "accounts", name: "Accounts", cell: status.accounts, what: { kind: "so", section: "order_accounts", title: "Accounts" } });
+  }
+  if (order.in_dispatch || status.dispatch.state === "done") {
+    tags.push({ key: "dispatch", name: "Dispatch", cell: status.dispatch, what: { kind: "so", section: "order_dispatch", title: "Dispatch" } });
+  }
+  return tags;
+}
+
+const TAG_TONE: Record<DeptCell["state"], string> = {
+  done: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
+  pending: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
+  na: "border-transparent bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-400",
+};
+
 /** Central Visibility's clearance: Clear (the default), or Hold with its reason. */
 export function ClearanceChip({ status, reason }: { status: string | null; reason: string | null }) {
   if (status === "Hold") {
@@ -140,16 +227,26 @@ export function ClearanceChip({ status, reason }: { status: string | null; reaso
 export function OrdersTable({
   result,
   canDelete = false,
+  role,
+  deptStatuses = {},
 }: {
   // One server-fetched page; every filter and the paging ran in SQL.
   result: PageResult<OrderListRow> & { options: OrderListOptions };
   canDelete?: boolean;
+  // The viewer's role — the department pop-ups on a row edit as it.
+  role: string;
+  // Where every department stands on each SO of the page, by SO id.
+  deptStatuses?: Record<string, SoDeptStatus>;
 }) {
   const orders = result.rows;
   const router = useRouter();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [addFor, setAddFor] = useState<OrderListRow | null>(null);
+  // The one department pop-up open, and the one discussion.
+  const [popup, setPopup] = useState<{ order: OrderListRow; what: PopupKind } | null>(null);
+  const [chatFor, setChatFor] = useState<OrderListRow | null>(null);
+  const [detailsFor, setDetailsFor] = useState<OrderListRow | null>(null);
   // The filter lives in the URL, so it narrows the whole table rather than
   // only the page already loaded.
   const { get: getParam } = useUrlTable();
@@ -157,8 +254,8 @@ export function OrdersTable({
     parseOrderListFilter((key) => getParam(key) || undefined)
   );
   const pageRows = orders;
-  // expand-toggle + 9 data columns + open + optional Add-On/delete.
-  const baseCols = 12;
+  // expand-toggle + 15 data columns + open/add-on + optional delete.
+  const baseCols = 17;
   const colSpan = baseCols + (canDelete ? 1 : 0);
   function toggle(id: string) {
     setExpanded((prev) => {
@@ -191,19 +288,24 @@ export function OrdersTable({
 
       <div className="rounded-xl border border-card-border bg-surface shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1000px] text-sm">
+          <table className="w-full min-w-[1700px] text-sm">
             <thead>
               <tr className="border-b border-card-border text-left text-xs font-semibold uppercase tracking-wide text-muted">
                 <th className="w-8 px-2 py-3" />
                 <th className="px-4 py-3"><SortHeader label="Sl. No." sortKey="sl" /></th>
                 <th className="px-4 py-3">SO No.</th>
                 <th className="px-4 py-3"><SortHeader label="SO Date" sortKey="so_date" /></th>
+                <th className="px-3 py-3">Chat</th>
+                <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Client Name</th>
                 <th className="px-4 py-3">Client Code</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
-                <th className="px-4 py-3">Clearance</th>
-                <th className="px-4 py-3">Payment Status</th>
-                <th className="px-4 py-3">Order Status</th>
+                <th className="px-4 py-3">Departments</th>
+                <th className="px-4 py-3">Payment terms, PIs &amp; payment</th>
+                <th className="px-4 py-3">Readiness Date</th>
+                <th className="px-4 py-3">Planning</th>
+                <th className="px-4 py-3">Assembly &amp; Packing</th>
+                <th className="px-4 py-3">Dispatch</th>
                 <th className="px-4 py-3 text-center normal-case">ECs</th>
                 <th className="px-4 py-3" />
                 {canDelete && <th className="px-4 py-3" />}
@@ -219,40 +321,81 @@ export function OrdersTable({
               )}
               {pageRows.map((order) => {
                 const isOpen = expanded.has(order.id);
-                const items = order.items ?? [];
-                const overview = `/risansi/orders/${order.id}/overview`;
                 const orderPage = `/risansi/orders/${order.id}`;
+                const status = deptStatuses[order.id];
+                const soLabel = order.so_no ?? `#${order.sl_no}`;
+                // A Spare starts at Date awaited — even before its first EC.
+                const planning =
+                  order.readiness_status ??
+                  acrossEcs(status, "planning")?.label ??
+                  ((order.order_type ?? "").toLowerCase() === "spare" ? "Date awaited" : null);
+                const assembly = acrossEcs(status, "assembly");
+                const assemblyText = assembly?.label ?? null;
+                const assemblyLine =
+                  assemblyText && /packed/i.test(assemblyText) && order.packed_on
+                    ? `Packed ${formatDate(order.packed_on)}`
+                    : assemblyText && /ready/i.test(assemblyText) && order.ready_on
+                      ? `Ready ${formatDate(order.ready_on)}`
+                      : undefined;
+                const dispatch = order.dispatch_status || "Pending";
+                // A cancelled or diverted SO is nobody's work: no departments, no progress.
+                const closed = CLOSED.includes(dispatch);
                 return (
                   <Fragment key={order.id}>
-                    {/* The whole row opens the SO's overview — the one page
-                        that carries its ECs, every department's state and
-                        everything recorded. The chevron and the buttons stop
-                        the click so they still do their own job. */}
+                    {/* A click on the row opens its Order details; the chevron
+                        shows its ECs; every other control does its own job. */}
                     <tr
-                      onClick={() => router.push(overview)}
-                      className="cursor-pointer text-foreground transition-colors hover:bg-background/60"
+                      onClick={() => setDetailsFor(order)}
+                      // Every cell starts at the top, so the row reads straight across;
+                      // a cancelled or diverted SO is red end to end.
+                      className={`cursor-pointer align-top text-foreground transition-colors ${
+                        closed
+                          ? "bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/15 dark:hover:bg-rose-500/20"
+                          : "hover:bg-background/60"
+                      }`}
                     >
                       <td className="px-2 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
                           onClick={() => toggle(order.id)}
-                          aria-label={isOpen ? "Collapse" : "Expand"}
+                          aria-label={isOpen ? "Hide ECs" : "Show ECs"}
                           aria-expanded={isOpen}
                           className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-input-border text-muted-foreground transition-colors hover:bg-background"
                         >
-                          {isOpen ? (
-                            <ChevronDown className="h-3.5 w-3.5" />
-                          ) : (
-                            <ChevronRight className="h-3.5 w-3.5" />
-                          )}
+                          {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                         </button>
                       </td>
                       <td className="px-4 py-3 font-medium tabular-nums">{order.sl_no}</td>
-                      <td className="px-4 py-3 whitespace-nowrap">{cell(order.so_no)}</td>
-                      <td className="px-4 py-3 whitespace-nowrap text-muted">
-                        {formatDate(order.so_date)}
+                      {/* The SO and its holds; Clear / Hold is changed from the badge. */}
+                      <td className="px-4 py-3 whitespace-nowrap align-top">
+                        <div className="font-medium">{cell(order.so_no)}</div>
+                        <span onClick={(e) => e.stopPropagation()}>
+                          <ClearanceBadge order={order as unknown as Record<string, unknown>} />
+                        </span>
+                        {order.accounts_hold_status === "Hold" && (
+                          <span
+                            title={[order.accounts_hold_reason, order.accounts_hold_remarks].filter(Boolean).join(" — ")}
+                            className="mt-1 flex w-fit max-w-[12rem] flex-col rounded-md bg-rose-50 px-1.5 py-0.5 text-[11px] leading-tight text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"
+                          >
+                            <span className="font-semibold">Accounts hold</span>
+                            {order.accounts_hold_reason && <span className="whitespace-normal">{order.accounts_hold_reason}</span>}
+                          </span>
+                        )}
                       </td>
-                      <td className="px-4 py-3">{cell(order.client_name)}</td>
+                      <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDate(order.so_date)}</td>
+                      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => setChatFor(order)}
+                          aria-label={`Discussion for SO ${soLabel}`}
+                          title="Discussion"
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-input-border text-foreground transition-colors hover:bg-background"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">{cell(order.order_type)}</td>
+                      <td className="min-w-[14rem] px-4 py-3">{cell(order.client_name)}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{cell(order.client_code)}</td>
                       <td className="px-4 py-3 text-right tabular-nums whitespace-nowrap">
                         {/* With its unit; a USD order shows its INR figure beneath. */}
@@ -260,25 +403,75 @@ export function OrdersTable({
                           <>
                             {formatValue(order.order_value)}{" "}
                             <span className="text-xs text-muted">{order.order_currency || "INR"}</span>
-                            {(order.order_currency ?? "INR").toUpperCase() !== "INR" &&
-                              order.order_value_inr && (
-                                <div className="text-xs text-muted">
-                                  {formatValue(order.order_value_inr)} INR
-                                </div>
-                              )}
+                            {(order.order_currency ?? "INR").toUpperCase() !== "INR" && order.order_value_inr && (
+                              <div className="text-xs text-muted">{formatValue(order.order_value_inr)} INR</div>
+                            )}
                           </>
                         ) : (
                           "—"
                         )}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <ClearanceChip status={order.clearance_status} reason={order.clearance_hold_reason} />
+                      {/* The departments the SO has reached, each opening its pop-up. */}
+                      <td className="px-4 py-3 align-top" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex min-w-[12rem] max-w-[18rem] flex-wrap gap-1">
+                          {closed && (
+                            <span className="inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                              {dispatch}
+                            </span>
+                          )}
+                          {!closed && reachedDepts(order, status).map((t) => (
+                            <button
+                              key={t.key}
+                              type="button"
+                              onClick={() => setPopup({ order, what: t.what })}
+                              title={`${t.name}: ${t.cell.label} — open`}
+                              className={`inline-flex max-w-[12rem] items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] leading-tight transition-opacity hover:opacity-80 ${TAG_TONE[t.cell.state]}`}
+                            >
+                              <span className="font-semibold">{t.name}</span>
+                              <span className="truncate">{t.cell.label}</span>
+                            </button>
+                          ))}
+                        </div>
                       </td>
-                      <td className="px-4 py-3">
-                        <StatusChip value={order.payment_status} />
+                      {/* Each term with its PI and what came in — as Accounts sees it. */}
+                      <td className="px-4 py-3 align-top" onClick={(e) => e.stopPropagation()}>
+                        <TermPis
+                          orderId={order.id}
+                          soLabel={soLabel}
+                          terms={order.term_lines ?? []}
+                          pis={order.pi_docs ?? []}
+                          canEdit={false}
+                          payments={{ canEdit: false }}
+                        />
                       </td>
-                      <td className="px-4 py-3">
-                        <StatusChip value={order.dispatch_status} />
+                      <td className="px-4 py-3 whitespace-nowrap align-top text-muted">
+                        {!closed && order.readiness_from
+                          ? order.readiness_to && order.readiness_to !== order.readiness_from
+                            ? `${formatDate(order.readiness_from)} – ${formatDate(order.readiness_to)}`
+                            : formatDate(order.readiness_from)
+                          : "—"}
+                      </td>
+                      <td className="px-4 py-3 align-top" onClick={(e) => e.stopPropagation()}>
+                        <StatusText
+                          text={closed ? null : planning}
+                          tone={planning && READY.includes(planning.toLowerCase()) ? "done" : "pending"}
+                          onClick={() => setPopup({ order, what: { kind: "ec", dept: "planning" } })}
+                        />
+                      </td>
+                      <td className="px-4 py-3 align-top" onClick={(e) => e.stopPropagation()}>
+                        <StatusText
+                          text={closed ? null : assemblyText}
+                          tone={assembly?.state ?? "pending"}
+                          line={closed ? undefined : assemblyLine}
+                          onClick={() => setPopup({ order, what: { kind: "ec", dept: "assembly" } })}
+                        />
+                      </td>
+                      <td className="px-4 py-3 align-top" onClick={(e) => e.stopPropagation()}>
+                        <StatusText
+                          text={dispatch}
+                          tone={closed ? "na" : dispatch.toLowerCase() === "pending" ? "pending" : "done"}
+                          onClick={() => setPopup({ order, what: { kind: "so", section: "order_dispatch", title: "Dispatch" } })}
+                        />
                       </td>
                       <td className="px-4 py-3 text-center tabular-nums">{order.ec_count}</td>
                       <td
@@ -296,10 +489,11 @@ export function OrdersTable({
                             <button
                               type="button"
                               onClick={() => setAddFor(order)}
-                              className="inline-flex h-8 items-center gap-1 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
+                              aria-label={`${order.order_type ?? "Pump"} Add-On`}
+                              title={`${order.order_type ?? "Pump"} Add-On`}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-colors hover:bg-primary-hover"
                             >
-                              <Plus className="h-3.5 w-3.5" />
-                              {`${order.order_type ?? "Pump"} Add-On`}
+                              <Plus className="h-4 w-4" />
                             </button>
                           )}
                         </div>
@@ -328,11 +522,7 @@ export function OrdersTable({
                     {isOpen && (
                       <tr className="bg-background/40">
                         <td colSpan={colSpan} className="p-0">
-                          <ItemRows
-                            orderId={order.id}
-                            items={items}
-                            orderType={order.order_type}
-                          />
+                          <ItemRows orderId={order.id} items={order.items ?? []} orderType={order.order_type} />
                         </td>
                       </tr>
                     )}
@@ -351,6 +541,41 @@ export function OrdersTable({
         />
       </div>
 
+      {popup && (
+        <OrderPopupHost
+          orderId={popup.order.id}
+          soLabel={popup.order.so_no ?? `#${popup.order.sl_no}`}
+          role={role}
+          what={popup.what}
+          version={result}
+          onClose={() => setPopup(null)}
+        />
+      )}
+      {detailsFor && (
+        <OrderDetailsModal
+          orderId={detailsFor.id}
+          onClose={() => setDetailsFor(null)}
+          addOnLabel={canDelete ? `${detailsFor.order_type ?? "Pump"} Add-On` : undefined}
+          onAddOn={() => {
+            const order = detailsFor;
+            setDetailsFor(null);
+            setAddFor(order);
+          }}
+          onEdit={() => {
+            const order = detailsFor;
+            setDetailsFor(null);
+            setPopup({ order, what: { kind: "so", section: "orders", title: "Order details" } });
+          }}
+        />
+      )}
+      {chatFor && (
+        <OrderThreadModal
+          orderId={chatFor.id}
+          role={role}
+          soLabel={chatFor.so_no ?? String(chatFor.sl_no)}
+          onClose={() => setChatFor(null)}
+        />
+      )}
       {addFor && (
         <AddOnForm
           orderId={addFor.id}

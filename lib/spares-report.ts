@@ -98,8 +98,10 @@ export type SparesReport = {
   ageing: { label: string; count: number; tone: "ok" | "warn" | "late" | "none" }[];
 };
 
-export const PLANNING_ORDER = ["Fully ready", "Partial ready", "In plan", "Date awaited", "Not set"];
-export const ASSEMBLY_ORDER = ["Fully ready", "Partial ready", "Partially packed", "Fully packed", "Pending"];
+export const PLANNING_ORDER = ["Fully ready", "Partial ready", "In plan", "Date awaited"];
+// A Spare with no readiness lot is not with Assembly & Packing yet — it has no
+// status there, shown as "Not ready yet".
+export const ASSEMBLY_ORDER = ["Fully ready", "Partial ready", "Partially packed", "Fully packed", "Not ready yet"];
 
 function stageOf(r: { assembly_status: string; dispatch_status: string }): SpareStage {
   if (r.dispatch_status === "Fully dispatch") return "dispatched";
@@ -130,12 +132,12 @@ export async function loadSparesReport(filter: SparesReportFilter): Promise<Spar
             (SELECT count(*) FROM order_items it WHERE it.order_id = o.id)::int AS ecs,
             COALESCE((SELECT COALESCE(NULLIF(btrim(pl.actual_spare_status), ''), NULLIF(btrim(pl.planning_status), ''))
                         FROM order_items it LEFT JOIN order_planning pl ON pl.item_id = it.id
-                       WHERE it.order_id = o.id ORDER BY it.seq LIMIT 1), 'Not set') AS planning_status,
+                       WHERE it.order_id = o.id ORDER BY it.seq LIMIT 1), 'Date awaited') AS planning_status,
             (SELECT ${ymd("max(pl.planning_readiness_date)")}
                FROM order_items it JOIN order_planning pl ON pl.item_id = it.id
               WHERE it.order_id = o.id) AS readiness_date,
-            COALESCE((SELECT ${ASSEMBLY_STATE_SQL("it")} FROM order_items it
-                       WHERE it.order_id = o.id ORDER BY it.seq LIMIT 1), 'Pending') AS assembly_status,
+            COALESCE(NULLIF((SELECT ${ASSEMBLY_STATE_SQL("it")} FROM order_items it
+                       WHERE it.order_id = o.id ORDER BY it.seq LIMIT 1), 'Pending'), 'Not ready yet') AS assembly_status,
             (SELECT ${ymd("min(rl.ready_date)")}
                FROM order_items it JOIN order_ready_lots rl ON rl.item_id = it.id
               WHERE it.order_id = o.id AND rl.packed_date IS NULL AND rl.ready_date IS NOT NULL) AS waiting_since,

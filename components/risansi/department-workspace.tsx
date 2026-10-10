@@ -362,7 +362,7 @@ export function DepartmentWorkspace({
           toInput(ec.actual_spare_status) ||
           toInput(ec.actual_pump_status) ||
           toInput(ec.planning_status) ||
-          "Pending",
+          (isSpareRow(ec) ? "Date awaited" : "Pending"),
         date:
           shortDate(ec.planning_readiness_date) +
           (toInput(ec.readiness_date_status) && toInput(ec.planning_readiness_date)
@@ -379,7 +379,7 @@ export function DepartmentWorkspace({
     }
     return toInput(ec.actual_packing_date)
       ? { status: "Fully packed", date: `Packed ${shortDate(ec.actual_packing_date)}` }
-      : { status: "Pending", date: "" };
+      : { status: isSpareRow(ec) ? "—" : "Pending", date: "" };
   };
   // Planning and Assembly & Packing edit the SO as one; an EC has its own Edit
   // only where that can't be done — an SO mixing Pump and Spare ECs.

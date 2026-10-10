@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { getOrderDetail, listTargetRevisions } from "@/lib/orders";
+import { getOrderDeptStatus, getOrderDetail, listItemDetails, listTargetRevisions } from "@/lib/orders";
 import { getCurrentUser } from "@/lib/session";
+import { isCentral } from "@/lib/roles";
 import { roleSeesOrder } from "@/lib/dept-view";
 import { OrderDetail } from "@/components/risansi/order-detail";
 
@@ -25,9 +26,14 @@ export default async function OrderDetailPage({
   // Target dates keep their full history; the panel shows the current value
   // with every earlier one behind it. Read alongside the order itself — it is
   // only shown once the order has passed the checks below.
-  const [detail, targetRevisions] = await Promise.all([
+  // Central Visibility and Admin also get every EC's departments, for the
+  // grid that opens each one in a pop-up.
+  const central = isCentral(user.role);
+  const [detail, targetRevisions, gridItems, gridStatus] = await Promise.all([
     getOrderDetail(id),
     listTargetRevisions(id),
+    central ? listItemDetails([id]) : null,
+    central ? getOrderDeptStatus(id) : null,
   ]);
   if (!detail) notFound();
   if (
@@ -45,6 +51,7 @@ export default async function OrderDetailPage({
       orderId={id}
       role={user.role}
       targetRevisions={targetRevisions}
+      grid={gridItems ? { items: gridItems, status: gridStatus } : undefined}
     />
   );
 }

@@ -14,7 +14,8 @@ import {
 import { deleteItemAction } from "@/app/risansi/orders/actions";
 import { OrderStatusPanel } from "./order-status-panel";
 import { canCreateOrders, canSeeClient } from "@/lib/roles";
-import type { OrderDetail as OrderDetailData } from "@/lib/orders";
+import type { ItemDetail, OrderDetail as OrderDetailData, SoDeptStatus } from "@/lib/orders";
+import { EcDeptGrid } from "./ec-dept-grid";
 import { AddOnForm } from "./add-on-form";
 import { OrderThread } from "./order-thread";
 import type { TargetRevision } from "@/lib/target-dates";
@@ -46,11 +47,15 @@ export function OrderDetail({
   orderId,
   role,
   targetRevisions,
+  grid,
 }: {
   detail: OrderDetailData;
   orderId: string;
   role: string;
   targetRevisions: TargetRevision[];
+  // Central Visibility and Admin: every EC department at a glance, each
+  // opening in a pop-up (EcDeptGrid).
+  grid?: { items: ItemDetail[]; status: SoDeptStatus | null };
 }) {
   const router = useRouter();
   const order = detail.order;
@@ -74,18 +79,46 @@ export function OrderDetail({
     else router.refresh();
   }
 
+  // An EC's own buttons: open its page, and (for those who manage ECs) delete it.
+  const rowActions = (item: Row) => {
+    const id = str(item.id);
+    return (
+      <div className="flex items-center justify-end gap-2">
+        <Link
+          href={`/risansi/orders/${orderId}/items/${id}`}
+          className="inline-flex h-8 items-center gap-1 rounded-lg border border-input-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
+        >
+          Open
+          <ChevronRight className="h-3.5 w-3.5" />
+        </Link>
+        {canManageItems && (
+          <button
+            type="button"
+            onClick={() => removeItem(item)}
+            disabled={deletingId === id}
+            aria-label="Delete EC"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+          >
+            {deletingId === id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+          </button>
+        )}
+      </div>
+    );
+  };
+
   const ecOrdersPanel = (
     <section className="rounded-xl border border-card-border bg-surface p-6 shadow-sm">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2.5">
             <h2 className="font-display text-base font-semibold text-foreground">
-              EC orders
+              {grid ? "ECs and departments" : "EC orders"}
             </h2>
 
           </div>
           <p className="text-sm text-muted">
             {items.length} {items.length === 1 ? "item" : "items"} under this SO.
+            {grid && items.length > 0 && " Click a department's status to see or edit it."}
           </p>
         </div>
         {canManageItems && (
@@ -107,6 +140,8 @@ export function OrderDetail({
             ? ` Use ${str(order.order_type) || "Pump"} Add-On to add one.`
             : ""}
         </p>
+      ) : grid ? (
+        <EcDeptGrid orderId={orderId} role={role} items={grid.items} status={grid.status} actions={rowActions} />
       ) : (
         (() => {
           // Columns follow the SO's order type: a Spare has no Pump Type /
@@ -146,32 +181,7 @@ export function OrderDetail({
                         <td className="px-3 py-2">{str(item.internal_model) || "—"}</td>
                         <td className="px-3 py-2">{str(item.version) || "—"}</td>
                         <td className="px-3 py-2 tabular-nums">{str(item.quantity) || "—"}</td>
-                        <td className="px-3 py-2 whitespace-nowrap text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <Link
-                              href={`/risansi/orders/${orderId}/items/${id}`}
-                              className="inline-flex h-8 items-center gap-1 rounded-lg border border-input-border px-2.5 text-xs font-medium text-foreground transition-colors hover:bg-background"
-                            >
-                              Open
-                              <ChevronRight className="h-3.5 w-3.5" />
-                            </Link>
-                            {canManageItems && (
-                              <button
-                                type="button"
-                                onClick={() => removeItem(item)}
-                                disabled={deletingId === id}
-                                aria-label="Delete EC"
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
-                              >
-                                {deletingId === id ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                )}
-                              </button>
-                            )}
-                          </div>
-                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-right">{rowActions(item)}</td>
                       </tr>
                     );
                   })}

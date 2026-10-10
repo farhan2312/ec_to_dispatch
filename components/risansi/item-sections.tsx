@@ -35,11 +35,17 @@ export function ItemSections({
   orderId,
   itemId,
   role,
+  only,
+  soWideOrderId,
 }: {
   detail: ItemDetailData;
   orderId: string;
   itemId: string;
   role: string;
+  // Just this department's section — the SO page's EC grid pop-up.
+  only?: string;
+  // Save Planning / Assembly & Packing to every EC of this SO (a Spare SO).
+  soWideOrderId?: string;
 }) {
   const order = detail.order;
   const item = detail.item;
@@ -57,7 +63,8 @@ export function ItemSections({
     (s) =>
       canAccessDepartment(role, s.table) &&
       (s.table !== "order_qc" || qcNeeded) &&
-      (s.table !== "order_drawing" || drawingNeeded)
+      (s.table !== "order_drawing" || drawingNeeded) &&
+      (!only || s.table === only)
   );
 
   return (
@@ -126,6 +133,7 @@ export function ItemSections({
                   }}
                   canEdit={canEditSection(role, section.table)}
                   canEditCentral={central}
+                  soWideOrderId={soWideOrderId}
                 />
               )}
               {gateOk ? (
@@ -231,6 +239,7 @@ export function ItemSections({
               canEdit={canEditSection(role, section.table)}
               canEditCentral={central}
               documents={documents}
+              soWideOrderId={soWideOrderId}
             />
             {section.table === "order_items" && isSpare && (
               <OrderCopyCell

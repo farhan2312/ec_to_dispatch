@@ -207,7 +207,8 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     key: "planning",
     label: DEPT_FILTER_LABELS.planning,
     perEc: true,
-    status: (r) => text(r.planning_status) || PENDING,
+    // A Spare starts at Date awaited, not "Pending".
+    status: (r) => text(r.planning_status) || (isSpareEc(r) ? "Date awaited" : PENDING),
     // Done once the EC is ready — a Spare Fully ready, a Pump Assembled or
     // Packed — so a date still open is late once it passes (the rule
     // Planning's reminders and Overdue filter use).
@@ -222,7 +223,11 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     key: "assembly",
     label: DEPT_FILTER_LABELS.assembly,
     perEc: true,
-    status: (r) => r.assembly_state || (r.assembly_done ? "Fully packed" : PENDING),
+    // A Spare with no readiness lot is not with Assembly & Packing yet.
+    status: (r) =>
+      isSpareEc(r) && !r.assembly_done && (!r.assembly_state || r.assembly_state === PENDING)
+        ? "Not ready yet"
+        : r.assembly_state || (r.assembly_done ? "Fully packed" : PENDING),
     done: (r) => r.assembly_done,
     na: never,
     hidden: never,

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, KeyRound, Loader2, Plus, X } from "lucide-react";
+import { Check, Copy, KeyRound, Loader2, Plus, Users, X } from "lucide-react";
 import {
   UrlPagination,
   UrlSearchInput,
@@ -13,7 +13,9 @@ import { ALL_ROLES, roleLabel } from "@/lib/roles";
 import type { User, UserListRow, UserStatus } from "@/lib/users";
 import {
   addUserAction,
+  createRepAccountsAction,
   deleteUserAction,
+  listRepAccountCandidatesAction,
   lookupRepContactAction,
   resetPasswordAction,
   setStatusAction,
@@ -138,6 +140,7 @@ export function UsersAccessView({
   const users = result.rows;
   const [busyId, setBusyId] = useState<string | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [showRepBulk, setShowRepBulk] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
 
   // Filtering and paging happen in SQL now — these are just the totals the
@@ -180,8 +183,16 @@ export function UsersAccessView({
         />
         <button
           type="button"
+          onClick={() => setShowRepBulk(true)}
+          className="ml-auto inline-flex h-10 items-center gap-2 rounded-lg border border-input-border bg-surface px-4 text-sm font-semibold text-foreground transition-colors hover:bg-background"
+        >
+          <Users className="h-4 w-4" />
+          Create Rep accounts
+        </button>
+        <button
+          type="button"
           onClick={() => setShowAdd(true)}
-          className="ml-auto inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
+          className="inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
         >
           <Plus className="h-4 w-4" />
           Add User
@@ -323,6 +334,7 @@ export function UsersAccessView({
       </div>
 
       {showAdd && <AddUserModal repNames={repNames} onClose={() => setShowAdd(false)} />}
+      {showRepBulk && <RepAccountsModal onClose={() => setShowRepBulk(false)} />}
       {editUser && (
         <EditUserModal
           user={editUser}
@@ -341,6 +353,183 @@ export function UsersAccessView({
 const inputClass =
   "h-11 w-full rounded-[10px] border border-input-border bg-surface px-[15px] text-[14px] text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20";
 const labelClass = "mb-1.5 block text-[13px] font-semibold text-brand-label";
+
+type RepCandidate = Extract<Awaited<ReturnType<typeof listRepAccountCandidatesAction>>, { ok: true }>["reps"][number];
+
+const REP_STATE_LABEL: Record<RepCandidate["state"], string> = {
+  ready: "",
+  "has-account": "Has an account",
+  "no-email": "No email in sales portal",
+  "email-in-use": "Email used by another user",
+};
+
+/**
+ * Every rep on the orders without an account yet, with name and email from
+ * the sales portal: tick them, type one temporary password, create them all.
+ */
+function RepAccountsModal({ onClose }: { onClose: () => void }) {
+  const router = useRouter();
+  const [reps, setReps] = useState<RepCandidate[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [result, setResult] = useState<{ created: string[]; skipped: { repName: string; reason: string }[] } | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    void listRepAccountCandidatesAction().then((r) => {
+      if (!live) return;
+      if (!r.ok) return setLoadError(r.error);
+      setReps(r.reps);
+      setPicked(new Set(r.reps.filter((x) => x.state === "ready").map((x) => x.repName)));
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  function toggle(name: string) {
+    setPicked((p) => {
+      const next = new Set(p);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!picked.size) return setError("Tick at least one rep.");
+    if (password.length < 6) return setError("Password must be at least 6 characters.");
+    if (password !== confirm) return setError("The passwords don't match.");
+    setSaving(true);
+    const r = await createRepAccountsAction([...picked], password);
+    setSaving(false);
+    if (!r.ok) return setError(r.error);
+    setPassword("");
+    setConfirm("");
+    setResult({ created: r.created, skipped: r.skipped });
+    router.refresh();
+  }
+
+  const ready = reps?.filter((x) => x.state === "ready").length ?? 0;
+  return (
+    <ModalShell title="Create Rep accounts" onClose={onClose}>
+      {result ? (
+        <div className="space-y-4">
+          <p className="text-sm text-foreground">
+            <span className="font-semibold text-emerald-700">{result.created.length} created</span>
+            {result.skipped.length > 0 && <> · {result.skipped.length} skipped</>}. Each Rep sets their own password at first sign-in.
+          </p>
+          {result.created.length > 0 && (
+            <ul className="rounded-lg border border-card-border bg-background p-3 text-sm text-foreground">
+              {result.created.map((n) => (
+                <li key={n} className="flex items-center gap-1.5 py-0.5">
+                  <Check className="h-3.5 w-3.5 text-emerald-600" /> {n}
+                </li>
+              ))}
+            </ul>
+          )}
+          {result.skipped.length > 0 && (
+            <ul className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              {result.skipped.map((s) => (
+                <li key={s.repName} className="py-0.5">
+                  {s.repName} — {s.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-11 w-full rounded-[10px] bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
+          >
+            Done
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={submit}>
+          <p className="-mt-3 mb-4 text-sm text-muted">
+            Reps on the orders, with name and email from the sales portal. They sign in read-only and see only their own SOs.
+          </p>
+          {loadError ? (
+            <p className="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{loadError}</p>
+          ) : !reps ? (
+            <p className="mb-4 flex items-center gap-2 text-sm text-muted">
+              <Loader2 className="h-4 w-4 animate-spin" /> Looking up the sales portal…
+            </p>
+          ) : (
+            <div className="mb-4 max-h-64 overflow-y-auto rounded-lg border border-card-border">
+              {reps.map((r) => {
+                const can = r.state === "ready";
+                return (
+                  <label
+                    key={r.repName}
+                    className={`flex items-start gap-2.5 border-b border-card-border px-3 py-2 last:border-b-0 ${
+                      can ? "cursor-pointer hover:bg-background" : "opacity-60"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 h-4 w-4 accent-primary"
+                      disabled={!can}
+                      checked={can && picked.has(r.repName)}
+                      onChange={() => toggle(r.repName)}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-foreground">{r.fullName}</span>
+                      <span className="block truncate text-xs text-muted">{r.email ?? "—"}</span>
+                    </span>
+                    {!can && <span className="shrink-0 text-xs text-muted">{REP_STATE_LABEL[r.state]}</span>}
+                  </label>
+                );
+              })}
+            </div>
+          )}
+          <label className={labelClass}>Temporary password</label>
+          <input
+            className={`${inputClass} mb-4`}
+            type="password"
+            autoComplete="new-password"
+            placeholder="At least 6 characters"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <label className={labelClass}>Confirm password</label>
+          <input
+            className={`${inputClass} mb-4`}
+            type="password"
+            autoComplete="new-password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+          />
+          {error && <p className="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="h-11 flex-1 rounded-[10px] border border-input-border bg-surface text-sm font-medium text-foreground transition-colors hover:bg-background"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving || !reps || !picked.size}
+              className="flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] bg-primary text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-60"
+            >
+              {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+              {saving ? "Creating…" : reps && !ready ? "Nothing to create" : `Create ${picked.size} account${picked.size === 1 ? "" : "s"}`}
+            </button>
+          </div>
+        </form>
+      )}
+    </ModalShell>
+  );
+}
 
 function AddUserModal({ onClose, repNames }: { onClose: () => void; repNames: string[] }) {
   const router = useRouter();

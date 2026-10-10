@@ -86,6 +86,17 @@ export async function createUser(
   }
 }
 
+/** Which reps already have an account, and which emails are taken — both lower-cased. */
+export async function listAccountKeys(): Promise<{ repNames: Set<string>; emails: Set<string> }> {
+  const result = await query<{ rep_name: string | null; email: string }>(
+    `SELECT rep_name, email FROM users`
+  );
+  return {
+    repNames: new Set(result.rows.map((r) => (r.rep_name ?? "").trim().toLowerCase()).filter(Boolean)),
+    emails: new Set(result.rows.map((r) => r.email.trim().toLowerCase())),
+  };
+}
+
 /** Create a user in 'pending' status (the "Request Access" flow). */
 export function createPendingUser(input: NewUser): Promise<User> {
   return createUser(input, "pending");

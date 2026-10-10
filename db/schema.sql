@@ -1090,14 +1090,9 @@ UPDATE orders SET bill_type = 'Tax Invoice'
 ALTER TABLE order_billing DROP COLUMN IF EXISTS tax_no;
 ALTER TABLE order_billing DROP COLUMN IF EXISTS tax_date;
 ALTER TABLE order_billing DROP COLUMN IF EXISTS tax_value;
-ALTER TABLE order_billing DROP COLUMN IF EXISTS challan_no;
-ALTER TABLE order_billing DROP COLUMN IF EXISTS challan_date;
-ALTER TABLE order_billing DROP COLUMN IF EXISTS challan_value;
-ALTER TABLE order_billing DROP COLUMN IF EXISTS fr_reason;
-ALTER TABLE order_accounts DROP COLUMN IF EXISTS payment_status;
-ALTER TABLE order_accounts DROP COLUMN IF EXISTS payment_confirmed_date;
-ALTER TABLE order_accounts DROP COLUMN IF EXISTS amount_received;
-ALTER TABLE order_accounts DROP COLUMN IF EXISTS balance_of_payment;
+-- (order_billing's Challan columns and order_accounts' payment columns are
+-- NOT dropped here: both come back below and hold live data — dropping them
+-- on every run wiped what Billing and Accounts had entered.)
 
 -- ===========================================================================
 -- Reshape after PI list: Accounts reverts to a per-SO edit form (no per-PI
@@ -2377,3 +2372,42 @@ CREATE INDEX IF NOT EXISTS order_ready_lot_history_item_idx
 ALTER TABLE order_ready_lot_history DROP CONSTRAINT IF EXISTS order_ready_lot_history_action_check;
 ALTER TABLE order_ready_lot_history ADD CONSTRAINT order_ready_lot_history_action_check
     CHECK (action IN ('added', 'changed', 'removed', 'readiness'));
+
+-- ===========================================================================
+-- Accounts works against each PI: its payment status, when it was confirmed,
+-- what came in on it and, on hold, why. The SO's own Accounts row becomes the
+-- roll-up of its PIs (lib/orders.ts rollUpPiPayments); an SO with no PI keeps
+-- recording on the SO. New names — the old per-PI payment columns above are
+-- dropped on every migrate.
+-- ===========================================================================
+ALTER TABLE order_billing_docs ADD COLUMN IF NOT EXISTS pi_payment_status TEXT;
+ALTER TABLE order_billing_docs ADD COLUMN IF NOT EXISTS pi_confirmed_date DATE;
+ALTER TABLE order_billing_docs ADD COLUMN IF NOT EXISTS pi_amount_received NUMERIC(14,2);
+ALTER TABLE order_billing_docs ADD COLUMN IF NOT EXISTS pi_hold_reason TEXT;
+
+-- A payment term line with no PI yet can take Accounts' payment too; once
+-- Billing raises the PI on it, the payment moves onto the PI.
+ALTER TABLE order_payment_terms ADD COLUMN IF NOT EXISTS term_payment_status TEXT;
+ALTER TABLE order_payment_terms ADD COLUMN IF NOT EXISTS term_confirmed_date DATE;
+ALTER TABLE order_payment_terms ADD COLUMN IF NOT EXISTS term_amount_received NUMERIC(14,2);
+ALTER TABLE order_payment_terms ADD COLUMN IF NOT EXISTS term_hold_reason TEXT;
+
+-- ===========================================================================
+-- Accounts hold: Accounts can put an SO on hold for payment reasons (Old
+-- Outstanding, Previous PBG Pending, …) with remarks. Every department sees
+-- it, as it sees Central's clearance hold; it does not stop their work. The
+-- reasons are a list Accounts adds to.
+-- ===========================================================================
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS accounts_hold_status TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS accounts_hold_reason TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS accounts_hold_remarks TEXT;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS accounts_hold_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS accounts_hold_reasons (
+    label      TEXT PRIMARY KEY,
+    created_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO accounts_hold_reasons (label) VALUES
+    ('Old Outstanding'), ('Current year Outstanding'), ('Previous PBG Pending')
+ON CONFLICT (label) DO NOTHING;

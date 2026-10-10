@@ -119,6 +119,14 @@ export function OrderDetailsModal({
                       {held ? `On hold${str(order.clearance_hold_reason) ? ` · ${str(order.clearance_hold_reason)}` : ""}` : "Clear"}
                     </span>
                   )}
+                  {str(order.accounts_hold_status) === "Hold" && (
+                    <span
+                      title={str(order.accounts_hold_remarks) || undefined}
+                      className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-medium text-rose-700"
+                    >
+                      Accounts hold{str(order.accounts_hold_reason) ? ` · ${str(order.accounts_hold_reason)}` : ""}
+                    </span>
+                  )}
                 </div>
               </>
             ) : (

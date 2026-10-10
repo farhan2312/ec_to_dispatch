@@ -109,11 +109,11 @@ export function billModeLabel(billMode: unknown, billType?: unknown): string {
 // holds it, with the reason kept for regular review.
 export const CLEARANCE_OPTIONS = opts(["Clear", "Hold"]);
 export const CLEARANCE_HOLD_REASONS = opts([
-  "Client-side issue",
-  "PI hold",
-  "Outstanding payment hold",
-  "Quality / design hold",
-  "Others",
+  "Hold by Client",
+  "Client Indent pending",
+  "Client Order Awaited",
+  "Client amended Order Awaited",
+  "Dispatch Instructions Awaited from client",
 ]);
 // FR (financial reconciliation) reason for a Challan.
 export const FR_REASON_OPTIONS = opts([

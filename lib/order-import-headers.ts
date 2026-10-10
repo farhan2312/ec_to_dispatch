@@ -9,7 +9,7 @@ export const TEMPLATE_HEADERS = [
   "Quotation No",
   "So No",
   "SO Date",
-  "Payment Terms",
+  "Payment Terms Remarks",
   "LD (yes/no)",
   "LD Date",
   "Cust Po no",

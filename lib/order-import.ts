@@ -21,7 +21,11 @@ const COLUMN_MAP: Record<string, keyof NewOrderInput> = {
   quotationno: "quotation_no",
   sono: "so_no",
   sodate: "so_date",
-  paymentterms: "payment_terms",
+  // The PO's terms as worded: free text, kept as Payment Terms Remarks. The
+  // structured term lines are Central's to fill in the app. An older sheet
+  // headed just "Payment Terms" lands in the same place.
+  paymenttermsremarks: "payment_terms_remarks",
+  paymentterms: "payment_terms_remarks",
   ldyesno: "ld",
   ld: "ld",
   lddate: "ld_date",

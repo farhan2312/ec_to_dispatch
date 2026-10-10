@@ -28,6 +28,8 @@ export type User = {
   must_change_password: boolean;
   // Sessions issued before this are refused — set by an admin password reset.
   sessions_valid_after: string | null;
+  // A Rep's name as it appears on orders (orders.reps): the SOs they see.
+  rep_name: string | null;
 };
 
 export type NewUser = {
@@ -35,6 +37,8 @@ export type NewUser = {
   email: string;
   password: string;
   role: UserRole;
+  /** A Rep's name as on orders. */
+  repName?: string | null;
 };
 
 /** Error thrown when an email already has an account. */
@@ -46,7 +50,7 @@ export class EmailInUseError extends Error {
 }
 
 const PUBLIC_COLUMNS =
-  "id, full_name, email, role, status, created_at, updated_at, notifications_seen_at, must_change_password, sessions_valid_after";
+  "id, full_name, email, role, status, created_at, updated_at, notifications_seen_at, must_change_password, sessions_valid_after, rep_name";
 
 /**
  * Create a user with the given status. Throws EmailInUseError if the email is
@@ -62,10 +66,10 @@ export async function createUser(
   const passwordHash = await bcrypt.hash(input.password, 12);
   try {
     const result = await query<User>(
-      `INSERT INTO users (full_name, email, password_hash, role, status, must_change_password)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO users (full_name, email, password_hash, role, status, must_change_password, rep_name)
+       VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $4 = 'rep' THEN NULLIF($7, '') END)
        RETURNING ${PUBLIC_COLUMNS}`,
-      [input.fullName.trim(), input.email.trim(), passwordHash, input.role, status, !!opts.mustChangePassword]
+      [input.fullName.trim(), input.email.trim(), passwordHash, input.role, status, !!opts.mustChangePassword, (input.repName ?? "").trim()]
     );
     return result.rows[0];
   } catch (error) {
@@ -220,12 +224,15 @@ export async function listUsersPage(opts: {
  */
 export async function updateUserDetails(
   id: string,
-  details: { fullName: string; email: string; role: UserRole }
+  details: { fullName: string; email: string; role: UserRole; repName?: string | null }
 ): Promise<void> {
   try {
     await query(
-      `UPDATE users SET full_name = $2, email = $3, role = $4 WHERE id = $1`,
-      [id, details.fullName.trim(), details.email.trim(), details.role]
+      // Only a Rep carries a rep name.
+      `UPDATE users SET full_name = $2, email = $3, role = $4,
+              rep_name = CASE WHEN $4 = 'rep' THEN NULLIF($5, '') END
+        WHERE id = $1`,
+      [id, details.fullName.trim(), details.email.trim(), details.role, (details.repName ?? "").trim()]
     );
   } catch (error) {
     if (

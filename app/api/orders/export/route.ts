@@ -1,19 +1,20 @@
 import type { NextRequest } from "next/server";
 import { getCurrentUser } from "@/lib/session";
-import { isCentral } from "@/lib/roles";
+import { canViewAll } from "@/lib/roles";
 import { listOrderExports, listOrderIdsMatching } from "@/lib/orders";
 import { buildOrdersWorkbook } from "@/lib/order-export";
 import {
   describeOrderListFilter,
   isOrderListFiltered,
   parseOrderListFilter,
+  scopeToRep,
 } from "@/lib/order-list-filter";
 
 export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
   const user = await getCurrentUser();
-  if (!user || !isCentral(user.role)) {
+  if (!user || !canViewAll(user.role)) {
     return new Response("Forbidden", { status: 403 });
   }
 
@@ -22,7 +23,8 @@ export async function GET(req: NextRequest) {
   // here rather than posted as ids, since the table only holds the page on
   // screen.
   const params = req.nextUrl.searchParams;
-  const filter = parseOrderListFilter((key) => params.get(key) ?? undefined, { noDispatchTarget: true });
+  // A Rep exports only their own SOs.
+  const filter = scopeToRep(parseOrderListFilter((key) => params.get(key) ?? undefined, { noDispatchTarget: true }), user);
   const filtered = isOrderListFiltered(filter);
   const ids = filtered ? await listOrderIdsMatching(filter) : undefined;
 

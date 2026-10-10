@@ -1,6 +1,8 @@
 "use server";
 
 import { getCurrentUser } from "@/lib/session";
+import { getOrderRep } from "@/lib/orders";
+import { repMatches } from "@/lib/dept-view";
 
 import {
   canLogDelay,
@@ -19,6 +21,15 @@ import {
   type InboxEntry,
   type OrderMessage,
 } from "@/lib/order-messages";
+
+/**
+ * A Rep talks only on their own SOs: every Rep shares the one "rep" lane, so
+ * the SO itself must be theirs. Anyone else is not limited here.
+ */
+async function repOwns(user: { role: string; rep_name?: string | null }, orderId: string): Promise<boolean> {
+  if (user.role !== "rep") return true;
+  return repMatches(await getOrderRep(orderId), user.rep_name);
+}
 
 export type ThreadResult =
   | { ok: true; messages: OrderMessage[] }
@@ -39,7 +50,7 @@ export async function openThreadAction(
 ): Promise<ThreadResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
-  if (!canUsePeer(user.role, peer)) {
+  if (!canUsePeer(user.role, peer) || !(await repOwns(user, orderId))) {
     return { ok: false, error: "You don't have access to that conversation." };
   }
 
@@ -59,6 +70,7 @@ export async function listConversationsAction(
 ): Promise<ConversationsResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
+  if (!(await repOwns(user, orderId))) return { ok: false, error: "You don't have access to that conversation." };
   try {
     return { ok: true, conversations: await listConversations(orderId, user) };
   } catch (error) {
@@ -83,6 +95,7 @@ export async function postMessageAction(
 
   const sides = sidesFor(user.role, peer);
   if (!sides) return { ok: false, error: "Pick who to send this to." };
+  if (!(await repOwns(user, orderId))) return { ok: false, error: "You don't have access to that conversation." };
 
   const text = body.trim();
   if (text === "") return { ok: false, error: "Type a message first." };
@@ -126,7 +139,11 @@ export async function discussionInboxAction(): Promise<InboxResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
   try {
-    return { ok: true, entries: await listDiscussionInbox(user) };
+    const entries = await listDiscussionInbox(user);
+    if (user.role !== "rep") return { ok: true, entries };
+    // A Rep: only the discussions on their own SOs.
+    const owned = await Promise.all(entries.map((e) => repOwns(user, e.order_id)));
+    return { ok: true, entries: entries.filter((_, i) => owned[i]) };
   } catch (error) {
     console.error("discussionInboxAction failed:", error);
     return { ok: false, error: "Could not load discussions." };
@@ -143,6 +160,7 @@ export async function delayLogsAction(
 ): Promise<DelayLogsResult> {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
+  if (!(await repOwns(user, orderId))) return { ok: false, error: "You don't have access to that SO." };
   try {
     return { ok: true, report: await listDelayLogs(orderId, user) };
   } catch (error) {

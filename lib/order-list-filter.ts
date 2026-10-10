@@ -10,6 +10,7 @@ import {
   BILL_MODE_OPTIONS,
   CLEARANCE_HOLD_REASONS,
   CLEARANCE_OPTIONS,
+  PAYMENT_STATUS_OPTIONS,
   PAYMENT_TERM_OPTIONS,
   SECTION_BY_TABLE,
   type OrderField,
@@ -63,6 +64,8 @@ export type FieldState = (typeof FIELD_STATES)[number]["value"];
 export const NOT_SET = "Not set";
 export const PAYMENT_TERM_FILTER_OPTIONS = [...PAYMENT_TERM_OPTIONS.map((o) => o.value), NOT_SET];
 export const BILL_MODE_FILTER_OPTIONS = [...BILL_MODE_OPTIONS.map((o) => o.value), NOT_SET];
+/** Accounts' payment status on the SO (the roll-up of its PIs), for the Orders list. */
+export const PAYMENT_STATUS_FILTER_OPTIONS = [...PAYMENT_STATUS_OPTIONS.map((o) => o.value), NOT_SET];
 /** Clearance: Clear or Hold; and why an SO is held. */
 export const CLEARANCE_FILTER_OPTIONS = CLEARANCE_OPTIONS.map((o) => o.value);
 export const HOLD_REASON_FILTER_OPTIONS = CLEARANCE_HOLD_REASONS.map((o) => o.value);
@@ -148,6 +151,8 @@ export type OrderListFilter = {
   paymentTerms: string[];
   /** Billing / Accounts: the SO's Bill Mode ("Not set": blank). */
   billModes: string[];
+  /** Payment status (the Orders list). */
+  paymentStatuses: string[];
   /** The orders list: Clear or Hold. */
   clearance: string[];
   /** The orders list: why the held SOs are held. */
@@ -252,9 +257,22 @@ export function parseOrderListFilter(
       !dept || BILL_MODE_FILTER_DEPTS.includes(dept)
         ? list(get("bmode")).filter((v) => BILL_MODE_FILTER_OPTIONS.includes(v))
         : [],
+    paymentStatuses: !dept ? list(get("pstat")).filter((v) => PAYMENT_STATUS_FILTER_OPTIONS.includes(v)) : [],
     clearance: list(get("clear")).filter((v) => CLEARANCE_FILTER_OPTIONS.includes(v)),
     holdReasons: list(get("hreason")).filter((v) => HOLD_REASON_FILTER_OPTIONS.includes(v)),
   };
+}
+
+/**
+ * A Rep sees only their own SOs: their name replaces whatever Rep filter the
+ * URL asks for. A Rep with no name linked sees nothing. Anyone else, as is.
+ */
+export function scopeToRep<F extends { reps: string[] }>(
+  filter: F,
+  user: { role: string; rep_name?: string | null }
+): F {
+  if (user.role !== "rep") return filter;
+  return { ...filter, reps: [(user.rep_name ?? "").trim() || "(no rep linked)"] };
 }
 
 /** Whether anything narrows the list at all. */
@@ -264,6 +282,7 @@ export function isOrderListFiltered(f: OrderListFilter): boolean {
     f.holdReasons.length ||
     f.paymentTerms.length ||
     f.billModes.length ||
+    f.paymentStatuses.length ||
     f.field ||
     f.ready ||
     f.overdue ||
@@ -293,6 +312,7 @@ export function orderListFilterParams(f: OrderListFilter): URLSearchParams {
   if (f.holdReasons.length) p.set("hreason", f.holdReasons.join(","));
   if (f.paymentTerms.length) p.set("pterm", f.paymentTerms.join(","));
   if (f.billModes.length) p.set("bmode", f.billModes.join(","));
+  if (f.paymentStatuses.length) p.set("pstat", f.paymentStatuses.join(","));
   if (f.field) {
     p.set("field", f.field.column);
     p.set("fstate", f.field.state);
@@ -321,6 +341,7 @@ export function describeOrderListFilter(f: OrderListFilter): string {
   if (f.holdReasons.length) parts.push(`Hold reason: ${f.holdReasons.join(", ")}`);
   if (f.paymentTerms.length) parts.push(`Payment terms: ${f.paymentTerms.join(", ")}`);
   if (f.billModes.length) parts.push(`Bill mode: ${f.billModes.join(", ")}`);
+  if (f.paymentStatuses.length) parts.push(`Payment status: ${f.paymentStatuses.join(", ")}`);
   if (f.zones.length) parts.push(`Zone: ${f.zones.join(", ")}`);
   if (f.reps.length) parts.push(`Rep: ${f.reps.join(", ")}`);
   if (f.markets.length) parts.push(`Market: ${f.markets.join(", ")}`);

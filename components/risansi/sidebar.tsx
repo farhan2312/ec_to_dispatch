@@ -15,7 +15,8 @@ import {
 } from "lucide-react";
 import { logout } from "@/app/risansi/actions";
 import {
-  canAccessDepartment,
+  canViewAll,
+  canViewDepartment,
   canAccessOrderMaking,
   canSeeEscalations,
   isCentral,
@@ -63,12 +64,12 @@ export function Sidebar({
     // Order Making's page is over the orders table itself.
     item.table === "orders"
       ? canAccessOrderMaking(user.role)
-      : canAccessDepartment(user.role, item.table)
+      : canViewDepartment(user.role, item.table)
   );
 
   // Department roles only need their own workspace, not the whole-order list.
   const visiblePrimaryNav = PRIMARY_NAV.filter(
-    (item) => item.href !== "/risansi/orders" || isCentral(user.role)
+    (item) => item.href !== "/risansi/orders" || canViewAll(user.role)
   );
 
   // The department this role gets deadline reminders for (badged in the nav).

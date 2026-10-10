@@ -21,7 +21,7 @@ import {
   dependsOnSatisfied,
   type ChildTable,
   type OrderField, billModeLabel } from "@/lib/order-schema";
-import { canAccessDepartment, canCreateOrders, canSeeClient, isCentral } from "@/lib/roles";
+import { canCreateOrders, canSeeClient, canViewDepartment, isCentral } from "@/lib/roles";
 import type { TargetRevision } from "@/lib/target-dates";
 import { ItemSections } from "./item-sections";
 import { SoSections } from "./so-sections";
@@ -211,11 +211,11 @@ export function OrderOverview({
   // terms and are notified of each one, so they can read the list even though
   // the rest of Order details is Central's.
   const seesTerms =
-    canAccessDepartment(role, "orders") ||
-    canAccessDepartment(role, "order_accounts") ||
-    canAccessDepartment(role, "order_billing");
-  const seesValue = canAccessDepartment(role, "orders");
-  const seesMoney = canAccessDepartment(role, "order_accounts");
+    canViewDepartment(role, "orders") ||
+    canViewDepartment(role, "order_accounts") ||
+    canViewDepartment(role, "order_billing");
+  const seesValue = canViewDepartment(role, "orders");
+  const seesMoney = canViewDepartment(role, "order_accounts");
 
   const received = Number(str(detail.order_accounts?.amount_received) || "0");
   const value = Number(str(order.order_value) || "0");
@@ -339,7 +339,7 @@ export function OrderOverview({
       <div className="mt-6 space-y-6">
         {/* Shown on its own for Accounts and Billing, who do not see the rest
             of Order details; for Central it appears inside that section. */}
-        {seesTerms && !canAccessDepartment(role, "orders") && (
+        {seesTerms && !canViewDepartment(role, "orders") && (
           <Panel title="Payment terms">
             <ChildTableView
               table="order_payment_terms"

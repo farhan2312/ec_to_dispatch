@@ -32,7 +32,8 @@ export default async function RisansiLayout({
       countUnread(
         recipientRolesForUser(user.role),
         user.notifications_seen_at,
-        user.id
+        user.id,
+        user.role === "rep" ? user.rep_name?.trim() || "(no rep linked)" : null
       ),
       // The tracker is the admin's to run; everyone else follows their own
       // reports through the bell.

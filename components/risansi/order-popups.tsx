@@ -177,16 +177,18 @@ function Shell({
  * the reason). A click opens a small pop-up to change it — Clear, or Hold with
  * a reason and remarks. Every department sees the hold.
  */
-export function ClearanceBadge({ order }: { order: Row }) {
+export function ClearanceBadge({ order, readOnly = false }: { order: Row; readOnly?: boolean }) {
   const [open, setOpen] = useState(false);
   const held = str(order.clearance_status) === "Hold";
   return (
     <>
       <button
         type="button"
+        // A Rep reads the clearance; only Central changes it.
+        disabled={readOnly}
         onClick={() => setOpen(true)}
         title={held ? `On hold — ${str(order.clearance_hold_reason)}. Click to change.` : "Clear. Click to put on hold."}
-        className={`mt-1 flex w-fit max-w-[12rem] flex-col rounded-md px-1.5 py-0.5 text-left text-[11px] leading-tight transition-opacity hover:opacity-80 ${
+        className={`mt-1 flex w-fit max-w-[12rem] flex-col rounded-md px-1.5 py-0.5 text-left text-[11px] leading-tight transition-opacity enabled:hover:opacity-80 disabled:cursor-default ${
           held
             ? "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"
             : "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"

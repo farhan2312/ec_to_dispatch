@@ -19,6 +19,7 @@ import {
   insertBillingDocs,
   lockFactsForChild,
   lockFactsForOrder,
+  getOrderRep,
   moveTermPaymentToPi,
   addAccountsHoldReason,
   listAccountsHoldReasons,
@@ -88,11 +89,12 @@ import {
   canEditQcDocuments,
   canEditQcRequirementDocs,
   canEditSection,
+  canViewAll,
   isCentral,
 } from "@/lib/roles";
 import { parsePiWorkbook } from "@/lib/pi-import";
 import { DEPT_FILTER_KEYS } from "@/lib/dept-status";
-import { isClosedStatus } from "@/lib/dept-view";
+import { isClosedStatus, repMatches } from "@/lib/dept-view";
 import {
   describeDays,
   DEPT_LABELS,
@@ -302,6 +304,7 @@ export async function getOrderPisAction(
 ): Promise<ViewPisPayload> {
   const user = await getCurrentUser();
   if (!user || isOrderMaking(user.role)) return { bill_type: null, pis: [], challan: null };
+  if (!(await repMaySee(user, orderId))) return { bill_type: null, pis: [], challan: null };
   const detail = await getOrderDetail(orderId);
   if (!detail) return { bill_type: null, pis: [], challan: null };
   return {
@@ -318,6 +321,7 @@ export async function getOrderCoreAction(
 ): Promise<Record<string, unknown> | null> {
   const user = await getCurrentUser();
   if (!user) return null;
+  if (!(await repMaySee(user, orderId))) return null;
   const detail = await getOrderDetail(orderId);
   if (!detail) return null;
   if (isOrderMaking(user.role)) {
@@ -1446,7 +1450,8 @@ export async function getOrderQuickViewAction(orderId: string): Promise<
 > {
   const user = await getCurrentUser();
   if (!user) return { ok: false, error: "You are not signed in." };
-  if (!isCentral(user.role)) return { ok: false, error: "Only Central Visibility and Admin see the quick view." };
+  if (!canViewAll(user.role)) return { ok: false, error: "Only Central Visibility and Admin see the quick view." };
+  if (!(await repMaySee(user, orderId))) return { ok: false, error: "Order not found." };
   if (!UUID_RE_ACTION.test(orderId)) return { ok: false, error: "Order not found." };
   const [detail, items, status, targetRevisions] = await Promise.all([
     getOrderDetail(orderId),
@@ -2397,6 +2402,12 @@ export async function linkPiAction(
 }
 
 const UUID_RE_ACTION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A Rep may read only their own SOs; anyone else is not limited here. */
+async function repMaySee(user: { role: string; rep_name?: string | null }, orderId: string): Promise<boolean> {
+  if (user.role !== "rep") return true;
+  return repMatches(await getOrderRep(orderId), user.rep_name);
+}
 
 /** The SO's Accounts fields that, once it has a PI, come from its PIs. */
 const PI_ROLLED_UP = ["payment_status", "payment_confirmed_date", "amount_received", "hold_reason"];

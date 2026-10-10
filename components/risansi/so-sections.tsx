@@ -12,7 +12,8 @@ import {
 import { paymentTermsExtra } from "./payment-terms-control";
 import { lockReason } from "@/lib/order-lock";
 import {
-  canAccessDepartment,
+  canEditSection,
+  canViewDepartment,
   canCreateOrders,
   canEditChild,
   isCentral,
@@ -71,7 +72,8 @@ export function SoSections({
   const isChallanOrder = String(order.bill_type ?? "") === "Challan";
   const visibleSections = SO_SECTIONS.filter(
     (s) =>
-      canAccessDepartment(role, s.table) &&
+      // A Rep sees every section, read-only.
+      canViewDepartment(role, s.table) &&
       !(s.table === "order_accounts" && isChallanOrder) &&
       (!only || s.table === only)
   );
@@ -168,7 +170,7 @@ export function SoSections({
           targetId={orderId}
           section={section}
           data={data ?? null}
-          canEdit={canAccessDepartment(role, section.table)}
+          canEdit={canEditSection(role, section.table)}
           canEditCentral={central}
           // Order details carries the client columns — offer the directory
           // search there so a wrong client can be corrected.
@@ -199,7 +201,7 @@ export function SoSections({
       {!only && middle}
       {/* Assembly & Packing's packing slips belong to the SO, so they are
           kept here, once, rather than under each EC. */}
-      {canAccessDepartment(role, "order_assembly_dispatch") &&
+      {canViewDepartment(role, "order_assembly_dispatch") &&
         (!only || only === "order_packing_slips") &&
         (String(order.market_type ?? "").trim() !== "" ? (
           <OrderChildList

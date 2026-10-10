@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Receipt } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canEditChild, canEditSection } from "@/lib/roles";
+import {
+  canEditChild,
+  canViewDepartment,
+} from "@/lib/roles";
 import {
   listOrdersForBillingPage,
   parseQueueSort,
@@ -11,7 +14,7 @@ import {
   listOrderListOptions,
 } from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
-import { parseDeptFilter } from "@/lib/order-list-filter";
+import { parseDeptFilter, scopeToRep } from "@/lib/order-list-filter";
 import { unreadByOrder } from "@/lib/order-messages";
 import { BillingWorkspace } from "@/components/risansi/billing-workspace";
 
@@ -30,12 +33,13 @@ export default async function BillingWorkspacePage({
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
+  if (!canViewDepartment(user.role, TABLE)) redirect("/risansi/dashboard");
 
   const params = await searchParams;
   const { edit, thread, page, q } = params;
   // This department's own filter bar, with the department pinned.
-  const filter = parseDeptFilter((key) => params[key], "billing");
+  // A Rep sees only their own SOs.
+  const filter = scopeToRep(parseDeptFilter((key) => params[key], "billing"), user);
   // A notification links to an SO; open the page that holds it.
   // Which SO a notification link should open on. Without a link this is
   // immediate; everything else below loads side by side.

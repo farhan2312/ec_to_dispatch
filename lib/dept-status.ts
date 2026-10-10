@@ -9,7 +9,6 @@
 // the SOs whose popup says Approved.
 
 import {
-  ORDER_STATUS_OPTIONS,
   PAYMENT_STATUS_OPTIONS,
   PLANNING_STATUS_VALUES,
   PUMP_PLANNING_STATUSES,
@@ -66,7 +65,8 @@ const DEPT_STATUSES: Record<DeptFilterKey, string[]> = {
   accounts: [...values(PAYMENT_STATUS_OPTIONS), PENDING, NOT_APPLICABLE],
   // "Pending" is itself a stored dispatch status, so it covers both a blank
   // column and an explicit Pending rather than appearing twice.
-  dispatch: values(ORDER_STATUS_OPTIONS).filter((v) => v !== PENDING).concat(PENDING),
+  // Dispatch's own words only: a cancelled or diverted SO is out of its queue.
+  dispatch: ["Fully dispatch", "LOT dispatch", PENDING],
 };
 
 /**

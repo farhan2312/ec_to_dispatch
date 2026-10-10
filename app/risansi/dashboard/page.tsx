@@ -12,7 +12,7 @@ import {
   listOrdersOverview,
 } from "@/lib/orders";
 import { parsePage } from "@/lib/pagination";
-import { parseOrderListFilter } from "@/lib/order-list-filter";
+import { parseOrderListFilter, scopeToRep } from "@/lib/order-list-filter";
 import { deptViewForRole } from "@/lib/dept-view";
 import { listRemindersForRole } from "@/lib/reminders";
 import { CentralDashboard } from "@/components/risansi/central-dashboard";
@@ -41,7 +41,8 @@ export default async function DashboardPage({
     // pipeline and the figures over everything that matched.
     const pipeline = await getPipelinePage({
       page: parsePage(params.page),
-      filter: parseOrderListFilter((key) => params[key]),
+      // A Rep: their own SOs only.
+      filter: scopeToRep(parseOrderListFilter((key) => params[key]), user),
     });
     // Sign-offs for the SOs on this page, for the Completed / Not completed
     // lines under each department.

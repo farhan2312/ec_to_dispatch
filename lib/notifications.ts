@@ -59,6 +59,14 @@ export function recipientRolesForUser(role: string): string[] {
   return [role];
 }
 
+/**
+ * Every Rep shares the "rep" role, so a notification to it is shown only to
+ * the Rep whose SO it is. No rep name (`param` NULL) — everyone else — no limit.
+ */
+const REP_SCOPE = (n: string, param: string) =>
+  `(${param}::text IS NULL OR EXISTS (SELECT 1 FROM orders ro WHERE ro.id = ${n}.order_id
+     AND lower(btrim(COALESCE(ro.reps, ''))) = lower(btrim(${param}::text))))`;
+
 // ---------------------------------------------------------------------------
 // Reads (for the bell)
 // ---------------------------------------------------------------------------
@@ -74,7 +82,9 @@ export async function listNotificationsPage(
   roles: string[],
   page: number,
   /** The reader: their own notifications come alongside their role's. */
-  userId: string | null = null
+  userId: string | null = null,
+  /** A Rep: their role's notifications only for their own SOs. */
+  repName: string | null = null
 ): Promise<PageResult<NotificationRow>> {
   if (roles.length === 0 && !userId) return pageResult([], 0, 1, FEED_PAGE_SIZE);
   return pageWithTotal(
@@ -101,16 +111,16 @@ export async function listNotificationsPage(
               WHERE d.order_id = n.order_id
                 AND nullif(btrim(d.pi_no), '') IS NOT NULL
            ) pis ON n.billing_doc_id IS NULL
-          WHERE n.recipient_role = ANY($1) OR n.recipient_user_id = $4
+          WHERE (n.recipient_role = ANY($1) AND ${REP_SCOPE("n", "$5")}) OR n.recipient_user_id = $4
           ORDER BY n.created_at DESC
           LIMIT $2 OFFSET $3`,
-        [roles, FEED_PAGE_SIZE, offsetFor(p, FEED_PAGE_SIZE), userId]
+        [roles, FEED_PAGE_SIZE, offsetFor(p, FEED_PAGE_SIZE), userId, repName]
       ),
     async () => {
       const r = await query<{ count: string }>(
-        `SELECT count(*)::text AS count FROM notifications
-          WHERE recipient_role = ANY($1) OR recipient_user_id = $2`,
-        [roles, userId]
+        `SELECT count(*)::text AS count FROM notifications n
+          WHERE (n.recipient_role = ANY($1) AND ${REP_SCOPE("n", "$3")}) OR n.recipient_user_id = $2`,
+        [roles, userId, repName]
       );
       return Number(r.rows[0]?.count ?? 0);
     },
@@ -121,15 +131,16 @@ export async function listNotificationsPage(
 export async function countUnread(
   roles: string[],
   seenAt: string | null,
-  userId: string | null = null
+  userId: string | null = null,
+  repName: string | null = null
 ): Promise<number> {
   if (roles.length === 0 && !userId) return 0;
   const result = await query<{ count: string }>(
     `SELECT count(*)::text AS count
-       FROM notifications
-      WHERE (recipient_role = ANY($1) OR recipient_user_id = $3)
-        AND ($2::timestamptz IS NULL OR created_at > $2)`,
-    [roles, seenAt, userId]
+       FROM notifications n
+      WHERE ((n.recipient_role = ANY($1) AND ${REP_SCOPE("n", "$4")}) OR n.recipient_user_id = $3)
+        AND ($2::timestamptz IS NULL OR n.created_at > $2)`,
+    [roles, seenAt, userId, repName]
   );
   return Number(result.rows[0]?.count ?? 0);
 }

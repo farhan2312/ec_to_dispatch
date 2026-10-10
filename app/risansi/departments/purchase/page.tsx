@@ -2,7 +2,12 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { Package } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import { canEditChild, canEditSection, reminderDeptForTable } from "@/lib/roles";
+import {
+  canEditChild,
+  canViewDepartment,
+  isRep,
+  reminderDeptForTable,
+} from "@/lib/roles";
 import {
   listItemsForPurchasePage,
   parseQueueSort,
@@ -11,7 +16,7 @@ import {
   listOrderListOptions,
 } from "@/lib/orders";
 import { parsePage, parseQuery } from "@/lib/pagination";
-import { parseDeptFilter } from "@/lib/order-list-filter";
+import { parseDeptFilter, scopeToRep } from "@/lib/order-list-filter";
 import { listRemindersForDepartment } from "@/lib/reminders";
 import { unreadByOrder } from "@/lib/order-messages";
 import { PurchaseWorkspace } from "@/components/risansi/purchase-workspace";
@@ -33,12 +38,13 @@ export default async function PurchaseWorkspacePage({
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (!canEditSection(user.role, TABLE)) redirect("/risansi/dashboard");
+  if (!canViewDepartment(user.role, TABLE)) redirect("/risansi/dashboard");
 
   const params = await searchParams;
   const { edit, thread, page, q } = params;
   // This department's own filter bar, with the department pinned.
-  const filter = parseDeptFilter((key) => params[key], "purchase");
+  // A Rep sees only their own SOs.
+  const filter = scopeToRep(parseDeptFilter((key) => params[key], "purchase"), user);
   // A notification links to an EC (item id) or an SO; open the page that holds it.
   // Which SO a notification link should open on. Without a link this is
   // immediate; everything else below loads side by side.
@@ -52,7 +58,7 @@ export default async function PurchaseWorkspacePage({
       sort: parseQueueSort(params.sort),
       filter,
     }),
-    listRemindersForDepartment(reminderDeptForTable(TABLE)!),
+    isRep(user.role) ? Promise.resolve([]) : listRemindersForDepartment(reminderDeptForTable(TABLE)!),
     listOrderListOptions(),
   ]);
 

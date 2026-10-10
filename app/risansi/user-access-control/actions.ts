@@ -94,6 +94,8 @@ export type AddUserInput = {
   email: string;
   password: string;
   role: string;
+  /** A Rep's name as it appears on orders. */
+  repName?: string;
 };
 
 export async function addUserAction(
@@ -111,10 +113,13 @@ export async function addUserAction(
     return { ok: false, error: "Password must be at least 6 characters." };
   if (!ALL_ROLES.includes(input.role as Role))
     return { ok: false, error: "Select a valid role." };
+  // A Rep sees only the SOs carrying their name, so the name is required.
+  const repName = (input.repName ?? "").trim();
+  if (input.role === "rep" && !repName) return { ok: false, error: "Choose the rep this user is." };
 
   try {
     await createUser(
-      { fullName, email, password: input.password, role: input.role as Role },
+      { fullName, email, password: input.password, role: input.role as Role, repName },
       "approved",
       // The admin typed a temporary password: the user sets their own on first sign-in.
       { mustChangePassword: true }
@@ -141,6 +146,7 @@ export type EditUserInput = {
   fullName: string;
   email: string;
   role: string;
+  repName?: string;
 };
 
 /**
@@ -166,6 +172,8 @@ export async function updateUserDetailsAction(
     return { ok: false, error: "Enter a valid email address." };
   }
   if (!ALL_ROLES.includes(role)) return { ok: false, error: "Select a valid role." };
+  const repName = role === "rep" ? (input.repName ?? "").trim() : "";
+  if (role === "rep" && !repName) return { ok: false, error: "Choose the rep this user is." };
 
   const emailChanged = email.toLowerCase() !== target.email.toLowerCase();
   const roleChanged = role !== target.role;
@@ -184,10 +192,11 @@ export async function updateUserDetailsAction(
   if (fullName !== target.full_name) changes.push(`Name: ${target.full_name} → ${fullName}`);
   if (email !== target.email) changes.push(`Email: ${target.email} → ${email}`);
   if (roleChanged) changes.push(`Role: ${roleLabel(target.role)} → ${roleLabel(role)}`);
+  if (repName !== (target.rep_name ?? "")) changes.push(`Rep: ${target.rep_name || "—"} → ${repName || "—"}`);
   if (changes.length === 0) return { ok: true };
 
   try {
-    await updateUserDetails(id, { fullName, email, role });
+    await updateUserDetails(id, { fullName, email, role, repName });
   } catch (error) {
     if (error instanceof EmailInUseError) {
       return { ok: false, error: "Another account already uses that email." };

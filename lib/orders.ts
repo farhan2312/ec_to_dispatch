@@ -1075,6 +1075,13 @@ export async function logReadinessChange(
   );
 }
 
+/** An SO's Rep (orders.reps), for checking a Rep may see it. */
+export async function getOrderRep(orderId: string): Promise<string | null> {
+  if (!UUID_RE.test(orderId)) return null;
+  const r = await query<{ reps: string | null }>(`SELECT reps FROM orders WHERE id = $1`, [orderId]);
+  return r.rows[0]?.reps ?? null;
+}
+
 /** Where a Spare's planning starts: no readiness date from Planning yet. */
 export const SPARE_PLANNING_START = "Date awaited";
 
@@ -3089,6 +3096,15 @@ function orderListClauses(
   if (f.holdReasons.length) {
     clauses.push(`(COALESCE(o.clearance_status, '') = 'Hold' AND ${facet("o.clearance_hold_reason", f.holdReasons)})`);
   }
+  if (f.paymentStatuses.length) {
+    const statuses = f.paymentStatuses.filter((m) => m !== NOT_SET);
+    const any: string[] = [];
+    if (statuses.length) any.push(`EXISTS (SELECT 1 FROM order_accounts pa WHERE pa.order_id = o.id AND ${facet("pa.payment_status", statuses)})`);
+    if (f.paymentStatuses.includes(NOT_SET)) {
+      any.push(`NOT EXISTS (SELECT 1 FROM order_accounts pa WHERE pa.order_id = o.id AND NULLIF(TRIM(pa.payment_status), '') IS NOT NULL)`);
+    }
+    clauses.push(`(${any.join(" OR ")})`);
+  }
   if (f.billModes.length) {
     const modes = f.billModes.filter((m) => m !== NOT_SET);
     const any: string[] = [];
@@ -3523,9 +3539,9 @@ const REPORT_LIMIT = 2000;
  * How a queue (or the orders list) can be sorted ("-" = latest first). With
  * none chosen it runs newest Sl. No. first.
  */
-export type QueueSort = "sl" | "-sl" | "readiness" | "-readiness" | "so_date" | "-so_date";
+export type QueueSort = "sl" | "-sl" | "readiness" | "-readiness" | "so_date" | "-so_date" | "ecs" | "-ecs";
 
-const QUEUE_SORTS: QueueSort[] = ["sl", "-sl", "readiness", "-readiness", "so_date", "-so_date"];
+const QUEUE_SORTS: QueueSort[] = ["sl", "-sl", "readiness", "-readiness", "so_date", "-so_date", "ecs", "-ecs"];
 
 export function parseQueueSort(value: string | undefined): QueueSort | null {
   return QUEUE_SORTS.includes(value as QueueSort) ? (value as QueueSort) : null;
@@ -3537,6 +3553,10 @@ function queueOrderBy(sort: QueueSort | null | undefined): string | undefined {
   if (sort === "sl") return "o.sl_no ASC";
   if (sort === "-sl") return "o.sl_no DESC";
   const dir = sort.startsWith("-") ? "DESC" : "ASC";
+  // How many ECs the SO has (the Orders list).
+  if (sort.replace("-", "") === "ecs") {
+    return `(SELECT count(*) FROM order_items s WHERE s.order_id = o.id) ${dir}, o.sl_no DESC`;
+  }
   const key =
     sort.replace("-", "") === "readiness"
       ? `(SELECT max(rpl.planning_readiness_date) FROM order_items s

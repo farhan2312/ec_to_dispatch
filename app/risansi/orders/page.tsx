@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ClipboardList, Download, Plus, Upload } from "lucide-react";
-import { listOrdersPage, parseQueueSort } from "@/lib/orders";
+import { listOrderDeptStatuses, listOrdersPage, parseQueueSort } from "@/lib/orders";
 import { parsePage } from "@/lib/pagination";
 import {
   isOrderListFiltered,
@@ -41,6 +41,8 @@ export default async function OrdersPage({
     sort: parseQueueSort(params.sort),
   });
   const canCreate = canCreateOrders(user.role);
+  // Every department on each SO of this page, for the row's tags.
+  const deptStatuses = Object.fromEntries(await listOrderDeptStatuses(result.rows.map((r) => r.id)));
 
   // The export mirrors whatever the list is showing: with any filter on it
   // downloads just those SOs, otherwise the whole tracker.
@@ -100,7 +102,7 @@ export default async function OrdersPage({
         </div>
       </div>
 
-      <OrdersTable result={result} canDelete={canCreate} />
+      <OrdersTable result={result} canDelete={canCreate} role={user.role} deptStatuses={deptStatuses} />
     </div>
   );
 }

@@ -51,6 +51,11 @@ import {
   updateOrderSection,
   packingSlipReady,
   createDispatchFromSlips,
+  getOrderDeptStatus,
+  listItemDetails,
+  type ItemDetail,
+  type OrderDetail as OrderDetailData,
+  type SoDeptStatus,
   type NewItemInput,
   type NewOrderInput,
   type QcDocTable,
@@ -1422,6 +1427,35 @@ async function notifyClearance(orderId: string, wasRaw: string, nowRaw: string, 
   } catch (error) {
     console.error("notifyClearance failed:", error);
   }
+}
+
+/**
+ * The Orders list's quick view of one SO: the SO with its sections, every EC
+ * with its departments, the department status and the target dates' history.
+ * Central Visibility and Admin.
+ */
+export async function getOrderQuickViewAction(orderId: string): Promise<
+  | {
+      ok: true;
+      detail: OrderDetailData;
+      items: ItemDetail[];
+      status: SoDeptStatus | null;
+      targetRevisions: TargetRevision[];
+    }
+  | { ok: false; error: string }
+> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!isCentral(user.role)) return { ok: false, error: "Only Central Visibility and Admin see the quick view." };
+  if (!UUID_RE_ACTION.test(orderId)) return { ok: false, error: "Order not found." };
+  const [detail, items, status, targetRevisions] = await Promise.all([
+    getOrderDetail(orderId),
+    listItemDetails([orderId]),
+    getOrderDeptStatus(orderId),
+    listTargetRevisions(orderId),
+  ]);
+  if (!detail) return { ok: false, error: "Order not found." };
+  return { ok: true, detail, items, status, targetRevisions };
 }
 
 /** Accounts' hold reasons, for its hold pop-up. */

@@ -126,6 +126,22 @@ export type OrderListRow = {
   clearance_hold_reason: string | null;
   ec_count: number;
   items: ItemSummary[];
+  // The Orders list page only: the rest of the holds, the payment terms with
+  // their PIs and payments, and Planning's readiness across the ECs.
+  clearance_remarks?: string | null;
+  accounts_hold_status?: string | null;
+  accounts_hold_reason?: string | null;
+  accounts_hold_remarks?: string | null;
+  term_lines?: Row[];
+  pi_docs?: Row[];
+  readiness_from?: string | null;
+  readiness_to?: string | null;
+  readiness_status?: string | null;
+  // When it was last made ready and last packed, and whether it has reached
+  // Dispatch (a numbered packing slip).
+  ready_on?: string | null;
+  packed_on?: string | null;
+  in_dispatch?: boolean;
 };
 
 /** Fields captured when creating an SO (the core `orders` identity row). */
@@ -966,7 +982,18 @@ export async function inheritSparePlanning(
     [itemId]
   );
   const from = lead.rows[0];
-  if (!from) return false;
+  if (!from) {
+    // Nothing planned on this SO yet: a Spare starts at Date awaited.
+    await query(
+      `INSERT INTO order_planning (item_id, actual_spare_status)
+       SELECT me.id, $2 FROM order_items me JOIN orders o ON o.id = me.order_id
+        WHERE me.id = $1 AND ${spareEcSql("me", "o")}
+       ON CONFLICT (item_id) DO UPDATE SET actual_spare_status = EXCLUDED.actual_spare_status
+        WHERE NULLIF(btrim(order_planning.actual_spare_status), '') IS NULL`,
+      [itemId, SPARE_PLANNING_START]
+    );
+    return false;
+  }
 
   const lots = await query<{ status: string; ready_date: string }>(
     `SELECT status, to_char(ready_date, 'YYYY-MM-DD') AS ready_date
@@ -1045,6 +1072,9 @@ export async function logReadinessChange(
     [itemId, now.status, now.ready_date, prev.status, prev.ready_date, actor.id, actor.role]
   );
 }
+
+/** Where a Spare's planning starts: no readiness date from Planning yet. */
+export const SPARE_PLANNING_START = "Date awaited";
 
 /** One change to an SO's readiness lots, as the history shows it. */
 export type ReadyLotEvent = {
@@ -3223,7 +3253,42 @@ export async function listOrdersPage(opts: {
                     FROM order_items it
                    WHERE it.order_id = o.id
                 ) x
-            ), '[]'::jsonb) AS items
+            ), '[]'::jsonb) AS items,
+            o.clearance_remarks,
+            o.accounts_hold_status, o.accounts_hold_reason, o.accounts_hold_remarks,
+            COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                        'id', t.id, 'term', t.term, 'percent', t.percent::text,
+                        'days', t.days, 'documents', t.documents,
+                        'term_payment_status', t.term_payment_status,
+                        'term_confirmed_date', to_char(t.term_confirmed_date, 'YYYY-MM-DD'),
+                        'term_amount_received', t.term_amount_received::text,
+                        'term_hold_reason', t.term_hold_reason) ORDER BY t.seq)
+                      FROM order_payment_terms t WHERE t.order_id = o.id), '[]'::jsonb) AS term_lines,
+            COALESCE((SELECT jsonb_agg(to_jsonb(pd) ORDER BY pd.seq)
+                      FROM order_billing_docs pd WHERE pd.order_id = o.id), '[]'::jsonb) AS pi_docs,
+            (SELECT to_char(min(rp.planning_readiness_date), 'YYYY-MM-DD')
+               FROM order_items ri JOIN order_planning rp ON rp.item_id = ri.id
+              WHERE ri.order_id = o.id) AS readiness_from,
+            (SELECT to_char(max(rp.planning_readiness_date), 'YYYY-MM-DD')
+               FROM order_items ri JOIN order_planning rp ON rp.item_id = ri.id
+              WHERE ri.order_id = o.id) AS readiness_to,
+            (SELECT CASE WHEN count(DISTINCT st) = 1 AND count(st) = count(*) THEN max(st) END
+               FROM (SELECT COALESCE(NULLIF(rp.actual_spare_status, ''), NULLIF(rp.actual_pump_status, ''),
+                                     NULLIF(rp.planning_status, '')) AS st
+                       FROM order_items ri LEFT JOIN order_planning rp ON rp.item_id = ri.id
+                      WHERE ri.order_id = o.id) s) AS readiness_status,
+            (SELECT to_char(max(rl.ready_date), 'YYYY-MM-DD')
+               FROM order_ready_lots rl JOIN order_items ri ON ri.id = rl.item_id
+              WHERE ri.order_id = o.id) AS ready_on,
+            (SELECT to_char(max(d), 'YYYY-MM-DD') FROM (
+               SELECT rl.packed_date AS d FROM order_ready_lots rl JOIN order_items ri ON ri.id = rl.item_id
+                WHERE ri.order_id = o.id
+               UNION ALL
+               SELECT ad.actual_packing_date FROM order_assembly_dispatch ad JOIN order_items ri ON ri.id = ad.item_id
+                WHERE ri.order_id = o.id) x) AS packed_on,
+            EXISTS (SELECT 1 FROM order_packing_slips ps
+                     WHERE ps.order_id = o.id AND ps.kind = 'actual'
+                       AND NULLIF(btrim(ps.packing_slip_no), '') IS NOT NULL) AS in_dispatch
        FROM orders o
        LEFT JOIN order_accounts a ON a.order_id = o.id
        LEFT JOIN (
@@ -3665,8 +3730,20 @@ export async function getOrderDeptStatus(
   orderId: string
 ): Promise<SoDeptStatus | null> {
   if (!UUID_RE.test(orderId)) return null;
+  return (await listOrderDeptStatuses([orderId])).get(orderId) ?? null;
+}
+
+/**
+ * The same for many SOs at once — a page of the Orders list — in two reads
+ * rather than two per SO.
+ */
+export async function listOrderDeptStatuses(orderIds: string[]): Promise<Map<string, SoDeptStatus>> {
+  const ids = orderIds.filter((id) => UUID_RE.test(id));
+  const out = new Map<string, SoDeptStatus>();
+  if (ids.length === 0) return out;
 
   const so = await query<{
+    order_id: string;
     dispatch_status: string | null;
     bill_type: string | null;
     after_receipt_only: boolean;
@@ -3679,7 +3756,7 @@ export async function getOrderDeptStatus(
     dispatch_target_date: string | null;
     dispatch_target_revised_date: string | null;
   }>(
-    `SELECT ${DISPATCH_STATUS} AS dispatch_status, o.bill_type,
+    `SELECT o.id AS order_id, ${DISPATCH_STATUS} AS dispatch_status, o.bill_type,
             ${AFTER_RECEIPT_ONLY} AS after_receipt_only,
             ${BILLING_RAISED} AS has_pi,
             a.payment_status,
@@ -3692,13 +3769,12 @@ export async function getOrderDeptStatus(
        FROM orders o
        LEFT JOIN order_billing b  ON b.order_id  = o.id
        LEFT JOIN order_accounts a ON a.order_id = o.id
-      WHERE o.id = $1`,
-    [orderId]
+      WHERE o.id = ANY($1::uuid[])`,
+    [ids]
   );
-  const head = so.rows[0];
-  if (!head) return null;
 
   const ecRows = await query<{
+    order_id: string;
     id: string;
     ec_no: string | null;
     item_type: string | null;
@@ -3713,7 +3789,7 @@ export async function getOrderDeptStatus(
     assembly_state: string | null;
     packing_date: string | null;
   }>(
-    `SELECT it.id, it.ec_no, it.item_type, o.boi,
+    `SELECT it.order_id, it.id, it.ec_no, it.item_type, o.boi,
             (${spareEcSql("it", "o")}) AS spare,
             (SELECT CASE
                       WHEN bool_or(lower(coalesce(rv.approved,'')) = 'yes')
@@ -3742,64 +3818,78 @@ export async function getOrderDeptStatus(
        LEFT JOIN order_qc qc                ON qc.item_id = it.id
        LEFT JOIN order_planning pl          ON pl.item_id = it.id
        LEFT JOIN order_assembly_dispatch ad ON ad.item_id = it.id
-      WHERE it.order_id = $1
+      WHERE it.order_id = ANY($1::uuid[])
       ORDER BY it.seq ASC`,
-    [orderId]
+    [ids]
   );
 
-  const ecs: EcDeptStatus[] = ecRows.rows.map((r) => ({
-    id: r.id,
-    ec_no: r.ec_no,
-    item_type: r.item_type,
-    drawing: r.spare ? NA : r.drg ? done(r.drg) : pending(),
-    purchase:
-      r.purchase === "na"
-        ? NA
-        : r.purchase === "done"
-          ? done("Received")
-          : pending(),
-    quality:
-      String(r.qc_required ?? "") === "No"
-        ? NA
-        : r.qc_submitted
-          ? done("Submitted")
-          : pending(),
-    planning: r.planning ? done(r.planning) : pending(),
-    assembly: r.packed
-      ? done(r.assembly_state || "Fully packed")
-      : pending(r.assembly_state && r.assembly_state !== "Pending" ? r.assembly_state : "Pending"),
-  }));
+  const ecsByOrder = new Map<string, EcDeptStatus[]>();
+  for (const r of ecRows.rows) {
+    const list = ecsByOrder.get(r.order_id) ?? [];
+    ecsByOrder.set(r.order_id, list);
+    list.push({
+      id: r.id,
+      ec_no: r.ec_no,
+      item_type: r.item_type,
+      drawing: r.spare ? NA : r.drg ? done(r.drg) : pending(),
+      purchase:
+        r.purchase === "na"
+          ? NA
+          : r.purchase === "done"
+            ? done("Received")
+            : pending(),
+      quality:
+        String(r.qc_required ?? "") === "No"
+          ? NA
+          : r.qc_submitted
+            ? done("Submitted")
+            : pending(),
+      // A Spare starts at Date awaited, not "Pending".
+      planning: r.planning ? done(r.planning) : pending(r.spare ? SPARE_PLANNING_START : "Pending"),
+      // A Spare reaches Assembly & Packing with its first readiness lot; until
+      // then it has no status there at all.
+      assembly: r.packed
+        ? done(r.assembly_state || "Fully packed")
+        : r.spare && (!r.assembly_state || r.assembly_state === "Pending")
+          ? { state: "na", label: "—" }
+          : pending(r.assembly_state && r.assembly_state !== "Pending" ? r.assembly_state : "Pending"),
+    });
+  }
 
-  const isChallan = String(head.bill_type ?? "") === "Challan";
+  for (const head of so.rows) {
+    const ecs = ecsByOrder.get(head.order_id) ?? [];
+    const isChallan = String(head.bill_type ?? "") === "Challan";
 
-  // PIs and payments are recorded on every order, whatever its terms.
-  const paidAfterReceipt = false;
-  return {
-    billing: paidAfterReceipt
-      ? NA
-      : head.has_pi
-        ? done(isChallan ? "Challan filed" : "PI raised")
-        : pending(),
-    // Accounts is skipped for Challan orders (no A/R), matching the workspace.
-    accounts: isChallan || paidAfterReceipt
-      ? NA
-      : head.payment_status
-        ? done(head.payment_status)
-        : pending(),
-    dispatch:
-      head.dispatch_status && head.dispatch_status.toLowerCase() !== "pending"
-        ? done(head.dispatch_status)
-        : pending(),
-    targets: {
-      drawing: head.drg_target_date,
-      purchase: head.purchase_target_date,
-      quality: head.qc_doc_target_date,
-      assembly: head.dispatch_team_target_date,
-      dispatch: head.dispatch_target_date,
-      dispatchRevised: head.dispatch_target_revised_date,
-    },
-    ecs,
-  };
+    // PIs and payments are recorded on every order, whatever its terms.
+    const paidAfterReceipt = false;
+    out.set(head.order_id, {
+      billing: paidAfterReceipt
+        ? NA
+        : head.has_pi
+          ? done(isChallan ? "Challan filed" : "PI raised")
+          : pending(),
+      // Accounts is skipped for Challan orders (no A/R), matching the workspace.
+      accounts: isChallan || paidAfterReceipt
+        ? NA
+        : head.payment_status
+          ? done(head.payment_status)
+          : pending(),
+      dispatch:
+        head.dispatch_status && head.dispatch_status.toLowerCase() !== "pending"
+          ? done(head.dispatch_status)
+          : pending(),
+      targets: {
+        drawing: head.drg_target_date,
+        purchase: head.purchase_target_date,
+        quality: head.qc_doc_target_date,
+        assembly: head.dispatch_team_target_date,
+        dispatch: head.dispatch_target_date,
+        dispatchRevised: head.dispatch_target_revised_date,
+      },
+      ecs,
+    });
+  }
+  return out;
 }
 
 /**

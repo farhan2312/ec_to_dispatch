@@ -3,7 +3,7 @@
 import { Fragment, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Paperclip, Pencil } from "lucide-react";
-import { updateOrderSectionAction } from "@/app/risansi/orders/actions";
+import { updateOrderSectionAction, updateSectionForSoAction } from "@/app/risansi/orders/actions";
 import {
   canonicalSelectValue,
   dependsOnSatisfied,
@@ -100,6 +100,7 @@ export function EditableSection({
   documents = [],
   clientLookup = false,
   fieldExtra,
+  soWideOrderId,
 }: {
   targetId: string;
   section: OrderSection;
@@ -114,6 +115,9 @@ export function EditableSection({
   // rather than the section form, e.g. a target date's revise button and
   // history. Returns null for fields it does not handle.
   fieldExtra?: (field: OrderField) => React.ReactNode;
+  // Planning / Assembly & Packing on a Spare SO edited as one: the save goes
+  // to every EC of this SO, as the department queues' "Edit SO" does.
+  soWideOrderId?: string;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -179,8 +183,11 @@ export function EditableSection({
     setSaving(true);
     setError(null);
     const lead = spareLots ? lotsSummary(lots) : null;
-    const result = await updateOrderSectionAction(
-      targetId,
+    const saveSection = (t: string, v: Record<string, string>) =>
+      soWideOrderId
+        ? updateSectionForSoAction(soWideOrderId, t, v)
+        : updateOrderSectionAction(targetId, t, v);
+    const result = await saveSection(
       section.table,
       spareLots
         ? {

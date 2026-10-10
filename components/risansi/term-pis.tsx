@@ -145,7 +145,18 @@ export function TermPis({
       // against the term line; it moves onto the PI once Billing raises it.
       <>
         <td colSpan={3} className="py-1.5 pr-1.5">
-          <span className="text-muted">No PI yet</span>
+          {canEdit ? (
+            <button
+              type="button"
+              onClick={() => setEditing({ pi: null, termId, label })}
+              className="inline-flex h-6 items-center gap-1 rounded-md border border-primary/40 px-2 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/5"
+            >
+              <Plus className="h-3 w-3" />
+              PI
+            </button>
+          ) : (
+            <span className="text-muted">No PI yet</span>
+          )}
         </td>
         <td className="py-1.5 pl-2 pr-1.5">
           <PaymentCell pi={termAsLine(term)} />

@@ -5,6 +5,8 @@ import {
   CalendarClock,
   FileText,
   Loader2,
+  Pencil,
+  Plus,
   ScrollText,
   ShieldCheck,
   User,
@@ -39,9 +41,17 @@ const str = (v: unknown) => (v === null || v === undefined ? "" : String(v).trim
 export function OrderDetailsModal({
   orderId,
   onClose,
+  onEdit,
+  onAddOn,
+  addOnLabel,
 }: {
   orderId: string;
   onClose: () => void;
+  // Adds an EC (Spare / Pump Add-On) — offered with its label when given.
+  onAddOn?: () => void;
+  addOnLabel?: string;
+  // Offered when the viewer may edit: opens the Order details form.
+  onEdit?: () => void;
 }) {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
@@ -133,14 +143,36 @@ export function OrderDetailsModal({
               <h2 className="mt-0.5 font-display text-lg font-semibold text-foreground">&nbsp;</h2>
             )}
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {onAddOn && addOnLabel && order && (
+              <button
+                type="button"
+                onClick={onAddOn}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {addOnLabel}
+              </button>
+            )}
+            {onEdit && order && (
+              <button
+                type="button"
+                onClick={onEdit}
+                className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         <div className="overflow-y-auto px-5 py-5 sm:px-6">

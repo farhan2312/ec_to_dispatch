@@ -15,6 +15,7 @@ import {
 } from "@/lib/users";
 import { ALL_ROLES, roleLabel, type Role } from "@/lib/roles";
 import { logAudit } from "@/lib/audit";
+import { getRepContact } from "@/lib/market-intell";
 
 const PATH = "/risansi/user-access-control";
 
@@ -29,6 +30,18 @@ async function requireAdmin() {
 function isPlatformAdmin(email: string | null | undefined): boolean {
   const admin = process.env.ADMIN_EMAIL;
   return !!admin && !!email && email.toLowerCase() === admin.toLowerCase();
+}
+
+/** A rep's name and email from the sales portal (Market Intell), to fill a Rep user. Admin only. */
+export async function lookupRepContactAction(
+  repName: string
+): Promise<{ name: string; email: string | null } | null> {
+  if (!(await requireAdmin())) return null;
+  try {
+    return await getRepContact(String(repName ?? ""));
+  } catch {
+    return null;
+  }
 }
 
 const VALID_STATUSES: UserStatus[] = [

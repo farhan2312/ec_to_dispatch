@@ -3,8 +3,8 @@ import { redirect } from "next/navigation";
 import { Receipt } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import {
-  canEditChild,
-  canViewDepartment,
+  canEditChild,
+  canViewDepartment,
 } from "@/lib/roles";
 import {
   listOrdersForBillingPage,
@@ -52,7 +52,7 @@ export default async function BillingWorkspacePage({
       sort: parseQueueSort(params.sort),
       filter,
     }),
-    listOrderListOptions(),
+    listOrderListOptions(filter),
   ]);
 
   // Unread discussion messages per SO, for the row badge.

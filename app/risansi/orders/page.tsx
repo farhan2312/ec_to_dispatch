@@ -38,13 +38,11 @@ export default async function OrdersPage({
   // whole table in SQL — see lib/order-list-filter.ts.
   // A Rep sees only their own SOs.
   const filter = scopeToRep(parseOrderListFilter((key) => params[key], { noDispatchTarget: true }), user);
-  const listed = await listOrdersPage({
+  const result = await listOrdersPage({
     page: parsePage(params.page),
     filter,
     sort: parseQueueSort(params.sort),
   });
-  // …and the Rep filter offers only their own name.
-  const result = rep ? { ...listed, options: { ...listed.options, reps: filter.reps } } : listed;
   const canCreate = canCreateOrders(user.role);
   // Every department on each SO of this page, for the row's tags.
   const deptStatuses = Object.fromEntries(await listOrderDeptStatuses(result.rows.map((r) => r.id)));

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { ClipboardCheck } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
-import {
+import {
   canEditQcDocuments,
   canEditQcRequirementDocs,
   canEditSection,
@@ -76,7 +76,7 @@ export default async function QcWorkspacePage({
     listQcDocumentCounts("order_qc_documents"),
     listQcDocumentCounts("order_qc_requirement_documents"),
     isRep(user.role) ? Promise.resolve([]) : listRemindersForDepartment(reminderDeptForTable(TABLE)!),
-    listOrderListOptions(),
+    listOrderListOptions(filter),
   ]);
 
   // Unread discussion messages per SO, for the row badge. Rows are ECs in

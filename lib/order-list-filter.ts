@@ -119,6 +119,8 @@ export type OrderListFilter = {
   search: string;
   zones: string[];
   reps: string[];
+  /** Set for a Rep: the Rep filter is fixed to their own name. */
+  repLock?: string;
   markets: string[];
   /** Order type on the SO, or the item type on any of its ECs. */
   types: string[];
@@ -272,7 +274,8 @@ export function scopeToRep<F extends { reps: string[] }>(
   user: { role: string; rep_name?: string | null }
 ): F {
   if (user.role !== "rep") return filter;
-  return { ...filter, reps: [(user.rep_name ?? "").trim() || "(no rep linked)"] };
+  const rep = (user.rep_name ?? "").trim() || "(no rep linked)";
+  return { ...filter, reps: [rep], repLock: rep };
 }
 
 /** Whether anything narrows the list at all. */

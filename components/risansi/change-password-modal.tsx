@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { CheckCircle2, Loader2, X } from "lucide-react";
 import { changePassword } from "@/app/risansi/actions";
 
@@ -36,7 +37,9 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   const labelClass =
     "mb-1.5 block text-[13px] font-semibold text-brand-label";
 
-  return (
+  // Rendered on <body>: opened from the sticky sidebar, it would otherwise sit
+  // inside the sidebar's stacking context, under the page header and filters.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4">
       {/* backdrop */}
       <div
@@ -159,6 +162,7 @@ export function ChangePasswordModal({ onClose }: { onClose: () => void }) {
           </>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -4,7 +4,7 @@ import { Wallet } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import {
   canEditSection,
-  canViewDepartment,
+  canViewDepartment,
 } from "@/lib/roles";
 import { listOrdersForSectionPage,
   parseQueueSort,
@@ -55,7 +55,7 @@ export default async function AccountsWorkspacePage({
       PAYMENT_TERMS_CONTEXT_FIELDS.map((f) => ({ column: f.column, type: f.type })),
       { page: parsePage(page), search: parseQuery(q), focusOrderId, filter, sort: parseQueueSort(params.sort) }
     ),
-    listOrderListOptions(),
+    listOrderListOptions(filter),
   ]);
 
   // Unread discussion messages per SO, for the row badge. Rows are ECs in

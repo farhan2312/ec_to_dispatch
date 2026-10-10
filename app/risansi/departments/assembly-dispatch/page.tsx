@@ -73,7 +73,7 @@ export default async function AssemblyDispatchWorkspacePage({
       }
     ),
     isRep(user.role) ? Promise.resolve([]) : listRemindersForDepartment(reminderDeptForTable(TABLE)!),
-    listOrderListOptions(),
+    listOrderListOptions(filter),
   ]);
 
   // Unread discussion messages per SO, for the row badge. Rows are ECs in

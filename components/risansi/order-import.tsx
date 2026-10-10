@@ -37,7 +37,7 @@ const PREVIEW_COLUMNS: {
   { key: "order_type", label: "Order Type" },
   { key: "po_no", label: "Cust PO No." },
   { key: "customer_po_date", label: "PO Date", format: "date" },
-  { key: "payment_terms", label: "Payment Terms" },
+  { key: "payment_terms_remarks", label: "Payment Terms Remarks" },
   { key: "ld", label: "LD" },
   { key: "ld_date", label: "LD Date", format: "date" },
   { key: "total_quantity", label: "Qty", format: "number" },

@@ -48,7 +48,7 @@ import { PACKED_FOR } from "@/lib/ready-lots";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import type { OrderListOptions } from "@/lib/orders";
-import { DEPT_VIEWS } from "@/lib/dept-view";
+import { DEPT_VIEWS, FULLY_DISPATCHED_ROW, isFullyDispatched } from "@/lib/dept-view";
 import { useConsumeFocusParam, useFocusRow } from "./use-focus-row";
 import { lockReason } from "@/lib/order-lock";
 import type { PageResult } from "@/lib/pagination";
@@ -664,7 +664,9 @@ export function DepartmentWorkspace({
                         : undefined
                     }
                     title={table === "order_accounts" ? "Click for order details" : undefined}
-                    className={`text-foreground ${table === "order_accounts" ? "cursor-pointer hover:bg-background/60" : ""} ${focusClass(String(order.id))}`}
+                    className={`text-foreground ${
+                      isFullyDispatched(order) ? FULLY_DISPATCHED_ROW : table === "order_accounts" ? "hover:bg-background/60" : ""
+                    } ${table === "order_accounts" ? "cursor-pointer" : ""} ${focusClass(String(order.id))}`}
                   >
                     <td className="px-4 py-3 font-medium tabular-nums">
                       {String(order.sl_no ?? "—")}
@@ -769,9 +771,9 @@ export function DepartmentWorkspace({
                     <Fragment key={g.key}>
                       <tr
                         data-focus-row={String(g.head.order_id ?? g.head.id)}
-                        className={`text-foreground transition-colors hover:bg-background/60 ${focusClass(
-                          String(g.head.order_id ?? g.head.id)
-                        )}`}
+                        className={`text-foreground transition-colors ${
+                          isFullyDispatched(g.head) ? FULLY_DISPATCHED_ROW : "hover:bg-background/60"
+                        } ${focusClass(String(g.head.order_id ?? g.head.id))}`}
                       >
                         <td className="px-2 py-3 text-center">
                           <button

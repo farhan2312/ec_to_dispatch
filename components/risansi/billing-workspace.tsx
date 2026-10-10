@@ -9,6 +9,8 @@ import { OrderDetailsModal } from "./order-details-modal";
 import { DispatchInline } from "./dispatch-inline";
 import { SortHeader } from "./sort-header";
 import { HoldBadge } from "./hold-badge";
+import { DispatchStatusPill } from "./dispatch-status-pill";
+import { FULLY_DISPATCHED_ROW, isFullyDispatched } from "@/lib/dept-view";
 import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import type { OrderListOptions } from "@/lib/orders";
@@ -167,9 +169,9 @@ export function BillingWorkspace({
                         setOrderDetailsFor(row.id);
                       }}
                       title="Click for order details"
-                      className={`cursor-pointer text-foreground transition-colors hover:bg-background/60 ${focusClass(
-                        String(row.id)
-                      )}`}
+                      className={`cursor-pointer text-foreground transition-colors ${
+                        isFullyDispatched(row as unknown as Record<string, unknown>) ? FULLY_DISPATCHED_ROW : "hover:bg-background/60"
+                      } ${focusClass(String(row.id))}`}
                     >
                       <td className="px-4 py-3 font-medium tabular-nums">{row.sl_no}</td>
                       <td className="px-4 py-3 whitespace-nowrap">{row.so_no ?? "—"}
@@ -238,13 +240,7 @@ export function BillingWorkspace({
                       </td>
                       {mode === "dispatch" && (
                       <td className="px-4 py-3 whitespace-nowrap">
-                        {row.dispatch_status ? (
-                          <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                            {row.dispatch_status}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
+                        <DispatchStatusPill status={row.dispatch_status} />
                       </td>
                       )}
                     </tr>

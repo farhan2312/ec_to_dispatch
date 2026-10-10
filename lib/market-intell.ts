@@ -155,3 +155,18 @@ export async function getRepContact(repName: string): Promise<MarketIntellRep | 
   );
   return result.rows[0] ?? null;
 }
+
+/** Several reps at once, keyed by their lower-cased trimmed name. Same rules as getRepContact. */
+export async function listRepContacts(repNames: string[]): Promise<Map<string, MarketIntellRep>> {
+  const keys = [...new Set(repNames.map((n) => n.trim().toLowerCase()).filter(Boolean))];
+  if (!keys.length) return new Map();
+  const result = await getPool().query<MarketIntellRep & { k: string }>(
+    `SELECT DISTINCT ON (lower(trim(u.name)))
+            lower(trim(u.name)) AS k, trim(u.name) AS name, NULLIF(trim(u.email), '') AS email
+       FROM public.users u
+      WHERE lower(trim(u.name)) = ANY($1::text[])
+      ORDER BY lower(trim(u.name)), (u.is_active IS TRUE) DESC, (NULLIF(trim(u.email), '') IS NOT NULL) DESC, u.id`,
+    [keys]
+  );
+  return new Map(result.rows.map((r) => [r.k, { name: r.name, email: r.email }]));
+}

@@ -8,6 +8,7 @@ import {
   deleteUser,
   EmailInUseError,
   getUserById,
+  listAccountKeys,
   resetToTemporaryPassword,
   setUserStatus,
   updateUserDetails,
@@ -15,7 +16,8 @@ import {
 } from "@/lib/users";
 import { ALL_ROLES, roleLabel, type Role } from "@/lib/roles";
 import { logAudit } from "@/lib/audit";
-import { getRepContact } from "@/lib/market-intell";
+import { getRepContact, listRepContacts } from "@/lib/market-intell";
+import { listOrderListOptions } from "@/lib/orders";
 
 const PATH = "/risansi/user-access-control";
 
@@ -42,6 +44,109 @@ export async function lookupRepContactAction(
   } catch {
     return null;
   }
+}
+
+export type RepAccountCandidate = {
+  repName: string;
+  fullName: string;
+  email: string | null;
+  /** ready: can be created; otherwise why not. */
+  state: "ready" | "has-account" | "no-email" | "email-in-use";
+};
+
+/** Every rep on the orders, with their name and email from the sales portal and whether an account can be made. */
+async function repAccountCandidates(): Promise<RepAccountCandidate[]> {
+  const [options, keys] = await Promise.all([listOrderListOptions(), listAccountKeys()]);
+  const contacts = await listRepContacts(options.reps);
+  return options.reps
+    .map((repName): RepAccountCandidate => {
+      const c = contacts.get(repName.trim().toLowerCase());
+      const email = c?.email ?? null;
+      const state = keys.repNames.has(repName.trim().toLowerCase())
+        ? "has-account"
+        : !email
+          ? "no-email"
+          : keys.emails.has(email.toLowerCase())
+            ? "email-in-use"
+            : "ready";
+      return { repName, fullName: c?.name ?? repName, email, state };
+    })
+    .sort((a, b) => a.repName.localeCompare(b.repName));
+}
+
+export async function listRepAccountCandidatesAction(): Promise<
+  { ok: true; reps: RepAccountCandidate[] } | { ok: false; error: string }
+> {
+  if (!(await requireAdmin())) return { ok: false, error: "Not authorized." };
+  try {
+    return { ok: true, reps: await repAccountCandidates() };
+  } catch (error) {
+    console.error("listRepAccountCandidates failed:", error);
+    return { ok: false, error: "Could not read the reps from the sales portal." };
+  }
+}
+
+/**
+ * Create Rep accounts for the chosen reps, all on one temporary password the
+ * admin types — each Rep replaces it at first sign-in. Names and emails are
+ * looked up again here, never taken from the browser.
+ */
+export async function createRepAccountsAction(
+  repNames: string[],
+  password: string
+): Promise<
+  | { ok: true; created: string[]; skipped: { repName: string; reason: string }[] }
+  | { ok: false; error: string }
+> {
+  const admin = await requireAdmin();
+  if (!admin) return { ok: false, error: "Not authorized." };
+  if (!password || password.length < 6) return { ok: false, error: "Password must be at least 6 characters." };
+  const wanted = new Set((repNames ?? []).map((n) => String(n).trim().toLowerCase()).filter(Boolean));
+  if (!wanted.size) return { ok: false, error: "Choose at least one rep." };
+
+  let candidates: RepAccountCandidate[];
+  try {
+    candidates = await repAccountCandidates();
+  } catch (error) {
+    console.error("createRepAccounts lookup failed:", error);
+    return { ok: false, error: "Could not read the reps from the sales portal." };
+  }
+  const REASON = {
+    "has-account": "Already has an account",
+    "no-email": "No email in the sales portal",
+    "email-in-use": "Email already used by another user",
+  } as const;
+  const created: string[] = [];
+  const skipped: { repName: string; reason: string }[] = [];
+  for (const c of candidates.filter((x) => wanted.has(x.repName.trim().toLowerCase()))) {
+    if (c.state !== "ready" || !c.email) {
+      skipped.push({ repName: c.repName, reason: c.state === "ready" ? REASON["no-email"] : REASON[c.state] });
+      continue;
+    }
+    try {
+      await createUser(
+        { fullName: c.fullName, email: c.email, password, role: "rep", repName: c.repName },
+        "approved",
+        { mustChangePassword: true }
+      );
+      await logAudit({
+        actor: { id: admin.id, email: admin.email, role: admin.role },
+        action: "user.create",
+        category: "ownership",
+        target: c.email,
+        details: `Added user ${c.email} (${roleLabel("rep")}: ${c.repName})`,
+      });
+      created.push(c.repName);
+    } catch (error) {
+      if (error instanceof EmailInUseError) skipped.push({ repName: c.repName, reason: REASON["email-in-use"] });
+      else {
+        console.error("createRepAccount failed:", error);
+        skipped.push({ repName: c.repName, reason: "Could not be created" });
+      }
+    }
+  }
+  revalidatePath(PATH);
+  return { ok: true, created, skipped };
 }
 
 const VALID_STATUSES: UserStatus[] = [

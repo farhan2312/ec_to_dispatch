@@ -3,8 +3,8 @@ import { redirect } from "next/navigation";
 import { PackageCheck } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import {
-  canEditChild,
-  canViewDepartment,
+  canEditChild,
+  canViewDepartment,
 } from "@/lib/roles";
 import {
   listOrdersForBillingPage,
@@ -56,7 +56,7 @@ export default async function DispatchWorkspacePage({
       // Nothing to send before Assembly & Packing files a packing slip.
       onlyPacked: true,
     }),
-    listOrderListOptions(),
+    listOrderListOptions(filter),
   ]);
 
   const ids = [...new Set(queue.rows.map((o) => String(o.id)))];

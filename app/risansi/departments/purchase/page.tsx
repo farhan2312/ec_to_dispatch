@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Package } from "lucide-react";
 import { getCurrentUser } from "@/lib/session";
 import {
-  canEditChild,
+  canEditChild,
   canViewDepartment,
   isRep,
   reminderDeptForTable,
@@ -59,7 +59,7 @@ export default async function PurchaseWorkspacePage({
       filter,
     }),
     isRep(user.role) ? Promise.resolve([]) : listRemindersForDepartment(reminderDeptForTable(TABLE)!),
-    listOrderListOptions(),
+    listOrderListOptions(filter),
   ]);
 
   // Unread discussion messages per SO, for the row badge.

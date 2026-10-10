@@ -3207,10 +3207,17 @@ export type OrderListOptions = {
   reps: string[];
   markets: string[];
   types: string[];
+  /** A Rep's own name: the Rep filter is fixed to it and not offered. */
+  repLock?: string;
 };
 
 /** Each facet's distinct trimmed values, in one trip. */
-export async function listOrderListOptions(): Promise<OrderListOptions> {
+export async function listOrderListOptions(scope?: { repLock?: string }): Promise<OrderListOptions> {
+  const options = await allOrderListOptions();
+  return scope?.repLock ? { ...options, reps: [scope.repLock], repLock: scope.repLock } : options;
+}
+
+async function allOrderListOptions(): Promise<OrderListOptions> {
   const r = await query<{ facet: string; value: string }>(
     `SELECT DISTINCT 'zone' AS facet, TRIM(zone) AS value FROM orders WHERE TRIM(COALESCE(zone, '')) <> ''
      UNION SELECT DISTINCT 'rep', TRIM(reps) FROM orders WHERE TRIM(COALESCE(reps, '')) <> ''
@@ -3235,7 +3242,7 @@ export async function listOrdersPage(opts: {
 
   const [totals, optionRows] = await Promise.all([
     query<{ count: string }>(`SELECT count(*) AS count FROM orders o ${where}`, params),
-    listOrderListOptions(),
+    listOrderListOptions(opts.filter),
   ]);
 
   const total = Number(totals.rows[0]?.count ?? 0);
@@ -4548,7 +4555,7 @@ export async function getPipelinePage(opts: {
       params
     ),
     fetchPage(opts.page),
-    listOrderListOptions(),
+    listOrderListOptions(opts.filter),
   ]);
 
   const st = stats.rows[0];

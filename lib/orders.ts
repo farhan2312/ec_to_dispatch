@@ -46,6 +46,7 @@ import {
 import {
   CHILD_FIELDS,
   READY_LOT_LIMIT,
+  PAYMENT_HOLD_VALUE,
   coerceField,
   ORDER_MAKING_FIELDS,
   SECTION_BY_TABLE,
@@ -1178,6 +1179,204 @@ async function recomputeAccountsBalance(orderId: string): Promise<void> {
   );
 }
 
+/** What Accounts records against one PI. */
+export type PiPayment = {
+  payment_status: string;
+  confirmed_date: string;
+  amount_received: string;
+  hold_reason: string;
+};
+
+/**
+ * Accounts records a payment against one PI, then the SO's Accounts row is
+ * restated from its PIs (rollUpPiPayments).
+ */
+export async function savePiPayment(orderId: string, piId: string, p: PiPayment): Promise<boolean> {
+  if (!UUID_RE.test(orderId) || !UUID_RE.test(piId)) return false;
+  const r = await query(
+    `UPDATE order_billing_docs
+        SET pi_payment_status = NULLIF($3, ''),
+            pi_confirmed_date = NULLIF($4, '')::date,
+            pi_amount_received = NULLIF($5, '')::numeric,
+            pi_hold_reason = CASE WHEN $3 = $6 THEN NULLIF($7, '') END
+      WHERE id = $1 AND order_id = $2`,
+    [piId, orderId, p.payment_status.trim(), p.confirmed_date.trim(), p.amount_received.trim(), PAYMENT_HOLD_VALUE, p.hold_reason.trim()]
+  );
+  if (!r.rowCount) return false;
+  await rollUpPiPayments(orderId);
+  return true;
+}
+
+/**
+ * Accounts records a payment against a payment term line that has no PI yet.
+ * Refused once the line has its PI — the payment then goes on the PI.
+ */
+export async function saveTermPayment(orderId: string, termId: string, p: PiPayment): Promise<boolean> {
+  if (!UUID_RE.test(orderId) || !UUID_RE.test(termId)) return false;
+  const r = await query(
+    `UPDATE order_payment_terms t
+        SET term_payment_status = NULLIF($3, ''),
+            term_confirmed_date = NULLIF($4, '')::date,
+            term_amount_received = NULLIF($5, '')::numeric,
+            term_hold_reason = CASE WHEN $3 = $6 THEN NULLIF($7, '') END
+      WHERE t.id = $1 AND t.order_id = $2
+        AND NOT EXISTS (SELECT 1 FROM order_billing_docs b WHERE b.payment_term_id = t.id)`,
+    [termId, orderId, p.payment_status.trim(), p.confirmed_date.trim(), p.amount_received.trim(), PAYMENT_HOLD_VALUE, p.hold_reason.trim()]
+  );
+  if (!r.rowCount) return false;
+  await rollUpPiPayments(orderId);
+  return true;
+}
+
+/**
+ * Billing raised (or linked) a PI on a term line that already carries a
+ * payment: the payment moves onto the PI, unless the PI has one of its own.
+ */
+export async function moveTermPaymentToPi(orderId: string, termId: string, piId: string): Promise<void> {
+  if (!UUID_RE.test(orderId) || !UUID_RE.test(termId) || !UUID_RE.test(piId)) return;
+  const moved = await query(
+    `UPDATE order_billing_docs b
+        SET pi_payment_status = t.term_payment_status, pi_confirmed_date = t.term_confirmed_date,
+            pi_amount_received = t.term_amount_received, pi_hold_reason = t.term_hold_reason
+       FROM order_payment_terms t
+      WHERE b.id = $1 AND b.order_id = $3 AND t.id = $2 AND t.order_id = $3
+        AND COALESCE(t.term_payment_status, t.term_confirmed_date::text, t.term_amount_received::text) IS NOT NULL
+        AND COALESCE(b.pi_payment_status, b.pi_confirmed_date::text, b.pi_amount_received::text) IS NULL`,
+    [piId, termId, orderId]
+  );
+  if (moved.rowCount) {
+    await query(
+      `UPDATE order_payment_terms SET term_payment_status = NULL, term_confirmed_date = NULL,
+              term_amount_received = NULL, term_hold_reason = NULL WHERE id = $1`,
+      [termId]
+    );
+    await rollUpPiPayments(orderId);
+  }
+}
+
+/**
+ * The SO's payment, worked out from its payment lines once any carries one —
+ * each PI, and each term line with no PI yet: the amount received is their
+ * sum, the confirmed date the latest, the hold reason each held line's. The
+ * status is the latest payment's (piRollupStatus). An SO whose lines carry no
+ * payment yet keeps what was recorded on the SO itself.
+ */
+export async function rollUpPiPayments(orderId: string): Promise<void> {
+  if (!UUID_RE.test(orderId)) return;
+  const pis = (
+    await query<{ pi_no: string | null; status: string | null; date: string | null; amount: string | null; reason: string | null }>(
+      `SELECT pi_no, NULLIF(btrim(pi_payment_status), '') AS status,
+              to_char(pi_confirmed_date, 'YYYY-MM-DD') AS date, pi_amount_received::text AS amount,
+              NULLIF(btrim(pi_hold_reason), '') AS reason
+         FROM order_billing_docs WHERE order_id = $1
+       UNION ALL
+       -- A term line with no PI yet: its own payment, named after the term.
+       SELECT concat_ws(' ', rtrim(rtrim(t.percent::text, '0'), '.') || '%', t.term),
+              NULLIF(btrim(t.term_payment_status), ''), to_char(t.term_confirmed_date, 'YYYY-MM-DD'),
+              t.term_amount_received::text, NULLIF(btrim(t.term_hold_reason), '')
+         FROM order_payment_terms t
+        WHERE t.order_id = $1
+          AND NOT EXISTS (SELECT 1 FROM order_billing_docs b WHERE b.payment_term_id = t.id)`,
+      [orderId]
+    )
+  ).rows;
+  if (!pis.some((p) => p.status || p.date || p.amount)) return;
+
+  const status = piRollupStatus(pis);
+  const amounts = pis.map((p) => p.amount).filter((a): a is string => !!a);
+  const received = amounts.length ? amounts.reduce((n, a) => n + Number(a), 0).toFixed(2) : null;
+  const dates = pis.map((p) => p.date).filter((d): d is string => !!d).sort();
+  const reasons = pis
+    .filter((p) => p.status === PAYMENT_HOLD_VALUE && p.reason)
+    .map((p) => (pis.length > 1 ? `PI ${p.pi_no ?? "—"}: ${p.reason}` : p.reason!))
+    .join("; ");
+
+  await query(
+    `INSERT INTO order_accounts (order_id, payment_status, payment_confirmed_date, amount_received, hold_reason)
+     VALUES ($1, $2, $3::date, $4::numeric, NULLIF($5, ''))
+     ON CONFLICT (order_id) DO UPDATE SET
+       payment_status = EXCLUDED.payment_status,
+       payment_confirmed_date = EXCLUDED.payment_confirmed_date,
+       amount_received = EXCLUDED.amount_received,
+       hold_reason = EXCLUDED.hold_reason`,
+    [orderId, status, dates.length ? dates[dates.length - 1] : null, received, reasons]
+  );
+  await recomputeAccountsBalance(orderId);
+}
+
+/**
+ * The SO's payment status: the latest PI payment's — the PI with the latest
+ * Payment Confirmed Date, else (none dated) the last PI given a status. A PI
+ * on hold still puts the whole SO on hold, so the escalation is not lost
+ * behind a later payment. PIs come in the order they were raised.
+ */
+export function piRollupStatus(pis: { status: string | null; date: string | null }[]): string | null {
+  const withStatus = pis.filter((p) => p.status);
+  if (withStatus.some((p) => p.status === PAYMENT_HOLD_VALUE)) return PAYMENT_HOLD_VALUE;
+  if (!withStatus.length) return null;
+  const dated = withStatus.filter((p) => p.date);
+  if (dated.length) {
+    // The last of the latest-dated, so a later PI wins a tie.
+    const latest = dated.reduce((best, p) => (p.date! >= best.date! ? p : best));
+    return latest.status;
+  }
+  return withStatus[withStatus.length - 1].status;
+}
+
+/** The reasons Accounts can put an SO on hold for, A–Z. */
+export async function listAccountsHoldReasons(): Promise<string[]> {
+  const r = await query<{ label: string }>(`SELECT label FROM accounts_hold_reasons ORDER BY lower(label)`);
+  return r.rows.map((x) => x.label);
+}
+
+/** Add a reason to Accounts' list (a no-op when it is already there, in any case). */
+export async function addAccountsHoldReason(label: string, by: string): Promise<string> {
+  const clean = label.replace(/\s+/g, " ").trim();
+  const existing = await query<{ label: string }>(
+    `SELECT label FROM accounts_hold_reasons WHERE lower(label) = lower($1)`,
+    [clean]
+  );
+  if (existing.rows[0]) return existing.rows[0].label;
+  await query(`INSERT INTO accounts_hold_reasons (label, created_by) VALUES ($1, $2) ON CONFLICT DO NOTHING`, [clean, by]);
+  return clean;
+}
+
+/** Put an SO on Accounts hold, or lift it. Returns the status it had before. */
+export async function setAccountsHold(
+  orderId: string,
+  hold: { status: "Hold" | "Clear"; reason: string; remarks: string }
+): Promise<string | null> {
+  if (!UUID_RE.test(orderId)) return null;
+  const before = await query<{ status: string | null }>(
+    `SELECT accounts_hold_status AS status FROM orders WHERE id = $1`,
+    [orderId]
+  );
+  await query(
+    `UPDATE orders
+        SET accounts_hold_status = $2,
+            accounts_hold_reason = CASE WHEN $2 = 'Hold' THEN NULLIF($3, '') END,
+            accounts_hold_remarks = CASE WHEN $2 = 'Hold' THEN NULLIF($4, '') END,
+            accounts_hold_at = CASE WHEN $2 = 'Hold' THEN COALESCE(CASE WHEN accounts_hold_status = 'Hold' THEN accounts_hold_at END, now()) END
+      WHERE id = $1`,
+    [orderId, hold.status, hold.reason.trim(), hold.remarks.trim()]
+  );
+  return before.rows[0]?.status ?? null;
+}
+
+/**
+ * Whether the SO has payment lines — a PI or a payment term. Then Accounts
+ * records against each line, not the SO.
+ */
+export async function orderHasPi(orderId: string): Promise<boolean> {
+  if (!UUID_RE.test(orderId)) return false;
+  const r = await query<{ has: boolean }>(
+    `SELECT (EXISTS (SELECT 1 FROM order_billing_docs WHERE order_id = $1)
+            OR EXISTS (SELECT 1 FROM order_payment_terms WHERE order_id = $1)) AS has`,
+    [orderId]
+  );
+  return r.rows[0]?.has ?? false;
+}
+
 /**
  * The SO's value with GST, as orderValueWithGst: the INR value (a foreign
  * order's conversion) × (1 + the rate Accounts set, 18% when blank).
@@ -2025,7 +2224,15 @@ export async function listOrdersForSection(
   const section = SECTION_BY_TABLE.get(table);
   if (!section || section.scope !== "so" || table === "orders") return [];
 
-  const detailSelects = section.fields.map((f) => detailSelect("d", f)).join(", ");
+  const detailSelects = section.fields
+    .map((f) =>
+      // Accounts: the balance as it stands — the value with GST less what came
+      // in — even on an SO Accounts has not opened yet (no row stored).
+      table === "order_accounts" && f.column === "balance_of_payment"
+        ? `(${ORDER_VALUE_GST_SQL("o", "d")} - COALESCE(d.amount_received, 0))::text AS balance_of_payment`
+        : detailSelect("d", f)
+    )
+    .join(", ");
 
   const extraJoins = new Map<string, string>();
   const contextSelects = contextColumns
@@ -2075,12 +2282,17 @@ export async function listOrdersForSection(
             NULL::text AS ec_no,
             o.client_name,
             o.clearance_status, o.clearance_hold_reason, o.clearance_remarks,
+            o.accounts_hold_status, o.accounts_hold_reason, o.accounts_hold_remarks,
             -- The order value's currency, shown beside it (Accounts).
             o.order_currency,
             -- Accounts: the payment term lines and the PI raised against each.
             ${table === "order_accounts" ? `COALESCE((SELECT jsonb_agg(jsonb_build_object(
                         'id', t.id, 'term', t.term, 'percent', t.percent::text,
-                        'days', t.days, 'documents', t.documents) ORDER BY t.seq)
+                        'days', t.days, 'documents', t.documents,
+                        'term_payment_status', t.term_payment_status,
+                        'term_confirmed_date', to_char(t.term_confirmed_date, 'YYYY-MM-DD'),
+                        'term_amount_received', t.term_amount_received::text,
+                        'term_hold_reason', t.term_hold_reason) ORDER BY t.seq)
                       FROM order_payment_terms t WHERE t.order_id = o.id), '[]'::jsonb) AS term_lines,
             COALESCE((SELECT jsonb_agg(to_jsonb(pd) ORDER BY pd.seq)
                       FROM order_billing_docs pd WHERE pd.order_id = o.id), '[]'::jsonb) AS pi_docs,` : ""}
@@ -2207,7 +2419,8 @@ export async function listItemsForSection(
             it.ec_no,
             it.item_type,
             o.client_name,
-            o.clearance_status, o.clearance_hold_reason, o.clearance_remarks
+            o.clearance_status, o.clearance_hold_reason, o.clearance_remarks,
+            o.accounts_hold_status, o.accounts_hold_reason, o.accounts_hold_remarks
             ${childSelect}${soChildSelect}${readyLotsSelect}${detailSelects ? `,\n            ${detailSelects}` : ""}${contextSelects}
        FROM order_items it
        JOIN orders o ON o.id = it.order_id
@@ -2269,6 +2482,7 @@ export async function listOrdersForBilling(
             o.order_type,
             o.client_name,
             o.clearance_status, o.clearance_hold_reason, o.clearance_remarks,
+            o.accounts_hold_status, o.accounts_hold_reason, o.accounts_hold_remarks,
             o.bill_type,
             ${PAYMENT_TERMS_SQL("o")} AS payment_terms,
             ${AFTER_RECEIPT_ONLY} AS after_receipt_only,
@@ -2286,7 +2500,11 @@ export async function listOrdersForBilling(
                      '[]'::jsonb) AS pi_docs,
             COALESCE((SELECT jsonb_agg(jsonb_build_object(
                         'id', t.id, 'term', t.term, 'percent', t.percent::text,
-                        'days', t.days, 'documents', t.documents) ORDER BY t.seq)
+                        'days', t.days, 'documents', t.documents,
+                        'term_payment_status', t.term_payment_status,
+                        'term_confirmed_date', to_char(t.term_confirmed_date, 'YYYY-MM-DD'),
+                        'term_amount_received', t.term_amount_received::text,
+                        'term_hold_reason', t.term_hold_reason) ORDER BY t.seq)
                       FROM order_payment_terms t WHERE t.order_id = o.id),
                      '[]'::jsonb) AS term_lines,
             -- Planning's readiness, for Billing to see when the SO will be ready.
@@ -2362,6 +2580,7 @@ export async function listItemsForPurchase(
             o.order_type,
             it.ec_no,
             o.clearance_status, o.clearance_hold_reason, o.clearance_remarks,
+            o.accounts_hold_status, o.accounts_hold_reason, o.accounts_hold_remarks,
             o.boi,
             o.ld,
             to_char(o.ld_date, 'YYYY-MM-DD') AS ld_date,

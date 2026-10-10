@@ -19,6 +19,13 @@ import {
   insertBillingDocs,
   lockFactsForChild,
   lockFactsForOrder,
+  moveTermPaymentToPi,
+  addAccountsHoldReason,
+  listAccountsHoldReasons,
+  setAccountsHold,
+  orderHasPi,
+  savePiPayment,
+  saveTermPayment,
   lockFactsForItem,
   getOrderLabel,
   insertQcDocument,
@@ -52,6 +59,8 @@ import {
 import {
   CHILD_FIELDS,
   ORDER_STATUS_OPTIONS,
+  PAYMENT_HOLD_VALUE,
+  PAYMENT_STATUS_OPTIONS,
   SECTION_BY_TABLE,
   BILL_TYPE_FOR_MODE,
   ORDER_MAKING_EDITABLE,
@@ -672,8 +681,14 @@ export async function updateOrderSectionAction(
       section.fields.filter((f) => f.centralOnly).map((f) => f.column)
     );
     allowedValues = Object.fromEntries(
-      Object.entries(values).filter(([k]) => !centralOnly.has(k))
+      Object.entries(allowedValues).filter(([k]) => !centralOnly.has(k))
     );
+  }
+  // Once the SO has a PI, Accounts records against each PI and the SO's
+  // payment is their roll-up — the SO form keeps only GST %.
+  if (table === "order_accounts" && (await orderHasPi(id))) {
+    const rolledUp = new Set(PI_ROLLED_UP);
+    allowedValues = Object.fromEntries(Object.entries(allowedValues).filter(([k]) => !rolledUp.has(k)));
   }
 
   const tbl = table as OrderTable;
@@ -1407,6 +1422,88 @@ async function notifyClearance(orderId: string, wasRaw: string, nowRaw: string, 
   } catch (error) {
     console.error("notifyClearance failed:", error);
   }
+}
+
+/** Accounts' hold reasons, for its hold pop-up. */
+export async function listAccountsHoldReasonsAction(): Promise<string[]> {
+  const user = await getCurrentUser();
+  if (!user || !canEditSection(user.role, "order_accounts")) return [];
+  return listAccountsHoldReasons();
+}
+
+/** Accounts adds a hold reason to its list. */
+export async function addAccountsHoldReasonAction(
+  label: string
+): Promise<{ ok: true; label: string } | { ok: false; error: string }> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canEditSection(user.role, "order_accounts")) return { ok: false, error: "Only Accounts can add hold reasons." };
+  const clean = (label ?? "").replace(/\s+/g, " ").trim();
+  if (!clean) return { ok: false, error: "Type the reason." };
+  if (clean.length > 80) return { ok: false, error: "Keep the reason under 80 characters." };
+  const saved = await addAccountsHoldReason(clean, user.email);
+  await logAudit({
+    actor: { id: user.id, email: user.email, role: user.role },
+    action: "settings.update",
+    category: "activity",
+    target: "Accounts hold reasons",
+    details: `Added hold reason "${saved}"`,
+  });
+  return { ok: true, label: saved };
+}
+
+/**
+ * Accounts puts an SO on hold for a payment reason, or lifts it. Every
+ * department working on the SO (and Central) hears of it; their work goes on.
+ */
+export async function setAccountsHoldAction(
+  orderId: string,
+  input: { status: string; reason: string; remarks: string }
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canEditSection(user.role, "order_accounts")) return { ok: false, error: "Only Accounts can put an SO on hold." };
+  if (!UUID_RE_ACTION.test(orderId)) return { ok: false, error: "Order not found." };
+  const status = input.status === "Hold" ? "Hold" : "Clear";
+  const reason = (input.reason ?? "").trim();
+  const remarks = (input.remarks ?? "").trim();
+  if (status === "Hold") {
+    if (!reason) return { ok: false, error: "Choose a hold reason." };
+    if (!(await listAccountsHoldReasons()).includes(reason)) return { ok: false, error: "Choose a reason from the list." };
+  }
+  if (remarks.length > 500) return { ok: false, error: "Keep the remarks under 500 characters." };
+  const was = (await setAccountsHold(orderId, { status, reason, remarks })) || "Clear";
+  const label = (await getOrderLabel(orderId)) ?? orderId;
+  await logAudit({
+    actor: { id: user.id, email: user.email, role: user.role },
+    action: "order.update",
+    category: "activity",
+    target: "Accounts",
+    details: status === "Hold" ? `Accounts hold — ${reason}${remarks ? ` (${remarks})` : ""}` : "Accounts hold lifted",
+    subject: { orderId, soNo: label },
+  });
+  if (was !== status) {
+    try {
+      const depts = Object.keys(ROLE_BY_DEPT) as DeptKey[];
+      const involved = (
+        await Promise.all(depts.map((d) => deptInvolvedInOrder(d, orderId).then((yes) => (yes ? d : null))))
+      ).filter((d): d is DeptKey => d !== null && d !== "accounts");
+      await emitNotification({
+        roles: [...new Set([...involved.map((d) => ROLE_BY_DEPT[d]), "central_visibility"])],
+        orderId,
+        type: "dept_update",
+        message:
+          status === "Hold"
+            ? `SO ${label} put on hold by Accounts — ${reason}${remarks ? ` (${remarks})` : ""}`
+            : `Accounts hold lifted on SO ${label}`,
+      });
+    } catch (error) {
+      console.error("Accounts hold notice failed:", error);
+    }
+  }
+  revalidatePath("/risansi/departments/accounts");
+  revalidatePath(`/risansi/orders/${orderId}`);
+  return { ok: true };
 }
 
 const ROLE_BY_DEPT: Record<DeptKey, string> = {
@@ -2224,6 +2321,7 @@ export async function savePiAction(
     { pi_no: input.pi_no, pi_date: input.pi_date, pi_value: input.pi_value },
     orderId
   );
+  if (termId) await moveTermPaymentToPi(orderId, termId, id);
   revalidatePath("/risansi/departments/billing");
   return saved.ok ? { ok: true, id } : saved;
 }
@@ -2250,6 +2348,7 @@ export async function linkPiAction(
     [piId, orderId, termId]
   );
   if (r.rowCount === 0) return { ok: false, error: "PI not found." };
+  if (termId) await moveTermPaymentToPi(orderId, termId, piId);
   const label = (await getOrderLabel(orderId)) ?? orderId;
   await logAudit({
     actor: { id: user.id, email: user.email, role: user.role },
@@ -2264,3 +2363,67 @@ export async function linkPiAction(
 }
 
 const UUID_RE_ACTION = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The SO's Accounts fields that, once it has a PI, come from its PIs. */
+const PI_ROLLED_UP = ["payment_status", "payment_confirmed_date", "amount_received", "hold_reason"];
+
+/**
+ * Accounts records the payment against one PI — or, when the term line has no
+ * PI yet, against the term line; the SO's Accounts row follows.
+ */
+export async function savePiPaymentAction(
+  orderId: string,
+  target: { piId?: string | null; termId?: string | null },
+  input: { payment_status: string; confirmed_date: string; amount_received: string; hold_reason: string }
+): Promise<ChildActionResult> {
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, error: "You are not signed in." };
+  if (!canEditSection(user.role, "order_accounts")) {
+    return { ok: false, error: "Only Accounts can record payments." };
+  }
+  const piId = target.piId && UUID_RE_ACTION.test(target.piId) ? target.piId : null;
+  const termId = !piId && target.termId && UUID_RE_ACTION.test(target.termId) ? target.termId : null;
+  if (!UUID_RE_ACTION.test(orderId) || (!piId && !termId)) return { ok: false, error: "Payment line not found." };
+  const status = (input.payment_status ?? "").trim();
+  if (status && !PAYMENT_STATUS_OPTIONS.some((o) => o.value === status)) {
+    return { ok: false, error: "Choose a payment status from the list." };
+  }
+  const date = (input.confirmed_date ?? "").trim();
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: "Enter a valid date." };
+  const amount = (input.amount_received ?? "").trim();
+  if (amount && (!Number.isFinite(Number(amount)) || Number(amount) < 0)) {
+    return { ok: false, error: "Amount Received must be a number, 0 or more." };
+  }
+  if (status === PAYMENT_HOLD_VALUE && !(input.hold_reason ?? "").trim()) {
+    return { ok: false, error: "Enter the hold reason." };
+  }
+  const locked = lockReason("order_accounts", (await lockFactsForOrder(orderId)) as never, user.role);
+  if (locked) return { ok: false, error: locked };
+
+  const line = (
+    await query<{ name: string | null; status: string | null; amount: string | null }>(
+      piId
+        ? `SELECT 'PI ' || COALESCE(pi_no, '—') AS name, pi_payment_status AS status, pi_amount_received::text AS amount
+             FROM order_billing_docs WHERE id = $1 AND order_id = $2`
+        : `SELECT concat_ws(' ', rtrim(rtrim(percent::text, '0'), '.') || '%', term) AS name,
+                  term_payment_status AS status, term_amount_received::text AS amount
+             FROM order_payment_terms WHERE id = $1 AND order_id = $2`,
+      [piId ?? termId, orderId]
+    )
+  ).rows[0];
+  if (!line) return { ok: false, error: "Payment line not found." };
+  const payment = { payment_status: status, confirmed_date: date, amount_received: amount, hold_reason: input.hold_reason ?? "" };
+  const saved = piId ? await savePiPayment(orderId, piId, payment) : await saveTermPayment(orderId, termId!, payment);
+  if (!saved) return { ok: false, error: "This term now has a PI — record the payment on the PI." };
+  const label = (await getOrderLabel(orderId)) ?? orderId;
+  await logAudit({
+    actor: { id: user.id, email: user.email, role: user.role },
+    action: "order.update",
+    category: "activity",
+    target: "Accounts",
+    details: `${line.name ?? "—"}: payment ${line.status ?? "—"} → ${status || "—"}, received ${line.amount ?? "—"} → ${amount || "—"}`,
+    subject: { orderId, soNo: label },
+  });
+  revalidatePath("/risansi/departments/accounts");
+  return { ok: true };
+}

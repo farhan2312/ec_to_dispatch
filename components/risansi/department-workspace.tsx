@@ -27,6 +27,7 @@ import {
 import { OrderChildList } from "./order-children";
 import { SortHeader } from "./sort-header";
 import { HoldBadge } from "./hold-badge";
+import { AccountsHoldButton } from "./accounts-hold";
 import { TermPis } from "./term-pis";
 import { PackingSlipsInline } from "./packing-slips-inline";
 import { ReadyLotHistoryButton } from "./ready-lot-history";
@@ -107,12 +108,16 @@ function formatValue(field: OrderField, value: unknown): string {
 
 const money = new Intl.NumberFormat("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/** Amounts shown with their currency: the order value in its own, the rest (with GST) in INR. */
+const MONEY_COLUMNS = ["order_value", "order_value_gst", "amount_received", "balance_of_payment"];
+
 /**
  * A context value as shown: the order value with its currency (INR / USD),
- * the value with GST — always in INR — likewise; anything else as it is.
+ * the value with GST, what came in and the balance — always in INR — likewise;
+ * anything else as it is.
  */
 function contextValue(field: OrderField, row: Row, value: unknown = row[field.column]): string {
-  if (field.column !== "order_value" && field.column !== "order_value_gst") return formatValue(field, value);
+  if (!MONEY_COLUMNS.includes(field.column)) return formatValue(field, value);
   const n = Number(toInput(value));
   if (toInput(value) === "" || !Number.isFinite(n)) return "—";
   const currency = field.column === "order_value" ? toInput(row.order_currency) || "INR" : "INR";
@@ -660,6 +665,8 @@ export function DepartmentWorkspace({
                     <td className="px-4 py-3 whitespace-nowrap">
                       {toInput(order.so_no) || "—"}
                       <HoldBadge order={order} />
+                      {/* Accounts can hold the SO for a payment reason. */}
+                      {table === "order_accounts" && canEdit && <AccountsHoldButton order={order} />}
                     </td>
                     <td className="px-4 py-3">
                       <ChatButton
@@ -685,6 +692,7 @@ export function DepartmentWorkspace({
                             terms={(order.term_lines ?? []) as Row[]}
                             pis={(order.pi_docs ?? []) as Row[]}
                             canEdit={false}
+                            payments={{ canEdit: canEdit && !lockReason(table, order) }}
                           />
                         </td>
                       ) : (
@@ -698,7 +706,11 @@ export function DepartmentWorkspace({
                     )}
                     {visibleFields.map((f) => (
                       <td key={f.column} className="px-3 py-3 whitespace-nowrap">
-                        {fieldApplies(f, order) ? formatValue(f, order[f.column]) : "—"}
+                        {!fieldApplies(f, order)
+                          ? "—"
+                          : table === "order_accounts"
+                            ? contextValue(f, order)
+                            : formatValue(f, order[f.column])}
                       </td>
                     ))}
                     {documents.map((doc) => (
@@ -1231,6 +1243,7 @@ function EditSectionModal({
   }
 
   const showParty = table === "order_billing" || table === "order_accounts";
+  const PI_ROLLED_UP = ["payment_status", "payment_confirmed_date", "amount_received", "hold_reason"];
   const identity = [data.so_no, data.ec_no].filter(Boolean).join(" · ");
   const inputClass =
     "h-10 w-full rounded-[10px] border border-input-border bg-surface px-3 text-[14px] text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-50";
@@ -1395,14 +1408,17 @@ function EditSectionModal({
                 );
               }
               // Computed and (for non-central users) centralOnly fields are
-              // shown read-only rather than as inputs.
-              if (field.computed || (field.centralOnly && !canEditCentral)) {
+              // shown read-only rather than as inputs. So is an SO's payment
+              // once it has a PI: Accounts records it against each PI.
+              const fromPis = table === "order_accounts" && PI_ROLLED_UP.includes(field.column) &&
+                Array.isArray(data.pi_docs) && data.pi_docs.length > 0;
+              if (field.computed || fromPis || (field.centralOnly && !canEditCentral)) {
                 return (
                   <div key={field.column}>
                     <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium text-brand-label">
                       {field.label}
                       <span className="rounded bg-slate-100 px-1 text-[9px] font-semibold text-slate-500">
-                        {field.computed ? "auto" : "read-only"}
+                        {field.computed ? "auto" : fromPis ? "from PIs" : "read-only"}
                       </span>
                     </label>
                     <div className="flex h-10 items-center px-1 text-[14px] text-muted">

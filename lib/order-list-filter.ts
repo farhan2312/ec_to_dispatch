@@ -211,7 +211,7 @@ export function parseOrderListFilter(
   const dateField: OrderDateField =
     dateFieldRaw === "dept_target" && (!dept || dept === "dispatch")
       ? (dept ? "so_date" : fallbackDate)
-      : dateFieldRaw === "readiness" && dept && dept !== "planning" && dept !== "assembly" && dept !== "billing"
+      : dateFieldRaw === "readiness" && dept && !["planning", "assembly", "billing", "dispatch"].includes(dept)
         ? (dept ? "so_date" : fallbackDate)
         : dateFieldRaw;
 

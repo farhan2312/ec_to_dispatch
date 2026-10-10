@@ -129,6 +129,8 @@ export type OrderListRow = {
   // The Orders list page only: the rest of the holds, the payment terms with
   // their PIs and payments, and Planning's readiness across the ECs.
   clearance_remarks?: string | null;
+  bill_mode?: string | null;
+  bill_type?: string | null;
   accounts_hold_status?: string | null;
   accounts_hold_reason?: string | null;
   accounts_hold_remarks?: string | null;
@@ -2433,7 +2435,11 @@ export async function listItemsForSection(
                      FROM order_ready_lots rl WHERE rl.item_id = it.id),
                   '[]'::jsonb) AS ready_lots${
            table === "order_planning"
-             ? ", d.readiness_date_status"
+             ? // …and where Assembly & Packing and Dispatch have got to on it.
+               `, d.readiness_date_status, ${ASSEMBLY_STATE_SQL("it")} AS assembly_state,
+                 (SELECT to_char(pad.actual_packing_date, 'YYYY-MM-DD')
+                    FROM order_assembly_dispatch pad WHERE pad.item_id = it.id) AS actual_packing_date,
+                 ${orderStatusSql("o")} AS so_dispatch_status`
              : // Assembly & Packing is overdue against Planning's readiness date.
                `, (SELECT to_char(rpl.planning_readiness_date, 'YYYY-MM-DD')
                     FROM order_planning rpl WHERE rpl.item_id = it.id) AS planning_readiness_date`
@@ -3255,6 +3261,7 @@ export async function listOrdersPage(opts: {
                 ) x
             ), '[]'::jsonb) AS items,
             o.clearance_remarks,
+            o.bill_mode, o.bill_type,
             o.accounts_hold_status, o.accounts_hold_reason, o.accounts_hold_remarks,
             COALESCE((SELECT jsonb_agg(jsonb_build_object(
                         'id', t.id, 'term', t.term, 'percent', t.percent::text,

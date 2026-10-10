@@ -159,7 +159,12 @@ export function OrderListFilterBar({
         <SingleSelectFilter
           label="Department"
           allLabel="All departments"
-          options={DEPT_FILTER_KEYS.map((k) => ({ value: k, label: DEPT_FILTER_LABELS[k] }))}
+          // A Spare has no drawing, bought-out items or QC documents to chase.
+          options={DEPT_FILTER_KEYS.filter(
+            (k) =>
+              !(filter.types.length > 0 && filter.types.every((t) => t.toLowerCase() === "spare")) ||
+              !["drawing", "purchase", "quality"].includes(k)
+          ).map((k) => ({ value: k, label: DEPT_FILTER_LABELS[k] }))}
           selected={filter.dept}
           onChange={(next) => {
             // A status is one department's word; keep it only if the new
@@ -170,8 +175,9 @@ export function OrderListFilterBar({
               : [];
             const keepsTarget =
               next && next !== "dispatch" && DEPT_VIEWS[next as DeptFilterKey].hasTarget;
-            const keepsPayment = !!next && PAYMENT_FILTER_DEPTS.includes(next);
-            const keepsBillMode = !!next && BILL_MODE_FILTER_DEPTS.includes(next);
+            // The Orders list keeps them whatever the department.
+            const keepsPayment = !dept || (!!next && PAYMENT_FILTER_DEPTS.includes(next));
+            const keepsBillMode = !dept || (!!next && BILL_MODE_FILTER_DEPTS.includes(next));
             setParams({
               dept: next,
               dstatus: status,
@@ -199,7 +205,7 @@ export function OrderListFilterBar({
           />
         )}
         {/* Billing and Accounts: how the SO is paid. */}
-        {activeDept && PAYMENT_FILTER_DEPTS.includes(activeDept) && (
+        {(!dept || (activeDept && PAYMENT_FILTER_DEPTS.includes(activeDept))) && (
           <MultiSelectFilter
             label="Payment terms"
             allLabel="Any terms"
@@ -209,7 +215,7 @@ export function OrderListFilterBar({
           />
         )}
         {/* Billing, Accounts and Planning: how the SO is billed. */}
-        {activeDept && BILL_MODE_FILTER_DEPTS.includes(activeDept) && (
+        {(!dept || (activeDept && BILL_MODE_FILTER_DEPTS.includes(activeDept))) && (
           <MultiSelectFilter
             label="Bill mode"
             allLabel="Any mode"
@@ -329,7 +335,7 @@ export function OrderListFilterBar({
             if (f.value === "dept_target") return deptTarget && activeDept !== "planning";
             // Assembly & Packing and Billing work from Planning's readiness date too.
             if (f.value === "readiness")
-              return activeDept === "planning" || activeDept === "assembly" || activeDept === "billing";
+              return !dept || activeDept === "planning" || activeDept === "assembly" || activeDept === "billing";
             if (f.value === "dispatch_target") return !dept && !noDispatchTarget;
             // Completion dates come from sign-offs, which are switched off.
             if (f.value === "completed_on") return SIGN_OFF_ENABLED;

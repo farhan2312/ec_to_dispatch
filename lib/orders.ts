@@ -3108,6 +3108,8 @@ function orderListClauses(
     }
     clauses.push(`(${any.join(" OR ")})`);
   }
+  // The SO's dispatch status, as Dispatch sets it.
+  if (f.dispatchStatuses.length) clauses.push(`${orderStatusSql("o")} = ANY(${p(f.dispatchStatuses)}::text[])`);
   if (f.billModes.length) {
     const modes = f.billModes.filter((m) => m !== NOT_SET);
     const any: string[] = [];
@@ -3230,11 +3232,16 @@ async function allOrderListOptions(): Promise<OrderListOptions> {
   return { zones: of("zone"), reps: of("rep"), markets: of("market"), types: of("type") };
 }
 
+/** The most SOs one PDF carries. */
+const ALL_ROWS_CAP = 5000;
+
 export async function listOrdersPage(opts: {
   page: number;
   filter: OrderListFilter;
   /** Sl. No. or SO date; newest Sl. No. first when not given. */
   sort?: QueueSort | null;
+  /** Every matching SO on one page (the PDF), up to a safety cap. */
+  all?: boolean;
 }): Promise<PageResult<OrderListRow> & { options: OrderListOptions }> {
   const { where, params } = orderListWhere(opts.filter);
   const limit = `$${params.length + 1}`;
@@ -3330,11 +3337,11 @@ export async function listOrdersPage(opts: {
       ${where}
       ORDER BY ${queueOrderBy(opts.sort) ?? "o.sl_no DESC"}
       LIMIT ${limit} OFFSET ${offset}`,
-      [...params, PAGE_SIZE, offsetFor(page)]
+      opts.all ? [...params, ALL_ROWS_CAP, 0] : [...params, PAGE_SIZE, offsetFor(page)]
     ))();
 
   return {
-    ...pageResult(rows.rows, total, page),
+    ...pageResult(rows.rows, total, opts.all ? 1 : page),
     options: optionRows,
   };
 }

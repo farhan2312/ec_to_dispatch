@@ -10,6 +10,7 @@ import { OrderThreadModal } from "./order-thread-modal";
 import { OrderDetailsModal } from "./order-details-modal";
 import { billModeLabel } from "@/lib/order-schema";
 import { dispatchRowTone } from "@/lib/dept-view";
+import { CLOSED, READY, assemblyView, planningText, reachedDepts, type ReachedDept } from "@/lib/order-row-view";
 import type { DeptCell, ItemSummary, OrderListOptions, OrderListRow, SoDeptStatus } from "@/lib/orders";
 import { deleteOrderAction } from "@/app/risansi/orders/actions";
 import { UrlPagination, useUrlTable } from "./url-table";
@@ -107,23 +108,6 @@ function ItemRows({
   );
 }
 
-/** Planning is done once the ECs are ready, not as soon as they have a status. */
-const READY = ["fully ready", "assembled", "packed"];
-
-/** An EC department across the SO's ECs: their shared state, or how many are done. */
-function acrossEcs(status: SoDeptStatus | undefined, key: "drawing" | "purchase" | "quality" | "planning" | "assembly"): DeptCell | null {
-  if (!status) return null;
-  const cells = status.ecs
-    .map((e) => e[key])
-    .filter((c) => c.state !== "na")
-    .map((c) => (key === "planning" && !READY.includes(c.label.toLowerCase()) ? { ...c, state: "pending" as const } : c));
-  if (cells.length === 0) return null;
-  if (new Set(cells.map((c) => `${c.state}|${c.label}`)).size === 1) return cells[0];
-  const done = cells.filter((c) => c.state === "done").length;
-  return { state: done === cells.length ? "done" : "pending", label: `${done}/${cells.length} ECs done` };
-}
-
-
 const TEXT_TONE: Record<DeptCell["state"], string> = {
   done: "text-emerald-700 dark:text-emerald-400",
   pending: "text-foreground",
@@ -154,58 +138,17 @@ function StatusText({ text, tone = "pending", line, onClick }: {
   );
 }
 
-/** A department the SO has reached, as a tag that opens it. */
-type DeptTag = { key: string; name: string; cell: DeptCell; what: PopupKind };
-
-const EC_TAG_NAMES = { drawing: "Drawing", purchase: "Purchase", quality: "Quality", planning: "Planning", assembly: "Packing" } as const;
-/** The order statuses that close an SO. */
-const CLOSED = ["Cancelled by client", "Diverted"];
-const READY_OR_BEYOND = ["partial ready", "fully ready", "assembled", "packed"];
-
-/**
- * The departments an SO has reached — the ones whose queue it sits in now.
- * Packing appears once something is ready (not while Planning is still
- * planning), Dispatch once a numbered packing slip exists, Billing once there
- * are terms or PIs, Accounts once there is a PI or a payment.
- */
-function reachedDepts(order: OrderListRow, status: SoDeptStatus | undefined): DeptTag[] {
-  const tags: DeptTag[] = [];
-  if (!status) return tags;
-  // Accounts is not involved only on a Challan order — nor is Billing's PI list.
-  const challan = status.accounts.state === "na";
-  for (const key of ["drawing", "purchase", "quality", "planning"] as const) {
-    const cell = acrossEcs(status, key);
-    const anyInvolved = status.ecs.some((e) => e[key].state !== "na");
-    if (!anyInvolved) continue;
-    tags.push({
-      key,
-      name: EC_TAG_NAMES[key],
-      cell: cell!,
-      what: { kind: "ec", dept: key },
-    });
-  }
-  const reachedPacking = status.ecs.some(
-    (e) =>
-      e.assembly.label.toLowerCase() !== "pending" ||
-      READY_OR_BEYOND.includes(e.planning.label.toLowerCase())
-  );
-  if (reachedPacking) {
-    const cell = acrossEcs(status, "assembly");
-    if (cell) tags.push({ key: "assembly", name: "Packing", cell, what: { kind: "ec", dept: "assembly" } });
-  }
-  const hasTerms = (order.term_lines ?? []).length > 0;
-  const hasPi = (order.pi_docs ?? []).length > 0;
-  if (!challan && status.billing.state !== "na" && (hasTerms || hasPi)) {
-    tags.push({ key: "billing", name: "Billing", cell: status.billing, what: { kind: "so", section: "order_billing", title: "Billing & Operations" } });
-  }
-  if (status.accounts.state !== "na" && (hasPi || status.accounts.state === "done")) {
-    tags.push({ key: "accounts", name: "Accounts", cell: status.accounts, what: { kind: "so", section: "order_accounts", title: "Accounts" } });
-  }
-  if (order.in_dispatch || status.dispatch.state === "done") {
-    tags.push({ key: "dispatch", name: "Dispatch", cell: status.dispatch, what: { kind: "so", section: "order_dispatch", title: "Dispatch" } });
-  }
-  return tags;
-}
+/** The pop-up each department tag opens. */
+const DEPT_POPUP: Record<ReachedDept["key"], PopupKind> = {
+  drawing: { kind: "ec", dept: "drawing" },
+  purchase: { kind: "ec", dept: "purchase" },
+  quality: { kind: "ec", dept: "quality" },
+  planning: { kind: "ec", dept: "planning" },
+  assembly: { kind: "ec", dept: "assembly" },
+  billing: { kind: "so", section: "order_billing", title: "Billing & Operations" },
+  accounts: { kind: "so", section: "order_accounts", title: "Accounts" },
+  dispatch: { kind: "so", section: "order_dispatch", title: "Dispatch" },
+};
 
 const TAG_TONE: Record<DeptCell["state"], string> = {
   done: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
@@ -331,19 +274,8 @@ export function OrdersTable({
                 const orderPage = `/risansi/orders/${order.id}`;
                 const status = deptStatuses[order.id];
                 const soLabel = order.so_no ?? `#${order.sl_no}`;
-                // A Spare starts at Date awaited — even before its first EC.
-                const planning =
-                  order.readiness_status ??
-                  acrossEcs(status, "planning")?.label ??
-                  ((order.order_type ?? "").toLowerCase() === "spare" ? "Date awaited" : null);
-                const assembly = acrossEcs(status, "assembly");
-                const assemblyText = assembly?.label ?? null;
-                const assemblyLine =
-                  assemblyText && /packed/i.test(assemblyText) && order.packed_on
-                    ? `Packed ${formatDate(order.packed_on)}`
-                    : assemblyText && /ready/i.test(assemblyText) && order.ready_on
-                      ? `Ready ${formatDate(order.ready_on)}`
-                      : undefined;
+                const planning = planningText(order, status);
+                const { cell: assembly, text: assemblyText, line: assemblyLine } = assemblyView(order, status, formatDate);
                 const dispatch = order.dispatch_status || "Pending";
                 // A cancelled or diverted SO is nobody's work: no departments, no progress.
                 const closed = CLOSED.includes(dispatch);
@@ -433,7 +365,7 @@ export function OrdersTable({
                             <button
                               key={t.key}
                               type="button"
-                              onClick={() => setPopup({ order, what: t.what })}
+                              onClick={() => setPopup({ order, what: DEPT_POPUP[t.key] })}
                               title={`${t.name}: ${t.cell.label} — open`}
                               className={`inline-flex max-w-[12rem] items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] leading-tight transition-opacity hover:opacity-80 ${TAG_TONE[t.cell.state]}`}
                             >

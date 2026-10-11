@@ -146,13 +146,13 @@ export function BillingWorkspace({
                 <th className="px-4 py-3">Bill Mode</th>
                 <th className="px-4 py-3">{mode === "billing" ? "Payment terms & PIs" : "Packing slips & dispatches"}</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
-                {mode === "dispatch" && <th className="px-4 py-3">Dispatch Status</th>}
+                <th className="px-4 py-3">Dispatch Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-card-border">
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="px-4 py-10 text-center text-sm text-muted">
+                  <td colSpan={13} className="px-4 py-10 text-center text-sm text-muted">
                     {emptyMessage}
                   </td>
                 </tr>
@@ -238,11 +238,9 @@ export function BillingWorkspace({
                         {formatValue(row.order_value)}
                         {row.order_currency ? ` ${row.order_currency}` : ""}
                       </td>
-                      {mode === "dispatch" && (
                       <td className="px-4 py-3 whitespace-nowrap">
                         <DispatchStatusPill status={row.dispatch_status} />
                       </td>
-                      )}
                     </tr>
                   </Fragment>
                 );

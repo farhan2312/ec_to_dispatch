@@ -20,6 +20,7 @@ import {
   FIELD_FILTER_FIELDS,
   PAYMENT_FILTER_DEPTS,
   BILL_MODE_FILTER_DEPTS,
+  DISPATCH_STATUS_FILTER_DEPTS,
   PAYMENT_TERM_FILTER_OPTIONS,
   FIELD_STATES,
   ORDER_DATE_FIELDS,
@@ -51,6 +52,7 @@ const FILTER_KEYS = [
   "pterm",
   "bmode",
   "pstat",
+  "dispst",
   "clear",
   "hreason",
 ];
@@ -210,6 +212,16 @@ export function OrderListFilterBar({
             options={statusesFor(activeDept, filter.types)}
             selected={filter.deptStatuses}
             onChange={(next) => setParams({ dstatus: next })}
+          />
+        )}
+        {/* Billing: where Dispatch has got to on the SO. */}
+        {dept && DISPATCH_STATUS_FILTER_DEPTS.includes(dept) && (
+          <MultiSelectFilter
+            label="Dispatch status"
+            allLabel="Any dispatch status"
+            options={statusesFor("dispatch")}
+            selected={filter.dispatchStatuses}
+            onChange={(next) => setParams({ dispst: next })}
           />
         )}
         {/* Billing and Accounts: how the SO is paid. */}

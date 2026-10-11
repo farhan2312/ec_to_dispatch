@@ -74,6 +74,8 @@ export const HOLD_REASON_FILTER_OPTIONS = CLEARANCE_HOLD_REASONS.map((o) => o.va
 export const PAYMENT_FILTER_DEPTS: readonly string[] = ["billing", "accounts"];
 /** The departments that filter by Bill Mode: those two, Planning and Assembly & Packing. */
 export const BILL_MODE_FILTER_DEPTS: readonly string[] = ["billing", "accounts", "planning", "assembly"];
+/** The queues that filter by the SO's dispatch status beside their own status. */
+export const DISPATCH_STATUS_FILTER_DEPTS: readonly string[] = ["billing"];
 
 export const DATE_PRESETS = [
   "Today",
@@ -155,6 +157,8 @@ export type OrderListFilter = {
   billModes: string[];
   /** Payment status (the Orders list). */
   paymentStatuses: string[];
+  /** Billing's queue: the SO's dispatch status. */
+  dispatchStatuses: string[];
   /** The orders list: Clear or Hold. */
   clearance: string[];
   /** The orders list: why the held SOs are held. */
@@ -193,7 +197,7 @@ export function parseOrderListFilter(
    * The orders list dates by SO date, not by dispatch target: there the
    * dispatch target is not offered, and the default is the SO date.
    */
-  opts: { noDispatchTarget?: boolean } = {}
+  opts: { noDispatchTarget?: boolean; pinnedDept?: boolean } = {}
 ): OrderListFilter {
   const fallbackDate: OrderDateField = opts.noDispatchTarget ? "so_date" : "dispatch_target";
   const deptRaw = get("dept");
@@ -201,6 +205,8 @@ export function parseOrderListFilter(
     ? (deptRaw as DeptFilterKey)
     : null;
   const statuses = dept ? list(get("dstatus")).filter((s) => statusesFor(dept).includes(s)) : [];
+  // The department whose own queue this is; null on the Orders list.
+  const queue = opts.pinnedDept ? dept : null;
   const signOffRaw = get("signoff");
   const signOff =
     dept && SIGN_OFF_OPTIONS.some((o) => o.value === signOffRaw)
@@ -251,15 +257,21 @@ export function parseOrderListFilter(
     // Only where the controls are shown — a hidden filter would narrow
     // without saying so.
     // The Orders list (no department) offers them too.
+    // A department picked on the Orders list doesn't take them away — only a
+    // department's own queue decides.
     paymentTerms:
-      !dept || PAYMENT_FILTER_DEPTS.includes(dept)
+      !queue || PAYMENT_FILTER_DEPTS.includes(queue)
         ? list(get("pterm")).filter((v) => PAYMENT_TERM_FILTER_OPTIONS.includes(v))
         : [],
     billModes:
-      !dept || BILL_MODE_FILTER_DEPTS.includes(dept)
+      !queue || BILL_MODE_FILTER_DEPTS.includes(queue)
         ? list(get("bmode")).filter((v) => BILL_MODE_FILTER_OPTIONS.includes(v))
         : [],
-    paymentStatuses: !dept ? list(get("pstat")).filter((v) => PAYMENT_STATUS_FILTER_OPTIONS.includes(v)) : [],
+    paymentStatuses: !queue ? list(get("pstat")).filter((v) => PAYMENT_STATUS_FILTER_OPTIONS.includes(v)) : [],
+    dispatchStatuses:
+      queue && DISPATCH_STATUS_FILTER_DEPTS.includes(queue)
+        ? list(get("dispst")).filter((v) => statusesFor("dispatch").includes(v))
+        : [],
     clearance: list(get("clear")).filter((v) => CLEARANCE_FILTER_OPTIONS.includes(v)),
     holdReasons: list(get("hreason")).filter((v) => HOLD_REASON_FILTER_OPTIONS.includes(v)),
   };
@@ -286,6 +298,7 @@ export function isOrderListFiltered(f: OrderListFilter): boolean {
     f.paymentTerms.length ||
     f.billModes.length ||
     f.paymentStatuses.length ||
+    f.dispatchStatuses.length ||
     f.field ||
     f.ready ||
     f.overdue ||
@@ -316,6 +329,7 @@ export function orderListFilterParams(f: OrderListFilter): URLSearchParams {
   if (f.paymentTerms.length) p.set("pterm", f.paymentTerms.join(","));
   if (f.billModes.length) p.set("bmode", f.billModes.join(","));
   if (f.paymentStatuses.length) p.set("pstat", f.paymentStatuses.join(","));
+  if (f.dispatchStatuses.length) p.set("dispst", f.dispatchStatuses.join(","));
   if (f.field) {
     p.set("field", f.field.column);
     p.set("fstate", f.field.state);
@@ -345,6 +359,7 @@ export function describeOrderListFilter(f: OrderListFilter): string {
   if (f.paymentTerms.length) parts.push(`Payment terms: ${f.paymentTerms.join(", ")}`);
   if (f.billModes.length) parts.push(`Bill mode: ${f.billModes.join(", ")}`);
   if (f.paymentStatuses.length) parts.push(`Payment status: ${f.paymentStatuses.join(", ")}`);
+  if (f.dispatchStatuses.length) parts.push(`Dispatch status: ${f.dispatchStatuses.join(", ")}`);
   if (f.zones.length) parts.push(`Zone: ${f.zones.join(", ")}`);
   if (f.reps.length) parts.push(`Rep: ${f.reps.join(", ")}`);
   if (f.markets.length) parts.push(`Market: ${f.markets.join(", ")}`);
@@ -396,5 +411,5 @@ export function parseDeptFilter(
       );
     }
     return get(key);
-  }, opts);
+  }, { ...opts, pinnedDept: !!dept });
 }

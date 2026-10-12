@@ -14,6 +14,7 @@ export function MultiSelectFilter({
   selected,
   onChange,
   allLabel,
+  group,
 }: {
   label: string;
   options: string[];
@@ -21,6 +22,8 @@ export function MultiSelectFilter({
   onChange: (next: string[]) => void;
   /** What it reads with nothing picked; "All <label>s" by default. */
   allLabel?: string;
+  /** A second set of options under its own sub-heading, with its own values. */
+  group?: { heading: string; options: string[]; selected: string[]; onChange: (next: string[]) => void };
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -49,12 +52,32 @@ export function MultiSelectFilter({
     );
   }
 
+  const picked = [...selected, ...(group?.selected ?? [])];
   const summary =
-    selected.length === 0
+    picked.length === 0
       ? (allLabel ?? `All ${label.toLowerCase()}s`)
-      : selected.length === 1
-        ? selected[0]
-        : `${selected.length} selected`;
+      : picked.length === 1
+        ? picked[0]
+        : selected.length && group?.selected.length
+          ? `${selected.join(", ")} + ${group.selected.join(", ")}`
+          : `${picked.length} selected`;
+  const row = (option: string, checked: boolean, onClick: () => void) => (
+    <button
+      key={option}
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-background"
+    >
+      <span
+        className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+          checked ? "border-primary bg-primary text-primary-foreground" : "border-input-border"
+        }`}
+      >
+        {checked && <Check className="h-3 w-3" />}
+      </span>
+      {option}
+    </button>
+  );
 
   return (
     <div ref={wrapRef} className="relative">
@@ -64,13 +87,13 @@ export function MultiSelectFilter({
         aria-expanded={open}
         aria-label={`${label} filter`}
         className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm transition-colors ${
-          selected.length > 0
+          picked.length > 0
             ? "border-primary/40 bg-primary/[0.06] text-foreground"
             : "border-input-border bg-surface text-foreground hover:bg-background"
         }`}
       >
         <span className="text-muted">{label}:</span>
-        <span className="font-medium">{summary}</span>
+        <span className="max-w-[16rem] truncate font-medium">{summary}</span>
         <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
       </button>
 
@@ -80,38 +103,36 @@ export function MultiSelectFilter({
             <p className="px-3 py-2 text-sm text-muted">No values.</p>
           ) : (
             <>
-              {selected.length > 0 && (
+              {picked.length > 0 && (
                 <button
                   type="button"
-                  onClick={() => onChange([])}
+                  onClick={() => {
+                    onChange([]);
+                    group?.onChange([]);
+                  }}
                   className="mb-1 flex w-full items-center gap-1.5 border-b border-card-border px-3 py-1.5 text-xs font-medium text-muted transition-colors hover:text-foreground"
                 >
                   <X className="h-3.5 w-3.5" />
                   Clear selection
                 </button>
               )}
-              {options.map((option) => {
-                const checked = selected.includes(option);
-                return (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={() => toggle(option)}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm text-foreground transition-colors hover:bg-background"
-                  >
-                    <span
-                      className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                        checked
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-input-border"
-                      }`}
-                    >
-                      {checked && <Check className="h-3 w-3" />}
-                    </span>
-                    {option}
-                  </button>
-                );
-              })}
+              {options.map((option) => row(option, selected.includes(option), () => toggle(option)))}
+              {group && (
+                <>
+                  <p className="mt-1 border-t border-card-border px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-wide text-muted">
+                    {group.heading}
+                  </p>
+                  {group.options.map((option) =>
+                    row(option, group.selected.includes(option), () =>
+                      group.onChange(
+                        group.selected.includes(option)
+                          ? group.selected.filter((v) => v !== option)
+                          : [...group.selected, option]
+                      )
+                    )
+                  )}
+                </>
+              )}
             </>
           )}
         </div>

@@ -41,6 +41,11 @@ export const DEPT_FILTER_LABELS: Record<DeptFilterKey, string> = {
 
 /** Nothing recorded yet. Every department offers it. */
 export const PENDING = "Pending";
+/**
+ * Planning's Status filter also reads Assembly & Packing on the same EC, so
+ * "Fully ready" splits into packed and not packed yet.
+ */
+export const PLANNING_PACKING_OPTIONS = ["Partially packed", "Fully packed", "Not packed"];
 /** The department has nothing to do on this order at all. */
 export const NOT_APPLICABLE = "N/A";
 
@@ -54,7 +59,8 @@ const DEPT_STATUSES: Record<DeptFilterKey, string[]> = {
   purchase: ["Received", PENDING, NOT_APPLICABLE],
   quality: ["Submitted", PENDING, NOT_APPLICABLE],
   // Whichever of pump/spare/free-text status the EC carries.
-  planning: [...PLANNING_STATUS_VALUES, PENDING],
+  // No Pending: a Spare starts at Date awaited, a Pump at its first status.
+  planning: [...PLANNING_STATUS_VALUES],
   // A Spare stands where its latest readiness lot does: ready, then packed.
   // A Pump is Fully packed once its packing date is in.
   // No Pending: what reaches Assembly & Packing is ready or packed already.
@@ -88,8 +94,8 @@ export const DEPTS_WITHOUT_PARTY: ReadonlySet<DeptFilterKey> = new Set<DeptFilte
 export function statusesFor(dept: DeptFilterKey, types: string[] = []): string[] {
   if (dept === "planning" && types.length === 1) {
     const t = types[0].trim().toLowerCase();
-    if (t === "spare") return [...SPARE_PLANNING_STATUSES, PENDING];
-    if (t === "pump" || t === "rolb") return [...PUMP_PLANNING_STATUSES, PENDING];
+    if (t === "spare") return [...SPARE_PLANNING_STATUSES];
+    if (t === "pump" || t === "rolb") return [...PUMP_PLANNING_STATUSES];
   }
   return DEPT_STATUSES[dept];
 }

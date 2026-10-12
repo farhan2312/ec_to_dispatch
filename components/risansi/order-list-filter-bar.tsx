@@ -8,6 +8,7 @@ import {
   DEPTS_WITHOUT_PARTY,
   DEPT_FILTER_KEYS,
   DEPT_FILTER_LABELS,
+  PLANNING_PACKING_OPTIONS,
   statusesFor,
   type DeptFilterKey,
 } from "@/lib/dept-status";
@@ -53,6 +54,7 @@ const FILTER_KEYS = [
   "bmode",
   "pstat",
   "dispst",
+  "pack",
   "clear",
   "hreason",
 ];
@@ -191,6 +193,7 @@ export function OrderListFilterBar({
             setParams({
               dept: next,
               dstatus: status,
+              pack: next === "planning" ? filter.packingStatuses : null,
               pterm: keepsPayment ? filter.paymentTerms : null,
               bmode: keepsBillMode ? filter.billModes : null,
               signoff: next ? filter.signOff : null,
@@ -212,6 +215,17 @@ export function OrderListFilterBar({
             options={statusesFor(activeDept, filter.types)}
             selected={filter.deptStatuses}
             onChange={(next) => setParams({ dstatus: next })}
+            // Planning: whether a ready EC is packed yet, on the same EC.
+            group={
+              activeDept === "planning"
+                ? {
+                    heading: "Assembly & Packing",
+                    options: PLANNING_PACKING_OPTIONS,
+                    selected: filter.packingStatuses,
+                    onChange: (next) => setParams({ pack: next }),
+                  }
+                : undefined
+            }
           />
         )}
         {/* Billing: where Dispatch has got to on the SO. */}

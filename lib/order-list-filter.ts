@@ -19,6 +19,7 @@ import {
   DEPT_FILTER_KEYS,
   DEPT_FILTER_LABELS,
   statusesFor,
+  PLANNING_PACKING_OPTIONS,
   type DeptFilterKey,
 } from "@/lib/dept-status";
 
@@ -159,6 +160,8 @@ export type OrderListFilter = {
   paymentStatuses: string[];
   /** Billing's queue: the SO's dispatch status. */
   dispatchStatuses: string[];
+  /** Planning: Assembly & Packing's status on the same EC. */
+  packingStatuses: string[];
   /** The orders list: Clear or Hold. */
   clearance: string[];
   /** The orders list: why the held SOs are held. */
@@ -272,6 +275,7 @@ export function parseOrderListFilter(
       queue && DISPATCH_STATUS_FILTER_DEPTS.includes(queue)
         ? list(get("dispst")).filter((v) => statusesFor("dispatch").includes(v))
         : [],
+    packingStatuses: dept === "planning" ? list(get("pack")).filter((v) => PLANNING_PACKING_OPTIONS.includes(v)) : [],
     clearance: list(get("clear")).filter((v) => CLEARANCE_FILTER_OPTIONS.includes(v)),
     holdReasons: list(get("hreason")).filter((v) => HOLD_REASON_FILTER_OPTIONS.includes(v)),
   };
@@ -299,6 +303,7 @@ export function isOrderListFiltered(f: OrderListFilter): boolean {
     f.billModes.length ||
     f.paymentStatuses.length ||
     f.dispatchStatuses.length ||
+    f.packingStatuses.length ||
     f.field ||
     f.ready ||
     f.overdue ||
@@ -330,6 +335,7 @@ export function orderListFilterParams(f: OrderListFilter): URLSearchParams {
   if (f.billModes.length) p.set("bmode", f.billModes.join(","));
   if (f.paymentStatuses.length) p.set("pstat", f.paymentStatuses.join(","));
   if (f.dispatchStatuses.length) p.set("dispst", f.dispatchStatuses.join(","));
+  if (f.packingStatuses.length) p.set("pack", f.packingStatuses.join(","));
   if (f.field) {
     p.set("field", f.field.column);
     p.set("fstate", f.field.state);
@@ -360,6 +366,7 @@ export function describeOrderListFilter(f: OrderListFilter): string {
   if (f.billModes.length) parts.push(`Bill mode: ${f.billModes.join(", ")}`);
   if (f.paymentStatuses.length) parts.push(`Payment status: ${f.paymentStatuses.join(", ")}`);
   if (f.dispatchStatuses.length) parts.push(`Dispatch status: ${f.dispatchStatuses.join(", ")}`);
+  if (f.packingStatuses.length) parts.push(`Packing: ${f.packingStatuses.join(", ")}`);
   if (f.zones.length) parts.push(`Zone: ${f.zones.join(", ")}`);
   if (f.reps.length) parts.push(`Rep: ${f.reps.join(", ")}`);
   if (f.markets.length) parts.push(`Market: ${f.markets.join(", ")}`);

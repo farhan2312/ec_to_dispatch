@@ -2926,6 +2926,21 @@ function ecState(dept: DeptFilterKey, status: string): string {
   }
 }
 
+/** An EC's Assembly & Packing state, for Planning's packing sub-filter. */
+function packingState(status: string): string {
+  return status === "Not packed"
+    ? `${ASSEMBLY_STATE_SQL("it")} NOT IN ('Partially packed', 'Fully packed')`
+    : `${ASSEMBLY_STATE_SQL("it")} = ${lit(status)}`;
+}
+
+/** Planning's status and packing, both on the same EC (`it`). */
+function planningPackingOnEc(f: OrderListFilter): string {
+  const plan = f.deptStatuses.length
+    ? `(${f.deptStatuses.map((s) => `(${ecState("planning", s)})`).join(" OR ")})`
+    : "TRUE";
+  return `${plan} AND (${f.packingStatuses.map((s) => `(${packingState(s)})`).join(" OR ")})`;
+}
+
 /** The state of the SO itself for an SO-scope department. */
 function soState(dept: DeptFilterKey, status: string): string {
   if (dept === "billing") {
@@ -3126,7 +3141,10 @@ function orderListClauses(
                                WHERE s.order_id = o.id
                                  AND TRIM(COALESCE(s.item_type, '')) = ANY(${t}::text[])))`);
   }
-  if (f.dept && f.deptStatuses.length) {
+  if (f.dept === "planning" && f.packingStatuses.length) {
+    // An EC that is both — "Fully ready" and "Fully packed" on the same EC.
+    clauses.push(`EXISTS (SELECT 1 FROM order_items it WHERE it.order_id = o.id AND ${planningPackingOnEc(f)})`);
+  } else if (f.dept && f.deptStatuses.length) {
     const dept = f.dept;
     clauses.push(`(${f.deptStatuses.map((s) => deptStatusPredicate(dept, s)).join(" OR ")})`);
   }
@@ -4421,7 +4439,9 @@ function pipelineRowWhere(f: OrderListFilter): { where: string; params: unknown[
   // An EC is read by its own item type, falling back to the order's.
   if (f.types.length) clauses.push(facet("COALESCE(it.item_type, o.order_type)", f.types));
 
-  if (f.dept && f.deptStatuses.length) {
+  if (f.dept === "planning" && f.packingStatuses.length) {
+    clauses.push(`(${planningPackingOnEc(f)})`);
+  } else if (f.dept && f.deptStatuses.length) {
     const dept = f.dept;
     clauses.push(
       `(${f.deptStatuses.map((s) => isPerEcDept(dept) ? `(${ecState(dept, s)})` : `(${soState(dept, s)})`).join(" OR ")})`

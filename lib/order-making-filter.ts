@@ -106,6 +106,7 @@ export function sharedFacets(f: OrderMakingFilter): OrderListFilter {
     types: f.types,
     dept: null,
     deptStatuses: [],
+    deptStatusMulti: {},
     signOff: null,
     dateField: "so_date",
     from: f.dateField === "so_date" ? f.from : null,

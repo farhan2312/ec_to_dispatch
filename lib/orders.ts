@@ -3183,6 +3183,13 @@ function orderListClauses(
     const dept = f.dept;
     clauses.push(`(${f.deptStatuses.map((s) => deptStatusPredicate(dept, s)).join(" OR ")})`);
   }
+  // The Orders list: several departments at once — any ticked status within
+  // a department, every department ticked.
+  for (const [k, statuses] of Object.entries(f.deptStatusMulti ?? {})) {
+    if (!statuses?.length) continue;
+    const dept = k as DeptFilterKey;
+    clauses.push(`(${statuses.map((s) => deptStatusPredicate(dept, s)).join(" OR ")})`);
+  }
   if (f.dept && f.signOff) clauses.push(signOffPredicate(f.dept, f.signOff));
   if (f.dept && f.overdue) clauses.push(deptOverduePredicate(f.dept));
   // Packed by Assembly & Packing and not yet gone: Dispatch's own shortlist.

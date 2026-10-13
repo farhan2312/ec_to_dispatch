@@ -378,14 +378,19 @@ export function OrdersTable({
                       </td>
                       {/* Each term with its PI and what came in — as Accounts sees it. */}
                       <td className="px-4 py-3 align-top" onClick={(e) => e.stopPropagation()}>
-                        <TermPis
-                          orderId={order.id}
-                          soLabel={soLabel}
-                          terms={order.term_lines ?? []}
-                          pis={order.pi_docs ?? []}
-                          canEdit={false}
-                          payments={{ canEdit: false }}
-                        />
+                        {/* An FR order is a replacement: no payment terms to show. */}
+                        {order.bill_mode === "FR" ? (
+                          <span className="text-xs font-medium text-muted">Replacement · no payment terms</span>
+                        ) : (
+                          <TermPis
+                            orderId={order.id}
+                            soLabel={soLabel}
+                            terms={order.term_lines ?? []}
+                            pis={order.pi_docs ?? []}
+                            canEdit={false}
+                            payments={{ canEdit: false }}
+                          />
+                        )}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap align-top text-muted">
                         {!closed && order.readiness_from
@@ -507,7 +512,7 @@ export function OrdersTable({
           onEdit={readOnly ? undefined : () => {
             const order = detailsFor;
             setDetailsFor(null);
-            setPopup({ order, what: { kind: "so", section: "orders", title: "Order details" } });
+            setPopup({ order, what: { kind: "so", section: "orders", title: "Order details", edit: true } });
           }}
         />
       )}

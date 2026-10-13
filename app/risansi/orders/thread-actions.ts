@@ -21,12 +21,15 @@ import {
   type InboxEntry,
   type OrderMessage,
 } from "@/lib/order-messages";
+import { isAssignedTo } from "@/lib/so-assignment";
 
 /**
  * A Rep talks only on their own SOs: every Rep shares the one "rep" lane, so
  * the SO itself must be theirs. Anyone else is not limited here.
  */
-async function repOwns(user: { role: string; rep_name?: string | null }, orderId: string): Promise<boolean> {
+async function repOwns(user: { id?: string; role: string; rep_name?: string | null }, orderId: string): Promise<boolean> {
+  // An Order Making SO member: only the SOs assigned to them.
+  if (user.role === "order_making_so") return !!user.id && (await isAssignedTo(orderId, user.id));
   if (user.role !== "rep") return true;
   return repMatches(await getOrderRep(orderId), user.rep_name);
 }
@@ -140,7 +143,7 @@ export async function discussionInboxAction(): Promise<InboxResult> {
   if (!user) return { ok: false, error: "You are not signed in." };
   try {
     const entries = await listDiscussionInbox(user);
-    if (user.role !== "rep") return { ok: true, entries };
+    if (user.role !== "rep" && user.role !== "order_making_so") return { ok: true, entries };
     // A Rep: only the discussions on their own SOs.
     const owned = await Promise.all(entries.map((e) => repOwns(user, e.order_id)));
     return { ok: true, entries: entries.filter((_, i) => owned[i]) };

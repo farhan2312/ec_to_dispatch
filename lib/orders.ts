@@ -32,8 +32,8 @@ import {
   type DeptFilterKey,
 } from "@/lib/dept-status";
 import { FIELD_FILTER_FIELDS, NOT_SET, type OrderListFilter, type SignOff } from "@/lib/order-list-filter";
-import { sharedFacets, type OrderMakingFilter } from "@/lib/order-making-filter";
-import { appliesSql, filledSql } from "@/lib/order-gaps";
+import { sharedFacets, UNASSIGNED, type OrderMakingFilter } from "@/lib/order-making-filter";
+import { appliesSql, filledSql, SO_DETAILS_FILLED_SQL, SO_DETAILS_MISSING_SQL } from "@/lib/order-gaps";
 import {
   PAGE_SIZE,
   clampPage,
@@ -49,6 +49,7 @@ import {
   PAYMENT_HOLD_VALUE,
   coerceField,
   ORDER_MAKING_FIELDS,
+  SO_DETAIL_COLUMNS,
   SECTION_BY_TABLE,
   type ChildTable,
   type OrderTable,
@@ -2479,6 +2480,8 @@ export async function listItemsForSection(
 
 export type BillingQueueRow = {
   id: string;
+  /** Dispatch: the SO's stage in Invoice → Dispatch → Docket & LR. */
+  dispatch_stage?: string | null;
   sl_no: number;
   so_no: string | null;
   so_date: string | null;
@@ -2527,6 +2530,7 @@ export async function listOrdersForBilling(
             o.client_name,
             o.clearance_status, o.clearance_hold_reason, o.clearance_remarks,
             ${DISPATCH_STATUS} AS so_dispatch_status,
+            ${dispatchStageSql("o")} AS dispatch_stage,
             o.accounts_hold_status, o.accounts_hold_reason, o.accounts_hold_remarks,
             o.bill_type,
             ${PAYMENT_TERMS_SQL("o")} AS payment_terms,
@@ -3125,6 +3129,8 @@ function orderListClauses(
   }
   // The SO's dispatch status, as Dispatch sets it.
   if (f.dispatchStatuses.length) clauses.push(`${orderStatusSql("o")} = ANY(${p(f.dispatchStatuses)}::text[])`);
+  // Dispatch: the SO's stage in Invoice → Dispatch → Docket & LR.
+  if (f.dispatchStages.length) clauses.push(`${dispatchStageSql("o")} = ANY(${p(f.dispatchStages)}::text[])`);
   if (f.billModes.length) {
     const modes = f.billModes.filter((m) => m !== NOT_SET);
     const any: string[] = [];
@@ -3502,6 +3508,12 @@ export type OrderMakingRow = Record<string, unknown> & {
   sl_no: number;
   /** Client / Purchase Order fields that apply and are still blank. */
   missing: string[];
+  /** Sales Order details that apply and are still blank. */
+  so_missing: string[];
+  so_assignee_id: string | null;
+  so_assignee_name: string | null;
+  so_assigned_at: string | null;
+  so_details_filled_at: string | null;
 };
 
 /**
@@ -3513,16 +3525,36 @@ export async function listOrdersForOrderMaking(opts: {
   page: number;
   search: string;
   filter: OrderMakingFilter;
+  /** An Order Making SO member: only the SOs assigned to them, pending first. */
+  assigneeScope?: string | null;
 }): Promise<PageResult<OrderMakingRow>> {
   const f = opts.filter;
-  const own = ORDER_MAKING_FIELDS.filter((x) => !x.computed);
+  // The PO's fields; the Sales Order details are counted on their own.
+  const own = ORDER_MAKING_FIELDS.filter((x) => !x.computed && !SO_DETAIL_COLUMNS.includes(x.column));
   const missingSql = `array_remove(ARRAY[
       ${own.map((x) => `CASE WHEN (${appliesSql(x)}) AND NOT (${filledSql(x)}) THEN ${lit(x.label)} END`).join(",\n      ")}
     ]::text[], NULL)`;
   // Order Making's own facets. Values are checked against fixed lists or as
   // ISO dates before they get here, and still go in quoted.
   const clauses = [orderOpenSql("o")];
-  if (f.missingOnly) clauses.push(`cardinality(${missingSql}) > 0`);
+  // A member sees only their own; an id that is not one sees nothing.
+  if (opts.assigneeScope !== undefined) {
+    clauses.push(
+      opts.assigneeScope && UUID_RE.test(opts.assigneeScope)
+        ? `o.so_assignee_id = ${lit(opts.assigneeScope)}::uuid`
+        : "FALSE"
+    );
+  }
+  if (f.assignees.length) {
+    const ids = f.assignees.filter((a) => a !== UNASSIGNED);
+    const any: string[] = [];
+    if (ids.length) any.push(`o.so_assignee_id IN (${ids.map((id) => `${lit(id)}::uuid`).join(", ")})`);
+    if (f.assignees.includes(UNASSIGNED)) any.push("o.so_assignee_id IS NULL");
+    clauses.push(`(${any.join(" OR ")})`);
+  }
+  if (f.soState === "filled") clauses.push(SO_DETAILS_FILLED_SQL);
+  if (f.soState === "pending") clauses.push(`NOT ${SO_DETAILS_FILLED_SQL}`);
+  if (f.missingOnly) clauses.push(`(cardinality(${missingSql}) > 0 OR NOT ${SO_DETAILS_FILLED_SQL})`);
   if (f.billTypes.length) {
     const types = f.billTypes.filter((t) => t !== NOT_SET);
     const any: string[] = [];
@@ -3541,6 +3573,8 @@ export async function listOrdersForOrderMaking(opts: {
       : f.sort === "sl"
         ? "o.sl_no ASC"
         : "o.sl_no DESC";
+  // A member works down what is still pending.
+  const ordered = opts.assigneeScope && !f.sort ? `(${SO_DETAILS_FILLED_SQL}) ASC, o.sl_no DESC` : orderBy;
   const { ids, total, page } = await pageOfOrderIds({
     page: opts.page,
     search: opts.search,
@@ -3549,7 +3583,7 @@ export async function listOrdersForOrderMaking(opts: {
       `(o.so_no ILIKE ${term} OR o.client_name ILIKE ${term} OR o.client_code ILIKE ${term}
         OR o.po_no ILIKE ${term} OR o.sl_no::text ILIKE ${term})`,
     filter: sharedFacets(f),
-    orderBy,
+    orderBy: ordered,
   });
   if (ids.length === 0) return pageResult([], total, page);
   const cols = ORDER_MAKING_FIELDS.map((f) =>
@@ -3557,8 +3591,14 @@ export async function listOrdersForOrderMaking(opts: {
   ).join(", ");
   const r = await query<OrderMakingRow>(
     `SELECT o.id, o.sl_no::int AS sl_no, ${cols}, ${missingSql} AS missing,
+            ${SO_DETAILS_MISSING_SQL} AS so_missing,
+            o.so_assignee_id, au.full_name AS so_assignee_name,
+            to_char(o.so_assigned_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS so_assigned_at,
+            to_char(o.so_details_filled_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS so_details_filled_at,
             o.clearance_status, o.clearance_hold_reason
-       FROM orders o WHERE o.id = ANY($1::uuid[])`,
+       FROM orders o
+       LEFT JOIN users au ON au.id = o.so_assignee_id
+      WHERE o.id = ANY($1::uuid[])`,
     [ids]
   );
   const at = new Map(ids.map((id, i) => [id, i]));
@@ -4082,6 +4122,31 @@ async function syncTargetColumns(
 const INVOICE_STARTED = (i: string) => `(${i}.invoice_no IS NOT NULL OR ${i}.challan_no IS NOT NULL
       OR ${i}.invoice_date IS NOT NULL OR ${i}.challan_date IS NOT NULL
       OR ${i}.invoice_value IS NOT NULL OR ${i}.challan_value IS NOT NULL)`;
+
+/** A dispatch's Invoice step is done: Invoice No. and Date (Challan No. and Date on a Challan order). */
+const INVOICE_STEP_DONE = (i: string, o: string) => `(CASE WHEN btrim(COALESCE(${o}.bill_type, '')) = 'Challan'
+      THEN NULLIF(btrim(${i}.challan_no), '') IS NOT NULL AND ${i}.challan_date IS NOT NULL
+      ELSE NULLIF(btrim(${i}.invoice_no), '') IS NOT NULL AND ${i}.invoice_date IS NOT NULL END)`;
+
+/**
+ * The SO's stage in Invoice → Dispatch → Docket & LR (DISPATCH_STAGES): its
+ * least advanced numbered slip or dispatch, the same steps as the pop-up.
+ */
+export const dispatchStageSql = (o: string) => `(CASE
+    WHEN EXISTS (SELECT 1 FROM order_packing_slips sp
+                  WHERE sp.order_id = ${o}.id AND sp.kind = 'actual'
+                    AND NULLIF(btrim(sp.packing_slip_no), '') IS NOT NULL
+                    AND NOT EXISTS (SELECT 1 FROM order_invoice_slips sl
+                                      JOIN order_invoices sv ON sv.id = sl.invoice_id
+                                     WHERE sl.packing_slip_id = sp.id AND ${INVOICE_STEP_DONE("sv", o)}))
+      THEN 'Invoice pending'
+    WHEN EXISTS (SELECT 1 FROM order_invoices sv WHERE sv.order_id = ${o}.id
+                    AND ${INVOICE_STEP_DONE("sv", o)} AND NULLIF(btrim(sv.delivery_mode), '') IS NULL)
+      THEN 'Dispatch pending'
+    WHEN EXISTS (SELECT 1 FROM order_invoices sv WHERE sv.order_id = ${o}.id
+                    AND ${INVOICE_STEP_DONE("sv", o)} AND NULLIF(btrim(sv.docket_no), '') IS NULL)
+      THEN 'Docket & LR pending'
+    ELSE 'Docket & LR done' END)`;
 
 /** The SO's slips that have gone out: linked to a dispatch that has started. */
 const SENT_SLIPS_SQL = (o: string) => `SELECT 1 FROM order_invoice_slips l

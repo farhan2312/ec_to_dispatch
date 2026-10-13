@@ -732,6 +732,19 @@ export const ORDER_MAKING_FIELDS: OrderField[] = (
 export const ORDER_MAKING_EDITABLE: OrderField[] = ORDER_MAKING_FIELDS.filter(
   (f) => !f.computed && !f.readOnly
 );
+/**
+ * The Sales Order details: what an Order Making SO member fills on an SO
+ * assigned to them. The rest of Order Making's fields are the PO's.
+ */
+export const SO_DETAIL_COLUMNS = ["so_no", "so_date", "order_value", "order_currency", "total_quantity"];
+/** What Order Making SO types into. */
+export const ORDER_MAKING_SO_EDITABLE: OrderField[] = ORDER_MAKING_EDITABLE.filter((f) =>
+  SO_DETAIL_COLUMNS.includes(f.column)
+);
+/** The Sales Order details that must be in for the SO's details to count as filled. */
+export const SO_DETAIL_FIELDS: OrderField[] = ORDER_MAKING_FIELDS.filter(
+  (f) => SO_DETAIL_COLUMNS.includes(f.column) && !f.computed
+);
 export const ITEM_SECTIONS = ORDER_SECTIONS.filter((s) => s.scope === "item");
 
 /**

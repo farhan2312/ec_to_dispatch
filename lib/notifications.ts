@@ -56,6 +56,9 @@ export type NotificationRow = {
  */
 export function recipientRolesForUser(role: string): string[] {
   if (role === "admin") return ["admin", "central_visibility"];
+  // Order Making SO hears only what is addressed to the member themselves —
+  // the SOs assigned to them.
+  if (role === "order_making_so") return [];
   return [role];
 }
 
@@ -191,12 +194,14 @@ export async function emitToUser(input: {
   type: NotificationType;
   message: string;
   bugReportId?: string | null;
+  /** The SO it is about, so the feed links to it. */
+  orderId?: string | null;
 }): Promise<void> {
   try {
     await query(
-      `INSERT INTO notifications (recipient_user_id, type, message, bug_report_id)
-       VALUES ($1, $2, $3, $4)`,
-      [input.userId, input.type, input.message, input.bugReportId ?? null]
+      `INSERT INTO notifications (recipient_user_id, type, message, bug_report_id, order_id)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [input.userId, input.type, input.message, input.bugReportId ?? null, input.orderId ?? null]
     );
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);

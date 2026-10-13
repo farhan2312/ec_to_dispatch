@@ -410,7 +410,7 @@ export function roleSeesOrder(
 ): boolean {
   // Order Making fills Client and PO details from its own page; the SO's
   // pages carry everything else.
-  if (role === "order_making") return false;
+  if (role === "order_making" || role === "order_making_so") return false;
   // A Rep: their own SOs only.
   if (role === "rep") return repMatches(order.reps, repName);
   const view = deptViewForRole(role);

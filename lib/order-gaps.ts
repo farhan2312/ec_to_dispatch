@@ -10,7 +10,7 @@
 // search across every SO without shipping the tracker to the browser.
 
 import { query } from "@/lib/db";
-import { SECTION_BY_TABLE, type OrderField } from "@/lib/order-schema";
+import { SECTION_BY_TABLE, SO_DETAIL_FIELDS, type OrderField } from "@/lib/order-schema";
 import { deptInvolvementSql, orderOpenSql } from "@/lib/dept-view";
 
 export type OrderGapRow = {
@@ -72,6 +72,16 @@ export function appliesSql(f: OrderField): string {
     })
     .join(" AND ");
 }
+
+/** "Every Sales Order detail that applies is in" — over an `orders o` alias. */
+export const SO_DETAILS_FILLED_SQL = `(${SO_DETAIL_FIELDS.map(
+  (f) => `(NOT (${appliesSql(f)}) OR ${filledSql(f)})`
+).join(" AND ")})`;
+
+/** The Sales Order details that apply and are still blank, as labels. */
+export const SO_DETAILS_MISSING_SQL = `array_remove(ARRAY[
+      ${SO_DETAIL_FIELDS.map((f) => `CASE WHEN (${appliesSql(f)}) AND NOT (${filledSql(f)}) THEN '${f.label.replace(/'/g, "''")}' END`).join(",\n      ")}
+    ]::text[], NULL)`;
 
 /** The labels of every field that applies and is still blank, as a text[]. */
 const MISSING_SQL = `array_remove(ARRAY[

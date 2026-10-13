@@ -17,9 +17,13 @@ export const ROLE_LABELS = {
   // has been packed and records the dispatch. The role named `dispatch` used to
   // be the packing team — see the guarded rename in db/schema.sql.
   dispatch: "Dispatch",
-  // Creates SOs (form or Excel) and fills their Client and Purchase Order
-  // details; Central Visibility does the rest. Sees nothing beyond those.
-  order_making: "Order Making",
+  // Order Making PO: creates SOs, fills their Client and Purchase Order
+  // details (and may fill the Sales Order details too), and assigns each SO
+  // to an Order Making SO member. Central Visibility does the rest.
+  order_making: "Order Making PO",
+  // Order Making SO: fills the Sales Order details (SO No., date, value,
+  // currency, quantity) of the SOs assigned to them — nothing else.
+  order_making_so: "Order Making SO",
   // Sees what Central Visibility sees, read-only, for their own SOs only (the
   // orders whose Rep is the name Admin linked to the user). May post in an
   // SO's discussion.
@@ -34,6 +38,7 @@ export const ALL_ROLES = Object.keys(ROLE_LABELS) as Role[];
 // cross-department access; `admin` also manages users.
 export const REQUESTABLE_ROLES: Role[] = [
   "order_making",
+  "order_making_so",
   "operations",
   "accounts",
   "drawing",
@@ -110,13 +115,28 @@ export function canImportOrders(role: string): boolean {
   return role === "admin" || role === "central_visibility";
 }
 
-/** Order Making's own role: an SO's Client and Purchase Order details, nothing more. */
+/** Order Making PO: an SO's Client, Purchase Order and Sales Order details, nothing more. */
 export function isOrderMaking(role: string): boolean {
   return role === "order_making";
 }
 
-/** Who opens the Order Making page: that department, and Central Visibility / Admin. */
+/** Order Making SO: the Sales Order details of the SOs assigned to them. */
+export function isOrderMakingSo(role: string): boolean {
+  return role === "order_making_so";
+}
+
+/** Either Order Making role — they see the Order Making page and nothing of the tracker beyond it. */
+export function isOrderMakingAny(role: string): boolean {
+  return isOrderMaking(role) || isOrderMakingSo(role);
+}
+
+/** Who opens the Order Making page: either Order Making role, and Central Visibility / Admin. */
 export function canAccessOrderMaking(role: string): boolean {
+  return isOrderMakingAny(role) || isCentral(role);
+}
+
+/** Who assigns an SO's Sales Order details to an Order Making SO member. */
+export function canAssignSo(role: string): boolean {
   return isOrderMaking(role) || isCentral(role);
 }
 
@@ -243,6 +263,7 @@ export function reminderDeptForTable(table: OrderTable): ReminderDept | null {
 // Each department role's workspace page (mirrors the sidebar's DEPARTMENT_NAV).
 const DEPARTMENT_HREF: Partial<Record<Role, string>> = {
   order_making: "/risansi/departments/order-making",
+  order_making_so: "/risansi/departments/order-making",
   operations: "/risansi/departments/billing",
   accounts: "/risansi/departments/accounts",
   drawing: "/risansi/departments/drawing",

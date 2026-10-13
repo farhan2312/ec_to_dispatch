@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS users (
     role          TEXT         NOT NULL
                                CHECK (role IN ('admin', 'central_visibility', 'operations',
                                                'accounts', 'drawing', 'planning', 'purchase',
-                                               'qc', 'assembly', 'dispatch', 'order_making', 'rep')),
+                                               'qc', 'assembly', 'dispatch', 'order_making', 'order_making_so', 'rep')),
     status        TEXT         NOT NULL DEFAULT 'pending'
                                CHECK (status IN ('pending', 'approved', 'rejected', 'disabled')),
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
@@ -38,7 +38,7 @@ ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD  CONSTRAINT users_role_check
     CHECK (role IN ('admin', 'central_visibility', 'operations', 'accounts',
                     'drawing', 'planning', 'purchase', 'qc',
-                    'assembly', 'dispatch', 'order_making', 'rep'));
+                    'assembly', 'dispatch', 'order_making', 'order_making_so', 'rep'));
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_status_check;
 ALTER TABLE users ADD  CONSTRAINT users_status_check
     CHECK (status IN ('pending', 'approved', 'rejected', 'disabled'));
@@ -2415,3 +2415,15 @@ ON CONFLICT (label) DO NOTHING;
 -- A Rep sees what Central Visibility sees, read-only, for their own SOs only:
 -- orders whose Rep (orders.reps) is the name Admin linked to the user.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS rep_name TEXT;
+
+-- ---------------------------------------------------------------------------
+-- Order Making SO: each SO's Sales Order details (SO No., date, value,
+-- currency, quantity) are assigned to one Order Making SO member, by Order
+-- Making PO, Central Visibility or Admin. so_details_filled_at is when those
+-- details were first all in. Idempotent.
+-- ---------------------------------------------------------------------------
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS so_assignee_id UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS so_assigned_at TIMESTAMPTZ;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS so_assigned_by UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS so_details_filled_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS orders_so_assignee_idx ON orders (so_assignee_id);

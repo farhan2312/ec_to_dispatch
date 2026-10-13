@@ -147,12 +147,13 @@ export function BillingWorkspace({
                 <th className="px-4 py-3">{mode === "billing" ? "Payment terms & PIs" : "Packing slips & dispatches"}</th>
                 <th className="px-4 py-3 text-right">Order Value</th>
                 <th className="px-4 py-3">Dispatch Status</th>
+                {mode === "dispatch" && <th className="px-4 py-3">Stage</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-card-border">
               {pageRows.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="px-4 py-10 text-center text-sm text-muted">
+                  <td colSpan={mode === "dispatch" ? 14 : 13} className="px-4 py-10 text-center text-sm text-muted">
                     {emptyMessage}
                   </td>
                 </tr>
@@ -241,6 +242,11 @@ export function BillingWorkspace({
                       <td className="px-4 py-3 whitespace-nowrap">
                         <DispatchStatusPill status={row.dispatch_status} />
                       </td>
+                      {mode === "dispatch" && (
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <StagePill stage={row.dispatch_stage} />
+                        </td>
+                      )}
                     </tr>
                   </Fragment>
                 );
@@ -274,4 +280,19 @@ export function BillingWorkspace({
       )}
     </div>
   );
+}
+
+/** The SO's stage in Invoice → Dispatch → Docket & LR, as a coloured pill. */
+function StagePill({ stage }: { stage: string | null | undefined }) {
+  const s = (stage ?? "").trim();
+  if (!s) return <span className="text-muted-foreground">—</span>;
+  const tone =
+    s === "Docket & LR done"
+      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300"
+      : s === "Docket & LR pending"
+        ? "bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-300"
+        : s === "Dispatch pending"
+          ? "bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300"
+          : "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300";
+  return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${tone}`}>{s}</span>;
 }

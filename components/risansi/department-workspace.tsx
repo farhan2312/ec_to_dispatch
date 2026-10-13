@@ -49,6 +49,7 @@ import { UrlPagination, UrlSearchInput, useUrlTable } from "./url-table";
 import { OrderListFilterBar } from "./order-list-filter-bar";
 import type { OrderListOptions } from "@/lib/orders";
 import { DEPT_VIEWS, dispatchRowTone } from "@/lib/dept-view";
+import { DispatchStatusPill } from "./dispatch-status-pill";
 import { useConsumeFocusParam, useFocusRow } from "./use-focus-row";
 import { lockReason } from "@/lib/order-lock";
 import type { PageResult } from "@/lib/pagination";
@@ -538,7 +539,7 @@ export function DepartmentWorkspace({
 
   const colCount = groupBySo
     ? 4 + (showParty ? 1 : 0) + soContext.length + 1 + // toggle + Sl. + SO + client_name? + context + ECs + chat
-      (soEdit ? 2 + (canEdit ? 1 : 0) + (table === "order_planning" ? 2 : 0) : 0) + // SO status + date (+ assembly, dispatch) + edit
+      (soEdit ? 2 + (canEdit ? 1 : 0) + (table === "order_planning" ? 2 : table === "order_assembly_dispatch" ? 1 : 0) : 0) + // SO status + date (+ assembly, dispatch) + edit
       (section?.soChild ? 1 : 0) // packing slips on the row
     : 3 +
       (showEcNo ? 1 : 0) +
@@ -612,6 +613,8 @@ export function DepartmentWorkspace({
                             <th className="px-4 py-3">Dispatch</th>
                           </>
                         )}
+                        {/* Assembly & Packing sees where Dispatch has got to. */}
+                        {table === "order_assembly_dispatch" && <th className="px-4 py-3">Dispatch</th>}
                         {canEdit && <th className="px-4 py-3 text-right">Edit</th>}
                       </>
                     )}
@@ -860,10 +863,17 @@ export function DepartmentWorkspace({
                                         <div className="text-[11px] text-muted">{asm.date}</div>
                                       )}
                                     </td>
-                                    <td className="px-4 py-3 whitespace-nowrap">{toInput(g.head.so_dispatch_status) || "Pending"}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap">
+                                      <DispatchStatusPill status={toInput(g.head.so_dispatch_status) || "Pending"} />
+                                    </td>
                                   </>
                                 );
                               })()}
+                              {table === "order_assembly_dispatch" && (
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  <DispatchStatusPill status={toInput(g.head.so_dispatch_status) || "Pending"} />
+                                </td>
+                              )}
                               {canEdit && (
                                 <td className="px-4 py-3 text-right">
                                   {mixed || lockReason(table, g.head) ? (

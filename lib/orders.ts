@@ -2041,6 +2041,8 @@ export type OrderOverviewRow = {
   /** order_value in INR — the conversion for a non-INR order. For totals. */
   order_value_inr: string | null;
   has_pi: boolean;
+  /** Fully raised / Partially raised / Pending / N/A / Challan filed — see BILLING_STATE. */
+  billing_state: string | null;
   payment_status: string | null;
   drg_status: string | null;
   boi: string | null;
@@ -2115,6 +2117,7 @@ const overviewColumns = () => `it.id,
                  THEN (${ORDER_VALUE_INR})::text END AS order_value_inr,
             -- Billing's progress: a PI with a number on it, or a challan.
             ${BILLING_RAISED} AS has_pi,
+            ${BILLING_STATE} AS billing_state,
             a.payment_status,
             -- Drawing progress derives from the EC revision list: the
             -- furthest hand-off any revision has reached — approved, then
@@ -2482,6 +2485,8 @@ export type BillingQueueRow = {
   id: string;
   /** Dispatch: the SO's stage in Invoice → Dispatch → Docket & LR. */
   dispatch_stage?: string | null;
+  /** Billing: Fully raised / Partially raised / Pending / N/A. */
+  billing_state?: string | null;
   sl_no: number;
   so_no: string | null;
   so_date: string | null;
@@ -2531,6 +2536,7 @@ export async function listOrdersForBilling(
             o.clearance_status, o.clearance_hold_reason, o.clearance_remarks,
             ${DISPATCH_STATUS} AS so_dispatch_status,
             ${dispatchStageSql("o")} AS dispatch_stage,
+            ${BILLING_STATE} AS billing_state,
             o.accounts_hold_status, o.accounts_hold_reason, o.accounts_hold_remarks,
             o.bill_type,
             ${PAYMENT_TERMS_SQL("o")} AS payment_terms,
@@ -2700,6 +2706,35 @@ const BILLING_RAISED = `(EXISTS (SELECT 1 FROM order_billing_docs d
                          OR EXISTS (SELECT 1 FROM order_billing bl
                                      WHERE bl.order_id = o.id
                                        AND COALESCE(bl.challan_no, '') <> ''))`;
+
+/**
+ * How far Billing has raised the SO's PIs, against its payment terms:
+ *   Fully raised      every term line that takes a PI has one (with a number)
+ *   Partially raised  some do
+ *   Pending           none do
+ *   N/A               every term line is After Receipt — no PI is due
+ * After Receipt lines are not counted. An SO with no term lines yet reads
+ * Fully raised once any PI has a number, else Pending. A Challan order is
+ * Challan filed once its challan has a number.
+ */
+const BILLING_STATE = `(CASE
+    WHEN btrim(COALESCE(o.bill_type, '')) = 'Challan' THEN
+      CASE WHEN EXISTS (SELECT 1 FROM order_billing bl WHERE bl.order_id = o.id AND COALESCE(bl.challan_no, '') <> '')
+           THEN 'Challan filed' ELSE 'Pending' END
+    WHEN NOT EXISTS (SELECT 1 FROM order_payment_terms bt WHERE bt.order_id = o.id) THEN
+      CASE WHEN EXISTS (SELECT 1 FROM order_billing_docs d WHERE d.order_id = o.id AND COALESCE(d.pi_no, '') <> '')
+           THEN 'Fully raised' ELSE 'Pending' END
+    WHEN NOT EXISTS (SELECT 1 FROM order_payment_terms bt WHERE bt.order_id = o.id
+                       AND btrim(COALESCE(bt.term, '')) <> 'After Receipt') THEN 'N/A'
+    WHEN NOT EXISTS (SELECT 1 FROM order_payment_terms bt WHERE bt.order_id = o.id
+                       AND btrim(COALESCE(bt.term, '')) <> 'After Receipt'
+                       AND NOT EXISTS (SELECT 1 FROM order_billing_docs d
+                                        WHERE d.payment_term_id = bt.id AND COALESCE(d.pi_no, '') <> '')) THEN 'Fully raised'
+    WHEN EXISTS (SELECT 1 FROM order_payment_terms bt WHERE bt.order_id = o.id
+                   AND btrim(COALESCE(bt.term, '')) <> 'After Receipt'
+                   AND EXISTS (SELECT 1 FROM order_billing_docs d
+                                WHERE d.payment_term_id = bt.id AND COALESCE(d.pi_no, '') <> '')) THEN 'Partially raised'
+    ELSE 'Pending' END)`;
 
 // ---------------------------------------------------------------------------
 // Master SO list
@@ -2948,14 +2983,8 @@ function planningPackingOnEc(f: OrderListFilter): string {
 /** The state of the SO itself for an SO-scope department. */
 function soState(dept: DeptFilterKey, status: string): string {
   if (dept === "billing") {
-    if (status === NOT_APPLICABLE) return PAID_AFTER_RECEIPT;
-    if (status === "PI raised") {
-      return `${BILL_RAISED} AND NOT (${IS_CHALLAN}) AND NOT ${PAID_AFTER_RECEIPT}`;
-    }
-    if (status === "Challan filed") {
-      return `${BILL_RAISED} AND ${IS_CHALLAN} AND NOT ${PAID_AFTER_RECEIPT}`;
-    }
-    return `NOT ${BILL_RAISED} AND NOT ${PAID_AFTER_RECEIPT}`;
+    // The same reading as the status column (BILLING_STATE).
+    return `${BILLING_STATE} = ${lit(status === NOT_APPLICABLE ? "N/A" : status)}`;
   }
   if (dept === "accounts") {
     if (status === NOT_APPLICABLE) return `(${IS_CHALLAN} OR ${PAID_AFTER_RECEIPT})`;
@@ -3850,6 +3879,7 @@ export async function listOrderDeptStatuses(orderIds: string[]): Promise<Map<str
     bill_type: string | null;
     after_receipt_only: boolean;
     has_pi: boolean;
+    billing_state: string;
     payment_status: string | null;
     drg_target_date: string | null;
     purchase_target_date: string | null;
@@ -3861,6 +3891,7 @@ export async function listOrderDeptStatuses(orderIds: string[]): Promise<Map<str
     `SELECT o.id AS order_id, ${DISPATCH_STATUS} AS dispatch_status, o.bill_type,
             ${AFTER_RECEIPT_ONLY} AS after_receipt_only,
             ${BILLING_RAISED} AS has_pi,
+            ${BILLING_STATE} AS billing_state,
             a.payment_status,
             to_char(o.drg_target_date, 'YYYY-MM-DD') AS drg_target_date,
             to_char(o.purchase_target_date, 'YYYY-MM-DD') AS purchase_target_date,
@@ -3965,11 +3996,12 @@ export async function listOrderDeptStatuses(orderIds: string[]): Promise<Map<str
     // PIs and payments are recorded on every order, whatever its terms.
     const paidAfterReceipt = false;
     out.set(head.order_id, {
-      billing: paidAfterReceipt
-        ? NA
-        : head.has_pi
-          ? done(isChallan ? "Challan filed" : "PI raised")
-          : pending(),
+      billing:
+        paidAfterReceipt || head.billing_state === "N/A"
+          ? NA
+          : head.billing_state === "Fully raised" || head.billing_state === "Challan filed"
+            ? done(head.billing_state)
+            : pending(head.billing_state === "Partially raised" ? "Partially raised" : undefined),
       // Accounts is skipped for Challan orders (no A/R), matching the workspace.
       accounts: isChallan || paidAfterReceipt
         ? NA

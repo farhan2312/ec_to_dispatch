@@ -110,13 +110,14 @@ export function spareEcSql(item = "it", order = "o"): string {
 /**
  * When Assembly & Packing owes an EC, as SQL over an EC alias: NULL when it
  * owes nothing. An EC with readiness lots is owed lot by lot — the earliest
- * ready date among its lots not packed yet, so a lot packed on time keeps it
+ * packing date Assembly & Packing set among its lots not packed yet (a lot
+ * with no packing date owes nothing yet), so a lot packed on time keeps it
  * on time even while the rest is still with Planning. Otherwise Planning's
  * readiness date, until the EC is packed. Past it, the EC is overdue.
  */
 export function assemblyDueSql(item = "it"): string {
   return `(CASE WHEN EXISTS (SELECT 1 FROM order_ready_lots rl WHERE rl.item_id = ${item}.id)
-            THEN (SELECT min(rl.ready_date) FROM order_ready_lots rl
+            THEN (SELECT min(rl.packing_plan_date) FROM order_ready_lots rl
                    WHERE rl.item_id = ${item}.id AND rl.packed_date IS NULL)
             ELSE (SELECT apl.planning_readiness_date FROM order_planning apl
                    WHERE apl.item_id = ${item}.id

@@ -70,6 +70,7 @@ import {
   PAYMENT_STATUS_OPTIONS,
   SECTION_BY_TABLE,
   BILL_TYPE_FOR_MODE,
+  FR_PAYMENT_TERMS_REMARKS,
   ORDER_MAKING_EDITABLE,
   ORDER_MAKING_FIELDS,
   ORDER_MAKING_SO_EDITABLE,
@@ -188,6 +189,8 @@ export async function createOrderAction(
 
   try {
     const { id, sl_no } = await createOrder(input);
+    // An FR order is a replacement: no payment terms, and its remarks say so.
+    await markReplacementTerms(id);
     const label = (input.so_no ?? `#${sl_no}`).trim();
     await logAudit({
       actor: { id: user.id, email: user.email, role: user.role },
@@ -739,6 +742,7 @@ export async function updateOrderSectionAction(
           id,
           BILL_TYPE_FOR_MODE[allowedValues.bill_mode] ?? null,
         ]);
+        await markReplacementTerms(id);
       }
       const after = before ? await getOrderDetail(id) : null;
       const pick = (d: NonNullable<typeof before>) =>
@@ -1460,6 +1464,15 @@ async function drawingHandoffs(id: string): Promise<DrawingHandoffs | null> {
     [id]
   );
   return result.rows[0] ?? null;
+}
+
+/** An FR (replacement) order with blank Payment Terms Remarks gets "REPLACEMENT". */
+async function markReplacementTerms(orderId: string): Promise<void> {
+  await query(
+    `UPDATE orders SET payment_terms_remarks = $2
+      WHERE id = $1 AND bill_mode = 'FR' AND NULLIF(btrim(payment_terms_remarks), '') IS NULL`,
+    [orderId, FR_PAYMENT_TERMS_REMARKS]
+  );
 }
 
 /**

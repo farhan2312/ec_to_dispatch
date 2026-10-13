@@ -21,7 +21,7 @@ import {
   spareEcSql,
   assemblyDueSql,
 } from "@/lib/dept-view";
-import { autoTargets } from "@/lib/target-rules";
+import { autoTargets, spareDeliveryDate } from "@/lib/target-rules";
 import { DEFAULT_GST_RATE } from "@/lib/order-validation";
 import { PLANNING_READY_SQL } from "@/lib/reminders";
 import type { LockFacts } from "@/lib/order-lock";
@@ -521,7 +521,15 @@ export async function getOrderDetail(id: string): Promise<OrderDetail | null> {
         to_jsonb(o) || jsonb_build_object(
           'after_receipt_only', ${AFTER_RECEIPT_ONLY},
           -- Who set the order status, by name, for the banner.
-          'status_set_by_name', (SELECT u.full_name FROM users u WHERE u.id = o.status_set_by)
+          'status_set_by_name', (SELECT u.full_name FROM users u WHERE u.id = o.status_set_by),
+          -- A Spare's readiness lots across its ECs, for the packing slips' Lot ticks.
+          'lot_count', COALESCE((SELECT max(c) FROM (SELECT count(*)::int AS c FROM order_ready_lots lc
+                                   JOIN order_items li ON li.id = lc.item_id
+                                  WHERE li.order_id = o.id GROUP BY lc.item_id) x), 0),
+          'packed_lots', COALESCE((SELECT jsonb_agg(DISTINCT n) FROM (
+                                     SELECT (row_number() OVER (PARTITION BY lp.item_id ORDER BY lp.seq))::int AS n, lp.packed_date
+                                       FROM order_ready_lots lp JOIN order_items pi2 ON pi2.id = lp.item_id
+                                      WHERE pi2.order_id = o.id) y WHERE y.packed_date IS NOT NULL), '[]'::jsonb)
         ) AS order,
         to_jsonb(b)  AS order_billing,
         to_jsonb(ac) AS order_accounts,
@@ -4427,9 +4435,11 @@ export async function fillFirstTargets(
     quality: boolean;
     packing: boolean;
     dispatch: boolean;
+    created_on: string | null;
   }>(
     `SELECT to_char(o.so_date, 'YYYY-MM-DD') AS so_date,
             o.order_type,
+            to_char(o.created_at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS created_on,
             to_char(o.delivery_date_as_per_so, 'YYYY-MM-DD') AS delivery,
             to_char(o.so_handover_date, 'YYYY-MM-DD') AS handover,
             -- The SO's quantity, else what its ECs add up to.
@@ -4450,6 +4460,18 @@ export async function fillFirstTargets(
   );
   const o = r.rows[0];
   if (!o) return [];
+  // A new Spare with no delivery date as per SO takes SO date + 2 weeks — a
+  // plain field, so it stays editable; only a blank is ever filled.
+  if (!o.delivery) {
+    const delivery = spareDeliveryDate(o);
+    if (delivery) {
+      await query(
+        `UPDATE orders SET delivery_date_as_per_so = $2::date WHERE id = $1 AND delivery_date_as_per_so IS NULL`,
+        [orderId, delivery]
+      );
+      o.delivery = delivery;
+    }
+  }
   const already = new Set<string>(o.set_keys);
   const columnSet: Record<TargetKey, boolean> = {
     drawing: o.drg,
@@ -4468,6 +4490,7 @@ export async function fillFirstTargets(
     total_quantity: o.qty,
     qc_required: o.qc_required,
     drawing_involved: o.drawing_involved,
+    created_on: o.created_on,
   })) {
     if (already.has(auto.key) || columnSet[auto.key]) continue;
     const target = TARGET_BY_KEY.get(auto.key);

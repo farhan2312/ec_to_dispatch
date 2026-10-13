@@ -384,6 +384,8 @@ export const ORDER_SECTIONS: OrderSection[] = [
         label: "Payment Terms",
         type: "text",
         readOnly: true,
+        // A replacement (FR) is not paid for: no payment terms.
+        dependsOn: [{ column: "bill_mode", value: "FR", not: true }],
         group: "Terms & Conditions",
       },
       // The terms as the PO worded them, in free text — kept beside the
@@ -976,6 +978,9 @@ export const ADD_ON_SPARE_FIELDS: OrderField[] = [
   { column: "quantity", label: "Quantity", type: "int" },
 ];
 
+/** What an FR (replacement) order's Payment Terms Remarks say. */
+export const FR_PAYMENT_TERMS_REMARKS = "REPLACEMENT";
+
 /**
  * One field's new value, with what it implies for the others: a Challan
  * carries no value, so picking it sets the order value to 0 INR.
@@ -993,6 +998,10 @@ export function withValueRules<T extends Record<string, unknown>>(
   if ((column === "bill_type" && value === "Challan") || (column === "bill_mode" && value === "FR")) {
     next.order_value = "0";
     next.order_currency = "INR";
+  }
+  // An FR order is a replacement: its terms say so.
+  if (column === "bill_mode" && value === "FR" && !String(next.payment_terms_remarks ?? "").trim()) {
+    next.payment_terms_remarks = FR_PAYMENT_TERMS_REMARKS;
   }
   // A Spare has no bought-out items and no quality documents.
   if (column === "order_type" && value === "Spare") {

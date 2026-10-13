@@ -2492,10 +2492,17 @@ export async function listItemsForSection(
                      FROM order_ready_lots rl WHERE rl.item_id = it.id),
                   '[]'::jsonb) AS ready_lots${
            table === "order_planning"
-             ? // …and where Assembly & Packing has got to on it.
+             ? // …and where Assembly & Packing has got to on it, and the SO's packing slips.
                `, d.readiness_date_status, ${ASSEMBLY_STATE_SQL("it")} AS assembly_state,
                  (SELECT to_char(pad.actual_packing_date, 'YYYY-MM-DD')
-                    FROM order_assembly_dispatch pad WHERE pad.item_id = it.id) AS actual_packing_date`
+                    FROM order_assembly_dispatch pad WHERE pad.item_id = it.id) AS actual_packing_date,
+                 COALESCE((SELECT jsonb_agg(jsonb_build_object(
+                             'packing_slip_no', ps.packing_slip_no,
+                             'packing_slip_date', to_char(ps.packing_slip_date, 'YYYY-MM-DD'),
+                             'lot_nos', ps.lot_nos) ORDER BY ps.seq)
+                             FROM order_packing_slips ps
+                            WHERE ps.order_id = it.order_id AND ps.kind = 'actual'
+                              AND NULLIF(btrim(ps.packing_slip_no), '') IS NOT NULL), '[]'::jsonb) AS so_slips`
              : // Assembly & Packing is overdue against Planning's readiness date.
                `, (SELECT to_char(rpl.planning_readiness_date, 'YYYY-MM-DD')
                     FROM order_planning rpl WHERE rpl.item_id = it.id) AS planning_readiness_date`
@@ -3239,6 +3246,8 @@ function orderListClauses(
   if (f.dept && f.overdue) clauses.push(deptOverduePredicate(f.dept));
   // Packed by Assembly & Packing and not yet gone: Dispatch's own shortlist.
   if (f.ready) clauses.push(READY_TO_DISPATCH);
+  // A Spare lot packed but on no packing slip: nothing for Dispatch to send.
+  if (f.noSlip) clauses.push(`EXISTS (${PACKED_LOT_WITHOUT_SLIP_SQL("o")})`);
   // One SO field, filled or pending. Pending is blank where the field applies.
   if (f.field) {
     const def = FIELD_FILTER_FIELDS.find((x) => x.column === f.field!.column);
@@ -3855,6 +3864,8 @@ export async function listOrdersForBillingPage(opts: {
   /** Dispatch: only SOs with a filled-in packing slip (a number) — there is nothing to send before. */
   onlyPacked?: boolean;
   sort?: QueueSort | null;
+  /** Every matching SO rather than one page — for a printed report. */
+  all?: boolean;
 }): Promise<PageResult<BillingQueueRow>> {
   const { ids, total, page } = await pageOfOrderIds({
     page: opts.page,
@@ -3871,6 +3882,7 @@ export async function listOrdersForBillingPage(opts: {
     searchable: (term) =>
       `(o.so_no ILIKE ${term} OR o.client_name ILIKE ${term} OR o.sl_no::text ILIKE ${term})`,
     filter: opts.filter,
+    all: opts.all,
   });
 
   const rows = ids.length === 0 ? [] : await listOrdersForBilling(ids);
@@ -4269,6 +4281,20 @@ export const UNSENT_PACKED_LOT_SQL = (o: string) => `SELECT 1 FROM order_ready_l
             AND (SELECT count(*) FROM order_ready_lots u2
                   WHERE u2.item_id = ul.item_id AND u2.seq <= ul.seq) = ANY(us.lot_nos))`;
 
+/**
+ * A packed readiness lot of the SO that no numbered packing slip names (by
+ * its lot number) — packed, but nothing yet for Dispatch to send.
+ */
+export const PACKED_LOT_WITHOUT_SLIP_SQL = (o: string) => `SELECT 1 FROM order_ready_lots nl
+      JOIN order_items ni ON ni.id = nl.item_id
+     WHERE ni.order_id = ${o}.id AND nl.packed_date IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM order_packing_slips ns
+          WHERE ns.order_id = ${o}.id AND ns.kind = 'actual'
+            AND NULLIF(btrim(ns.packing_slip_no), '') IS NOT NULL
+            AND (SELECT count(*) FROM order_ready_lots n2
+                  WHERE n2.item_id = nl.item_id AND n2.seq <= nl.seq) = ANY(ns.lot_nos))`;
+
 /** The SO's slips that have gone out: linked to a dispatch that has started. */
 const SENT_SLIPS_SQL = (o: string) => `SELECT 1 FROM order_invoice_slips l
       JOIN order_invoices si ON si.id = l.invoice_id
@@ -4642,6 +4668,8 @@ function pipelineRowWhere(f: OrderListFilter): { where: string; params: unknown[
     const signed = `EXISTS (SELECT 1 FROM order_dept_completions c WHERE ${signedHere(f.dept)})`;
     clauses.push(f.signOff === "completed" ? signed : `NOT ${signed}`);
   }
+  // A Spare lot packed but on no packing slip.
+  if (f.noSlip) clauses.push(`EXISTS (${PACKED_LOT_WITHOUT_SLIP_SQL("o")})`);
 
   if (f.from || f.to) {
     const range = (column: string) =>

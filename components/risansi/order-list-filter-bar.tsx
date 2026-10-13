@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, ChevronDown, PackageCheck, PackageX, X } from "lucide-react";
 import { UrlSearchInput, useUrlTable } from "./url-table";
-import { MultiSelectFilter, SingleSelectFilter } from "./multi-select-filter";
+import { MultiSelectFilter, SingleSelectFilter, useShownValue } from "./multi-select-filter";
 import { DEPT_VIEWS } from "@/lib/dept-view";
 import {
   DEPTS_WITHOUT_PARTY,
@@ -516,10 +516,10 @@ export function OrderListFilterBar({
  * department's ticked statuses; every department ticked.
  */
 function DeptStatusMultiFilter({
-  value,
+  value: valueProp,
   spareOnly,
   types,
-  onChange,
+  onChange: onChangeProp,
 }: {
   value: Partial<Record<DeptFilterKey, string[]>>;
   /** A Spare has no drawing, bought-out items or QC documents. */
@@ -529,6 +529,12 @@ function DeptStatusMultiFilter({
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  // Ticks show at once, not when the page reloads.
+  const [value, setValue] = useShownValue(valueProp, JSON.stringify(valueProp));
+  const onChange = (next: Partial<Record<DeptFilterKey, string[]>>) => {
+    setValue(next);
+    onChangeProp(next);
+  };
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {

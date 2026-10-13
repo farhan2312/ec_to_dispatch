@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Loader2, MessageSquare, Pencil, Plus, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, MessageSquare, Pencil, Plus, UserRound, Users, X } from "lucide-react";
 import { OrderThreadModal } from "./order-thread-modal";
 import { ClearanceChip } from "./orders-table";
 import { DATE_PRESETS, presetRange } from "@/lib/order-list-filter";
@@ -11,8 +11,11 @@ import {
   OM_DATE_FIELDS,
   OM_FILTER_KEYS,
   isOrderMakingFiltered,
+  UNASSIGNED,
   type OrderMakingFilter,
 } from "@/lib/order-making-filter";
+import type { SoMember, SoMemberSummary } from "@/lib/so-assignment";
+import { assignSoAction } from "@/app/risansi/departments/order-making/actions";
 import type { OrderListOptions } from "@/lib/orders";
 import { SortHeader } from "./sort-header";
 import { createOrderAction, updateOrderSectionAction } from "@/app/risansi/orders/actions";
@@ -20,8 +23,9 @@ import type { NewOrderInput } from "@/lib/orders";
 import {
   ORDER_MAKING_EDITABLE,
   ORDER_MAKING_FIELDS,
-  ORDER_MAKING_GROUPS,
+  ORDER_MAKING_SO_EDITABLE,
   ORDER_TYPE_OPTIONS,
+  SO_DETAIL_COLUMNS,
   dependsOnSatisfied,
   selectOptionsFor,
   withValueRules,
@@ -51,6 +55,11 @@ export function OrderMakingWorkspace({
   filter,
   options,
   canEdit,
+  canCreate = canEdit,
+  mode = "po",
+  canAssign = false,
+  members = [],
+  summary = null,
   role,
   unreadThreads,
 }: {
@@ -59,6 +68,14 @@ export function OrderMakingWorkspace({
   /** Zones, reps and markets as the orders carry them. */
   options: OrderListOptions;
   canEdit: boolean;
+  /** Who opens new SOs: Order Making PO, Central, Admin. */
+  canCreate?: boolean;
+  /** "so": an Order Making SO member — their own SOs, the Sales Order details only. */
+  mode?: "po" | "so";
+  /** Who assigns SOs to Order Making SO members. */
+  canAssign?: boolean;
+  members?: SoMember[];
+  summary?: SoMemberSummary | null;
   /** The viewer's role, for the SO discussion. */
   role: string;
   /** Unread discussion messages per SO, for the chat badge. */
@@ -75,6 +92,15 @@ export function OrderMakingWorkspace({
   const { setParams } = useUrlTable();
   // A row being edited, or "new" for the New order form.
   const [editing, setEditing] = useState<OrderMakingRow | "new" | null>(null);
+  const [assigning, setAssigning] = useState<string | null>(null);
+  async function assign(row: OrderMakingRow, assigneeId: string) {
+    setAssigning(row.id);
+    const res = await assignSoAction(row.id, assigneeId || null);
+    setAssigning(null);
+    if (!res.ok) alert(res.error);
+    else router.refresh();
+  }
+  const pickedMember = filter.assignees.length === 1 ? filter.assignees[0] : null;
   const cols: { column: string; label: string }[] = [
     { column: "so_no", label: "SO No." },
     { column: "so_date", label: "SO Date" },
@@ -88,6 +114,63 @@ export function OrderMakingWorkspace({
 
   return (
     <div>
+      {/* Per Order Making SO member: what is assigned, still pending, filled. */}
+      {summary && (
+        <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          {summary.members.map((m) => {
+            const on = pickedMember === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setParams({ asg: on ? null : m.id, page: null })}
+                aria-pressed={on}
+                className={`rounded-xl border p-3 text-left shadow-sm transition-colors ${
+                  on ? "border-primary bg-primary/[0.06]" : "border-card-border bg-surface hover:bg-background"
+                }`}
+              >
+                <span className="flex items-center gap-1.5 truncate text-sm font-semibold text-foreground">
+                  <UserRound className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  <span className="truncate">{m.full_name}</span>
+                </span>
+                <span className="mt-1.5 flex items-baseline gap-3 text-xs text-muted">
+                  <span>
+                    <span className="text-lg font-bold tabular-nums text-foreground">{m.assigned}</span> assigned
+                  </span>
+                </span>
+                <span className="mt-1 flex gap-3 text-[11px]">
+                  <span className="font-semibold text-amber-700">{m.pending} pending</span>
+                  <span className="font-semibold text-emerald-700">{m.filled} filled</span>
+                </span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setParams({ asg: pickedMember === UNASSIGNED ? null : UNASSIGNED, page: null })}
+            aria-pressed={pickedMember === UNASSIGNED}
+            className={`rounded-xl border border-dashed p-3 text-left transition-colors ${
+              pickedMember === UNASSIGNED ? "border-primary bg-primary/[0.06]" : "border-input-border bg-surface hover:bg-background"
+            }`}
+          >
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+              <Users className="h-3.5 w-3.5 text-muted" />
+              Unassigned
+            </span>
+            <span className="mt-1.5 block text-xs text-muted">
+              <span className="text-lg font-bold tabular-nums text-foreground">{summary.unassigned.total}</span> SOs
+            </span>
+            <span className="mt-1 block text-[11px] font-semibold text-amber-700">
+              {summary.unassigned.pending} SO details pending
+            </span>
+          </button>
+          {summary.members.length === 0 && (
+            <p className="col-span-full text-xs text-muted">
+              No Order Making SO members yet — Admin adds them in Users &amp; Access.
+            </p>
+          )}
+        </div>
+      )}
       <div className="mb-4 space-y-2 rounded-xl border border-card-border bg-surface p-3 shadow-sm">
       <div className="flex flex-wrap items-center gap-2">
         <UrlSearchInput placeholder="Search SO, client, client code, PO…" />
@@ -106,6 +189,25 @@ export function OrderMakingWorkspace({
           options={BILL_MODE_FILTER_OPTIONS}
           selected={filter.billModes}
           onChange={(next) => setParams({ bmode: next })}
+        />
+        {canAssign && (
+          <SingleSelectFilter
+            label="Assigned to"
+            allLabel="Anyone"
+            options={[{ value: UNASSIGNED, label: "Unassigned" }, ...members.map((m) => ({ value: m.id, label: m.full_name }))]}
+            selected={pickedMember}
+            onChange={(next) => setParams({ asg: next, page: null })}
+          />
+        )}
+        <SingleSelectFilter
+          label="SO details"
+          allLabel="Any"
+          options={[
+            { value: "pending", label: "Pending" },
+            { value: "filled", label: "Filled" },
+          ]}
+          selected={filter.soState}
+          onChange={(next) => setParams({ sos: next, page: null })}
         />
         <button
           type="button"
@@ -182,7 +284,7 @@ export function OrderMakingWorkspace({
         <span className="ml-auto text-xs text-muted">
           <span className="font-semibold text-foreground">{queue.total}</span> SO{queue.total === 1 ? "" : "s"}
         </span>
-        {canEdit && (
+        {canCreate && (
           <button
             type="button"
             onClick={() => setEditing("new")}
@@ -212,15 +314,21 @@ export function OrderMakingWorkspace({
                   </Fragment>
                 ))}
                 <th className="px-4 py-3">Clearance</th>
-                <th className="px-4 py-3">Details</th>
+                <th className="px-4 py-3">PO details</th>
+                <th className="px-4 py-3">SO details</th>
+                {mode === "po" && <th className="px-4 py-3">Assigned to</th>}
                 {canEdit && <th className="px-4 py-3" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-card-border">
               {queue.rows.length === 0 && (
                 <tr>
-                  <td colSpan={cols.length + 5} className="px-4 py-10 text-center text-sm text-muted">
-                    {missingOnly ? "Every SO has its client and PO details filled." : "No SOs match."}
+                  <td colSpan={cols.length + 7} className="px-4 py-10 text-center text-sm text-muted">
+                    {mode === "so"
+                      ? "No SOs assigned to you match."
+                      : missingOnly
+                        ? "Every SO has its client, PO and SO details filled."
+                        : "No SOs match."}
                   </td>
                 </tr>
               )}
@@ -280,15 +388,78 @@ export function OrderMakingWorkspace({
                       </span>
                     )}
                   </td>
+                  {/* The Sales Order details: in (and when), or what is still blank. */}
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {row.so_missing.length === 0 ? (
+                      <span className="inline-flex flex-col">
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          Filled
+                        </span>
+                        {row.so_details_filled_at && (
+                          <span className="text-[11px] text-muted">{formatDisplay(field("so_date"), row.so_details_filled_at)}</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span
+                        title={row.so_missing.join(", ")}
+                        className="inline-flex rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+                      >
+                        Pending · {row.so_missing.length} missing
+                      </span>
+                    )}
+                  </td>
+                  {mode === "po" && (
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {canAssign ? (
+                        <span className="inline-flex flex-col gap-0.5">
+                          <span className="inline-flex items-center gap-1.5">
+                            <select
+                              value={row.so_assignee_id ?? ""}
+                              disabled={assigning === row.id}
+                              onChange={(e) => assign(row, e.target.value)}
+                              aria-label={`Assign SO details of ${str(row.so_no) || row.sl_no}`}
+                              className={`h-8 max-w-[11rem] cursor-pointer rounded-lg border px-2 text-xs ${
+                                row.so_assignee_id
+                                  ? "border-input-border bg-surface text-foreground"
+                                  : "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300"
+                              }`}
+                            >
+                              <option value="">Unassigned</option>
+                              {members.map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  {m.full_name}
+                                </option>
+                              ))}
+                              {/* Someone no longer active stays shown. */}
+                              {row.so_assignee_id && !members.some((m) => m.id === row.so_assignee_id) && (
+                                <option value={row.so_assignee_id}>{row.so_assignee_name ?? "Former member"}</option>
+                              )}
+                            </select>
+                            {assigning === row.id && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted" />}
+                          </span>
+                          {row.so_assigned_at && (
+                            <span className="text-[11px] text-muted">since {formatDisplay(field("so_date"), row.so_assigned_at)}</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-foreground">{row.so_assignee_name ?? "—"}</span>
+                      )}
+                    </td>
+                  )}
                   {canEdit && (
                     <td className="px-4 py-3 text-right">
                       <button
                         type="button"
                         onClick={() => setEditing(row)}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-input-border px-3 text-xs font-medium text-foreground transition-colors hover:bg-background"
+                        className={`inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-xs font-medium transition-colors ${
+                          mode === "so" && row.so_missing.length > 0
+                            ? "border-primary/40 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground"
+                            : "border-input-border text-foreground hover:bg-background"
+                        }`}
                       >
                         <Pencil className="h-3.5 w-3.5" />
-                        Edit
+                        {mode === "so" ? "SO details" : "Edit"}
                       </button>
                     </td>
                   )}
@@ -320,7 +491,12 @@ export function OrderMakingWorkspace({
         />
       )}
       {editing && (
-        <OrderMakingEdit row={editing === "new" ? null : editing} onClose={() => setEditing(null)} />
+        <OrderMakingEdit
+          row={editing === "new" ? null : editing}
+          mode={mode}
+          members={canAssign ? members : null}
+          onClose={() => setEditing(null)}
+        />
       )}
     </div>
   );
@@ -331,8 +507,29 @@ export function OrderMakingWorkspace({
  * Purchase Order details — the only ones Order Making owns. The client
  * directory fills the Client fields.
  */
-function OrderMakingEdit({ row, onClose }: { row: OrderMakingRow | null; onClose: () => void }) {
+/** The form's three parts: the Client, the PO's own details, and the Sales Order details. */
+const FORM_SECTIONS: { title: string; fields: (f: OrderField) => boolean }[] = [
+  { title: "Client", fields: (f) => f.group === "Client" },
+  { title: "Purchase Order", fields: (f) => f.group === "Purchase Order" && !SO_DETAIL_COLUMNS.includes(f.column) },
+  { title: "Sales Order", fields: (f) => SO_DETAIL_COLUMNS.includes(f.column) },
+];
+
+function OrderMakingEdit({
+  row,
+  mode,
+  members,
+  onClose,
+}: {
+  row: OrderMakingRow | null;
+  /** "so": an Order Making SO member fills the Sales Order details only. */
+  mode: "po" | "so";
+  /** Order Making SO members to assign to, for those who assign. */
+  members: SoMember[] | null;
+  onClose: () => void;
+}) {
   const router = useRouter();
+  const editable = mode === "so" ? ORDER_MAKING_SO_EDITABLE : ORDER_MAKING_EDITABLE;
+  const [assignee, setAssignee] = useState<string>(row?.so_assignee_id ?? "");
   const [values, setValues] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       ORDER_MAKING_EDITABLE.map((f) => [f.column, str(row?.[f.column]).slice(0, f.type === "date" ? 10 : undefined)])
@@ -366,7 +563,7 @@ function OrderMakingEdit({ row, onClose }: { row: OrderMakingRow | null; onClose
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    if (!values.client_code?.trim()) {
+    if (mode === "po" && !values.client_code?.trim()) {
       setError("Client Code is required.");
       return;
     }
@@ -374,8 +571,8 @@ function OrderMakingEdit({ row, onClose }: { row: OrderMakingRow | null; onClose
     setError(null);
     // Only fields that apply go: a PO typed before switching to FR is not saved.
     const applies = (k: string) => {
-      const f = ORDER_MAKING_EDITABLE.find((x) => x.column === k);
-      return !f || dependsOnSatisfied(f, read);
+      const f = editable.find((x) => x.column === k);
+      return !!f && dependsOnSatisfied(f, read);
     };
     const sending = Object.fromEntries(Object.entries(values).filter(([k]) => applies(k)));
     // Blank fields are left out of a new order rather than sent as "".
@@ -384,11 +581,24 @@ function OrderMakingEdit({ row, onClose }: { row: OrderMakingRow | null; onClose
       : await createOrderAction(
           Object.fromEntries(Object.entries(sending).filter(([, v]) => v.trim() !== "")) as NewOrderInput
         );
-    setSaving(false);
     if (!res.ok) {
+      setSaving(false);
       setError(res.error);
       return;
     }
+    // Who fills the SO details, when it is new or has changed.
+    const created = !row && "id" in res ? (res as { id: string }).id : null;
+    const orderId: string | null = row ? row.id : created;
+    if (members && orderId && assignee !== (row?.so_assignee_id ?? "")) {
+      const a = await assignSoAction(orderId, assignee || null);
+      if (!a.ok) {
+        setSaving(false);
+        setError(`Saved, but not assigned: ${a.error}`);
+        router.refresh();
+        return;
+      }
+    }
+    setSaving(false);
     router.refresh();
     onClose();
   }
@@ -431,7 +641,7 @@ function OrderMakingEdit({ row, onClose }: { row: OrderMakingRow | null; onClose
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Edit client and purchase order details"
+      aria-label={mode === "so" ? "Fill SO details" : "Edit client and purchase order details"}
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-6"
       onClick={() => !saving && onClose()}
     >
@@ -443,13 +653,13 @@ function OrderMakingEdit({ row, onClose }: { row: OrderMakingRow | null; onClose
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
             <h2 className="font-display text-lg font-semibold text-foreground">
-              {row ? "Client & purchase order" : "New order"}
+              {mode === "so" ? "SO details" : row ? "Client, PO & SO details" : "New order"}
             </h2>
             <p className="text-xs text-muted">
               {row ? `SO ${str(row.so_no) || `#${row.sl_no}`} · ` : ""}
-              {row
-                ? "terms, targets and ECs are Central Visibility's"
-                : "Central Visibility is told and fills in the terms, target dates and ECs"}
+              {mode === "so"
+                ? "fill the Sales Order details; the client and PO are Order Making PO's"
+                : "Central Visibility is told once the SO details are in, and fills the terms, target dates and ECs"}
             </p>
           </div>
           <button
@@ -463,7 +673,7 @@ function OrderMakingEdit({ row, onClose }: { row: OrderMakingRow | null; onClose
           </button>
         </div>
 
-        <ClientLookup onSelect={applyClient} label="Fill client details from directory" />
+        {mode === "po" && <ClientLookup onSelect={applyClient} label="Fill client details from directory" />}
 
         {error && (
           <div role="alert" className="mb-3 rounded-[10px] border border-danger-border bg-danger-bg px-3 py-2 text-sm text-danger">
@@ -471,28 +681,76 @@ function OrderMakingEdit({ row, onClose }: { row: OrderMakingRow | null; onClose
           </div>
         )}
 
-        {ORDER_MAKING_GROUPS.map((group) => (
-          <section key={group} className="mb-4 rounded-xl border border-card-border p-4">
-            <h3 className="mb-3 text-sm font-semibold text-foreground">{group}</h3>
-            <div className="grid grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
-              {/* Only what applies, as the Order details form: FR takes a
-                  complaint instead of a quotation and PO, a Spare has no total
-                  quantity. */}
-              {ORDER_MAKING_EDITABLE.filter((f) => f.group === group && dependsOnSatisfied(f, read)).map((f) => (
-                <label key={f.column} htmlFor={f.column} className="block text-sm">
-                  <span className="mb-1 block text-[13px] font-medium text-brand-label">
-                    {f.label}
-                    {f.column === "client_code" && <span className="text-danger"> *</span>}
-                  </span>
-                  {input(f)}
-                  {challanLocked(f) && (
-                    <span className="mt-1 block text-[11px] text-muted">0 INR on a Challan order</span>
-                  )}
-                </label>
-              ))}
-            </div>
-          </section>
-        ))}
+        {FORM_SECTIONS.map((section) => {
+          // Only what applies, as the Order details form: FR takes a
+          // complaint instead of a quotation and PO, a Spare has no total
+          // quantity.
+          const fields = ORDER_MAKING_EDITABLE.filter((f) => section.fields(f) && dependsOnSatisfied(f, read));
+          const isSo = section.title === "Sales Order";
+          // An SO member sees the client and PO as they stand, to fill against.
+          const readOnly = mode === "so" && !isSo;
+          return (
+            <section
+              key={section.title}
+              className={`mb-4 rounded-xl border p-4 ${isSo && mode === "so" ? "border-primary/40 bg-primary/[0.03]" : "border-card-border"} ${readOnly ? "bg-background/60" : ""}`}
+            >
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-foreground">
+                  {section.title}
+                  {readOnly && <span className="ml-2 text-[11px] font-normal text-muted">view only</span>}
+                </h3>
+                {/* Who fills it: Order Making PO, Central and Admin assign. */}
+                {isSo && members && (
+                  <label className="inline-flex items-center gap-2 text-xs text-muted">
+                    Assigned to
+                    <select
+                      value={assignee}
+                      onChange={(e) => setAssignee(e.target.value)}
+                      className="h-8 cursor-pointer rounded-lg border border-input-border bg-surface px-2 text-xs text-foreground"
+                    >
+                      <option value="">Unassigned</option>
+                      {members.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.full_name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
+              {readOnly ? (
+                <dl className="grid grid-cols-1 gap-x-5 gap-y-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {fields.map((f) => (
+                    <div key={f.column} className="text-sm">
+                      <dt className="text-[12px] text-muted">{f.label}</dt>
+                      <dd className="font-medium text-foreground">{formatDisplay(f, read(f.column)) || "—"}</dd>
+                    </div>
+                  ))}
+                </dl>
+              ) : (
+                <div className="grid grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {fields.map((f) => (
+                    <label key={f.column} htmlFor={f.column} className="block text-sm">
+                      <span className="mb-1 block text-[13px] font-medium text-brand-label">
+                        {f.label}
+                        {f.column === "client_code" && <span className="text-danger"> *</span>}
+                      </span>
+                      {input(f)}
+                      {challanLocked(f) && (
+                        <span className="mt-1 block text-[11px] text-muted">0 INR on a Challan order</span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+              )}
+              {isSo && mode === "po" && (
+                <p className="mt-2 text-[11px] text-muted">
+                  Usually filled by the Order Making SO member it is assigned to.
+                </p>
+              )}
+            </section>
+          );
+        })}
 
         <div className="flex justify-end gap-2">
           <button
@@ -509,7 +767,7 @@ function OrderMakingEdit({ row, onClose }: { row: OrderMakingRow | null; onClose
             className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover disabled:opacity-60"
           >
             {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-            {row ? "Save" : "Create order"}
+            {mode === "so" ? "Save SO details" : row ? "Save" : "Create order"}
           </button>
         </div>
       </form>

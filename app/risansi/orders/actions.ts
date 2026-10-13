@@ -71,6 +71,7 @@ import {
   BILL_TYPE_FOR_MODE,
   ORDER_MAKING_EDITABLE,
   ORDER_MAKING_FIELDS,
+  ORDER_MAKING_SO_EDITABLE,
   firstMissingAddOnField,
   paymentTermsText,
   type ChildTable,
@@ -85,6 +86,8 @@ import {
   canAccessDepartment,
   canCreateOrders,
   isOrderMaking,
+  isOrderMakingAny,
+  isOrderMakingSo,
   canEditChild,
   canEditQcDocuments,
   canEditQcRequirementDocs,
@@ -93,6 +96,7 @@ import {
   isCentral,
 } from "@/lib/roles";
 import { parsePiWorkbook } from "@/lib/pi-import";
+import { isAssignedTo, markSoDetails } from "@/lib/so-assignment";
 import { DEPT_FILTER_KEYS } from "@/lib/dept-status";
 import { isClosedStatus, repMatches } from "@/lib/dept-view";
 import {
@@ -142,7 +146,7 @@ import {
 } from "@/lib/notifications";
 
 export type CreateOrderResult =
-  | { ok: true; slNo: number }
+  | { ok: true; slNo: number; id: string }
   | { ok: false; error: string };
 
 export async function createOrderAction(
@@ -208,23 +212,14 @@ export async function createOrderAction(
     await Promise.all([
       autoFillTargets(id, user),
       getUsdInrRate().then((rate) => applyUsdConversion(id, rate)),
-      // Order Making hands the SO over: Central Visibility fills its terms,
-      // targets and ECs.
-      isOrderMaking(user.role)
-        ? emitNotification({
-            roles: ["central_visibility"],
-            orderId: id,
-            type: "dept_update",
-            message: `New SO ${label} created by Order Making${
-              input.client_name ? ` for ${input.client_name}` : ""
-            } — fill its terms, target dates and ECs`,
-          })
-        : null,
     ]);
+    // Order Making hands the SO over once its SO details are in: Central
+    // Visibility then fills its terms, targets and ECs.
+    await markSoDetails(id, { id: user.id, role: user.role, name: user.full_name });
 
     revalidatePath("/risansi/orders");
     revalidatePath("/risansi/departments/order-making");
-    return { ok: true, slNo: sl_no };
+    return { ok: true, slNo: sl_no, id };
   } catch (error) {
     console.error("createOrder failed:", error);
     return { ok: false, error: "Could not create the order. Please try again." };
@@ -303,7 +298,7 @@ export async function getOrderPisAction(
   orderId: string
 ): Promise<ViewPisPayload> {
   const user = await getCurrentUser();
-  if (!user || isOrderMaking(user.role)) return { bill_type: null, pis: [], challan: null };
+  if (!user || isOrderMakingAny(user.role)) return { bill_type: null, pis: [], challan: null };
   if (!(await repMaySee(user, orderId))) return { bill_type: null, pis: [], challan: null };
   const detail = await getOrderDetail(orderId);
   if (!detail) return { bill_type: null, pis: [], challan: null };
@@ -324,7 +319,9 @@ export async function getOrderCoreAction(
   if (!(await repMaySee(user, orderId))) return null;
   const detail = await getOrderDetail(orderId);
   if (!detail) return null;
-  if (isOrderMaking(user.role)) {
+  if (isOrderMakingAny(user.role)) {
+    // An SO member: only the SOs assigned to them.
+    if (isOrderMakingSo(user.role) && !(await isAssignedTo(orderId, user.id))) return null;
     return Object.fromEntries(
       ["id", "sl_no", ...ORDER_MAKING_FIELDS.map((f) => f.column)].map((c) => [c, detail.order[c] ?? null])
     );
@@ -667,7 +664,10 @@ export async function updateOrderSectionAction(
     return { ok: false, error: "Unknown section." };
   }
 
-  const orderMaker = isOrderMaking(user.role) && table === "orders";
+  const orderMaker = isOrderMakingAny(user.role) && table === "orders";
+  if (orderMaker && isOrderMakingSo(user.role) && !(await isAssignedTo(id, user.id))) {
+    return { ok: false, error: "This SO is not assigned to you." };
+  }
   if (!canEditSection(user.role, table as OrderTable) && !orderMaker) {
     return {
       ok: false,
@@ -677,9 +677,10 @@ export async function updateOrderSectionAction(
 
   // Non-central users can't edit fields marked centralOnly (filled by Mitali).
   let allowedValues = values;
-  // Order Making: Client and Purchase Order details only.
+  // Order Making PO: Client, Purchase Order and Sales Order details. Order
+  // Making SO: the Sales Order details only.
   if (orderMaker) {
-    const own = new Set(ORDER_MAKING_EDITABLE.map((f) => f.column));
+    const own = new Set((isOrderMakingSo(user.role) ? ORDER_MAKING_SO_EDITABLE : ORDER_MAKING_EDITABLE).map((f) => f.column));
     allowedValues = Object.fromEntries(Object.entries(values).filter(([k]) => own.has(k)));
     if (allowedValues.order_type === "Spare") {
       allowedValues = { ...allowedValues, boi: "No", qc_required: "No" };
@@ -785,6 +786,8 @@ export async function updateOrderSectionAction(
         tbl === "orders"
           ? getUsdInrRate().then((rate) => applyUsdConversion(id, rate))
           : null,
+        // Whether the Sales Order details are now all in (Central hears the first time).
+        tbl === "orders" ? markSoDetails(id, { id: user.id, role: user.role, name: user.full_name }) : null,
       ]);
       revalidatePath(`/risansi/orders/${id}`);
     } else {

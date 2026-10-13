@@ -353,7 +353,8 @@ export async function countDiscussionUnread(viewer: {
              AND r.dept_role = ${peerOfSql(viewer.role, param)}
       WHERE ${visibleSql(viewer.role, param)}
         AND m.author_id <> $1
-        AND (r.last_read_at IS NULL OR m.created_at > r.last_read_at)`,
+        AND (r.last_read_at IS NULL OR m.created_at > r.last_read_at)
+        ${viewer.role === "order_making_so" ? "AND EXISTS (SELECT 1 FROM orders so WHERE so.id = m.order_id AND so.so_assignee_id = $1)" : ""}`,
     params
   );
   return Number(result.rows[0]?.n ?? 0);

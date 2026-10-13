@@ -6,6 +6,7 @@
 // route and the SQL builder all read one definition.
 
 import { DEPT_VIEWS } from "@/lib/dept-view";
+import { DISPATCH_STAGES } from "@/lib/dispatch-steps";
 import {
   BILL_MODE_OPTIONS,
   CLEARANCE_HOLD_REASONS,
@@ -160,6 +161,8 @@ export type OrderListFilter = {
   paymentStatuses: string[];
   /** Billing's queue: the SO's dispatch status. */
   dispatchStatuses: string[];
+  /** Dispatch's queue: the SO's stage in Invoice → Dispatch → Docket & LR. */
+  dispatchStages: string[];
   /** Planning: Assembly & Packing's status on the same EC. */
   packingStatuses: string[];
   /** The orders list: Clear or Hold. */
@@ -275,6 +278,7 @@ export function parseOrderListFilter(
       queue && DISPATCH_STATUS_FILTER_DEPTS.includes(queue)
         ? list(get("dispst")).filter((v) => statusesFor("dispatch").includes(v))
         : [],
+    dispatchStages: queue === "dispatch" ? list(get("dstage")).filter((v) => DISPATCH_STAGES.includes(v)) : [],
     packingStatuses: dept === "planning" ? list(get("pack")).filter((v) => PLANNING_PACKING_OPTIONS.includes(v)) : [],
     clearance: list(get("clear")).filter((v) => CLEARANCE_FILTER_OPTIONS.includes(v)),
     holdReasons: list(get("hreason")).filter((v) => HOLD_REASON_FILTER_OPTIONS.includes(v)),
@@ -303,6 +307,7 @@ export function isOrderListFiltered(f: OrderListFilter): boolean {
     f.billModes.length ||
     f.paymentStatuses.length ||
     f.dispatchStatuses.length ||
+    f.dispatchStages.length ||
     f.packingStatuses.length ||
     f.field ||
     f.ready ||
@@ -335,6 +340,7 @@ export function orderListFilterParams(f: OrderListFilter): URLSearchParams {
   if (f.billModes.length) p.set("bmode", f.billModes.join(","));
   if (f.paymentStatuses.length) p.set("pstat", f.paymentStatuses.join(","));
   if (f.dispatchStatuses.length) p.set("dispst", f.dispatchStatuses.join(","));
+  if (f.dispatchStages.length) p.set("dstage", f.dispatchStages.join(","));
   if (f.packingStatuses.length) p.set("pack", f.packingStatuses.join(","));
   if (f.field) {
     p.set("field", f.field.column);
@@ -366,6 +372,7 @@ export function describeOrderListFilter(f: OrderListFilter): string {
   if (f.billModes.length) parts.push(`Bill mode: ${f.billModes.join(", ")}`);
   if (f.paymentStatuses.length) parts.push(`Payment status: ${f.paymentStatuses.join(", ")}`);
   if (f.dispatchStatuses.length) parts.push(`Dispatch status: ${f.dispatchStatuses.join(", ")}`);
+  if (f.dispatchStages.length) parts.push(`Stage: ${f.dispatchStages.join(", ")}`);
   if (f.packingStatuses.length) parts.push(`Packing: ${f.packingStatuses.join(", ")}`);
   if (f.zones.length) parts.push(`Zone: ${f.zones.join(", ")}`);
   if (f.reps.length) parts.push(`Rep: ${f.reps.join(", ")}`);

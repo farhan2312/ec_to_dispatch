@@ -21,7 +21,7 @@ export default async function ItemDetailPage({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   // Order Making works from its own page — the SO's pages show far more.
-  if (user.role === "order_making") redirect("/risansi/departments/order-making");
+  if ((user.role === "order_making" || user.role === "order_making_so")) redirect("/risansi/departments/order-making");
 
   const detail = await getItemDetail(itemId);
   if (!detail || String(detail.order.id) !== id) notFound();

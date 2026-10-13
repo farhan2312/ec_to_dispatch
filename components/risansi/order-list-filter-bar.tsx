@@ -32,6 +32,7 @@ import {
 } from "@/lib/order-list-filter";
 import type { OrderListOptions } from "@/lib/orders";
 import { SIGN_OFF_ENABLED } from "@/lib/dept-completion";
+import { DISPATCH_STAGES } from "@/lib/dispatch-steps";
 
 /** Every parameter the filter owns — what "Clear all" empties. */
 const FILTER_KEYS = [
@@ -54,6 +55,7 @@ const FILTER_KEYS = [
   "bmode",
   "pstat",
   "dispst",
+  "dstage",
   "pack",
   "clear",
   "hreason",
@@ -226,6 +228,16 @@ export function OrderListFilterBar({
                   }
                 : undefined
             }
+          />
+        )}
+        {/* Dispatch: the SO's stage in Invoice → Dispatch → Docket & LR. */}
+        {dept === "dispatch" && (
+          <MultiSelectFilter
+            label="Stage"
+            allLabel="Any stage"
+            options={DISPATCH_STAGES}
+            selected={filter.dispatchStages}
+            onChange={(next) => setParams({ dstage: next })}
           />
         )}
         {/* Billing: where Dispatch has got to on the SO. */}

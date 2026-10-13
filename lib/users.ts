@@ -370,6 +370,17 @@ export async function listUsersByStatus(status: UserStatus): Promise<User[]> {
   return result.rows;
 }
 
+/** Approved users of one role, by name — for pickers. */
+export async function listApprovedUsersByRole(role: string): Promise<{ id: string; full_name: string; email: string }[]> {
+  const result = await query<{ id: string; full_name: string; email: string }>(
+    `SELECT id, full_name, email FROM users
+      WHERE role = $1 AND status = 'approved'
+      ORDER BY lower(full_name)`,
+    [role]
+  );
+  return result.rows;
+}
+
 /** Count of pending access requests. */
 export async function countPending(): Promise<number> {
   const result = await query<{ count: string }>(

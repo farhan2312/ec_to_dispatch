@@ -2309,8 +2309,8 @@ export async function setDeptCompleteAction(
  * when it can, else why not.
  */
 async function termTakesPi(orderId: string, termId: string, piId: string | null): Promise<string | null> {
-  const r = await query<{ order_id: string; taken: boolean }>(
-    `SELECT t.order_id,
+  const r = await query<{ order_id: string; taken: boolean; after_receipt: boolean }>(
+    `SELECT t.order_id, btrim(coalesce(t.term, '')) = 'After Receipt' AS after_receipt,
             EXISTS (SELECT 1 FROM order_billing_docs d
                      WHERE d.payment_term_id = t.id AND ($2::uuid IS NULL OR d.id <> $2::uuid)) AS taken
        FROM order_payment_terms t WHERE t.id = $1`,
@@ -2318,6 +2318,8 @@ async function termTakesPi(orderId: string, termId: string, piId: string | null)
   );
   const row = r.rows[0];
   if (!row || row.order_id !== orderId) return "That payment term is not on this SO.";
+  // Paid after receipt: there is nothing to raise a PI for.
+  if (row.after_receipt) return "An After Receipt term has no PI.";
   if (row.taken) return "That payment term already has a PI.";
   return null;
 }

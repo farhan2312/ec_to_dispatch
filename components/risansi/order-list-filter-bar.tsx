@@ -240,7 +240,7 @@ export function OrderListFilterBar({
             onChange={(next) => setParams({ dstage: next })}
           />
         )}
-        {/* Billing: where Dispatch has got to on the SO. */}
+        {/* Billing, Planning, Assembly & Packing: where Dispatch has got to on the SO. */}
         {dept && DISPATCH_STATUS_FILTER_DEPTS.includes(dept) && (
           <MultiSelectFilter
             label="Dispatch status"

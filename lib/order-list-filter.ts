@@ -77,7 +77,7 @@ export const PAYMENT_FILTER_DEPTS: readonly string[] = ["billing", "accounts"];
 /** The departments that filter by Bill Mode: those two, Planning and Assembly & Packing. */
 export const BILL_MODE_FILTER_DEPTS: readonly string[] = ["billing", "accounts", "planning", "assembly"];
 /** The queues that filter by the SO's dispatch status beside their own status. */
-export const DISPATCH_STATUS_FILTER_DEPTS: readonly string[] = ["billing"];
+export const DISPATCH_STATUS_FILTER_DEPTS: readonly string[] = ["billing", "planning", "assembly"];
 
 export const DATE_PRESETS = [
   "Today",

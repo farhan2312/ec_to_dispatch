@@ -238,16 +238,11 @@ export const DEPT_VIEWS: Record<DeptKey, DeptView> = {
     key: "billing",
     label: DEPT_FILTER_LABELS.billing,
     perEc: false,
-    status: (r) =>
-      !r.has_pi
-        ? PENDING
-        : same(r.bill_type, "challan")
-          ? "Challan filed"
-          : "PI raised",
-    done: (r) => r.has_pi,
-    // No PI on a paid-after-receipt order. Billing keeps the order on their
-    // screens all the same — the bill type and its terms are theirs.
-    na: paidAfterReceipt,
+    // PIs raised against the payment terms, After Receipt lines not counted.
+    status: (r) => r.billing_state ?? (r.has_pi ? "Fully raised" : PENDING),
+    done: (r) => r.billing_state === "Fully raised" || r.billing_state === "Challan filed",
+    // Every term After Receipt: no PI is due.
+    na: (r) => r.billing_state === "N/A" || paidAfterReceipt(r),
     // A Challan order is not Billing's: no PI, and the challan is Dispatch's.
     hidden: (r) => same(r.bill_type, "challan"),
     target: () => null,

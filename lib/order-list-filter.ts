@@ -131,6 +131,11 @@ export type OrderListFilter = {
   dept: DeptFilterKey | null;
   /** Only with a department — its own words; any of them matches. */
   deptStatuses: string[];
+  /**
+   * The Orders list: statuses in several departments at once — any of a
+   * department's ticked statuses, and every department ticked. URL `dsm`.
+   */
+  deptStatusMulti: Partial<Record<DeptFilterKey, string[]>>;
   /** Only with a department — whose sign-off it is. */
   signOff: SignOff | null;
   dateField: OrderDateField;
@@ -252,6 +257,7 @@ export function parseOrderListFilter(
     types: list(get("type")),
     dept,
     deptStatuses: statuses,
+    deptStatusMulti: opts.noDispatchTarget ? parseDeptStatusMulti(get("dsm")) : {},
     signOff,
     dateField,
     from,
@@ -298,6 +304,31 @@ export function scopeToRep<F extends { reps: string[] }>(
   return { ...filter, reps: [rep], repLock: rep };
 }
 
+/**
+ * `dsm`: "planning~Fully ready,In plan;billing~Pending". A status only counts
+ * when that department has it; anything else is dropped.
+ */
+export function parseDeptStatusMulti(raw: string | undefined): Partial<Record<DeptFilterKey, string[]>> {
+  const out: Partial<Record<DeptFilterKey, string[]>> = {};
+  for (const part of (raw ?? "").split(";")) {
+    const [key, list] = part.split("~");
+    if (!(DEPT_FILTER_KEYS as readonly string[]).includes(key ?? "")) continue;
+    const dept = key as DeptFilterKey;
+    const allowed = statusesFor(dept);
+    const picked = [...new Set((list ?? "").split(",").map((s) => s.trim()).filter((s) => allowed.includes(s)))];
+    if (picked.length) out[dept] = picked;
+  }
+  return out;
+}
+
+/** The URL form of the above, or null when nothing is ticked. */
+export function serializeDeptStatusMulti(m: Partial<Record<DeptFilterKey, string[]>>): string | null {
+  const parts = Object.entries(m)
+    .filter(([, v]) => v && v.length)
+    .map(([k, v]) => `${k}~${(v as string[]).join(",")}`);
+  return parts.length ? parts.join(";") : null;
+}
+
 /** Whether anything narrows the list at all. */
 export function isOrderListFiltered(f: OrderListFilter): boolean {
   return !!(
@@ -308,6 +339,7 @@ export function isOrderListFiltered(f: OrderListFilter): boolean {
     f.paymentStatuses.length ||
     f.dispatchStatuses.length ||
     f.dispatchStages.length ||
+    Object.keys(f.deptStatusMulti).length ||
     f.packingStatuses.length ||
     f.field ||
     f.ready ||
@@ -347,6 +379,8 @@ export function orderListFilterParams(f: OrderListFilter): URLSearchParams {
     p.set("fstate", f.field.state);
   }
   if (f.deptStatuses.length) p.set("dstatus", f.deptStatuses.join(","));
+  const dsm = serializeDeptStatusMulti(f.deptStatusMulti);
+  if (dsm) p.set("dsm", dsm);
   if (f.signOff) p.set("signoff", f.signOff);
   if (f.from || f.to) {
     p.set("datefield", f.dateField);
@@ -385,6 +419,9 @@ export function describeOrderListFilter(f: OrderListFilter): string {
         .filter(Boolean)
         .join(" · ")
     );
+  }
+  for (const [k, v] of Object.entries(f.deptStatusMulti)) {
+    if (v?.length) parts.push(`${DEPT_FILTER_LABELS[k as DeptFilterKey]}: ${v.join(" / ")}`);
   }
   if (f.from || f.to) {
     const field = ORDER_DATE_FIELDS.find((d) => d.value === f.dateField)?.label;

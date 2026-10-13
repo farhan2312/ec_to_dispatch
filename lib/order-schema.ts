@@ -1054,14 +1054,17 @@ export const PAYMENT_TERM_OPTIONS = opts([
 // Visibility's list.
 export const PAYMENT_AGAINST_DOCUMENTS = "Payment Against Documents";
 export const PAYMENT_DOCUMENT_OPTIONS = opts([
-  "Tax Invoice",
-  "Packing List",
-  "LR / Bill of Lading",
-  "Test Certificate",
-  "Inspection Report",
-  "Warranty Certificate",
-  "E-way Bill",
-  "Insurance Certificate",
+  "Pump Technical Datasheet",
+  "GA Drawing",
+  "QAP",
+  "Performance Curve",
+  "Motor Datasheet",
+  "Material Test Certificate",
+  "Pump Test Report",
+  "Spares List",
+  "Painting Procedure",
+  "Inspection Test Plan",
+  "Manufacturing Schedule",
 ]);
 
 // Only After Receipt is counted from the client receiving the material and

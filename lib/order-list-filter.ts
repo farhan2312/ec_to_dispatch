@@ -31,6 +31,8 @@ export const ORDER_DATE_FIELDS = [
   { value: "dept_target", label: "Target date" },
   // Planning's own date: when it says an EC will be ready.
   { value: "readiness", label: "Readiness date" },
+  // Assembly & Packing's own: when it plans to pack a Spare's lot.
+  { value: "packing", label: "Packing date" },
   { value: "dispatch_target", label: "Dispatch target" },
   { value: "so_date", label: "SO date" },
   { value: "ec_date", label: "EC date" },
@@ -82,7 +84,10 @@ export const DISPATCH_STATUS_FILTER_DEPTS: readonly string[] = ["billing", "plan
 export const DATE_PRESETS = [
   "Today",
   "Yesterday",
+  "Tomorrow",
   "Last 7 days",
+  // Readiness, packing and target dates lie ahead: what is coming up.
+  "Next 7 days",
   "Last 30 days",
   "This month",
   "This year",
@@ -108,8 +113,12 @@ export function presetRange(preset: DatePreset): [string, string] {
       return [today, today];
     case "Yesterday":
       return [shift(-1), shift(-1)];
+    case "Tomorrow":
+      return [shift(1), shift(1)];
     case "Last 7 days":
       return [shift(-6), today];
+    case "Next 7 days":
+      return [today, shift(7)];
     case "Last 30 days":
       return [shift(-29), today];
     case "This month":
@@ -237,6 +246,8 @@ export function parseOrderListFilter(
       ? (dept ? "so_date" : fallbackDate)
       : dateFieldRaw === "readiness" && dept && !["planning", "assembly", "billing", "dispatch"].includes(dept)
         ? (dept ? "so_date" : fallbackDate)
+        : dateFieldRaw === "packing" && dept && !["planning", "assembly", "dispatch"].includes(dept)
+          ? (dept ? "so_date" : fallbackDate)
         : dateFieldRaw;
 
   // Picked backwards, the two dates still mean the span between them.
@@ -450,11 +461,13 @@ export function parseDeptFilter(
     // all (Billing, Accounts), when the order's own date is the useful one.
     // An explicit choice still wins.
     if (key === "datefield" && dept) {
-      // Planning, and Assembly & Packing after it, read by the readiness date
-      // rather than a target.
+      // Planning reads by its readiness date; Assembly & Packing by its own
+      // packing date — neither by a target.
       return (
         get(key) ??
-        (dept === "planning" || dept === "assembly"
+        (dept === "assembly"
+          ? "packing"
+          : dept === "planning"
           ? "readiness"
           : DEPT_VIEWS[dept].hasTarget && dept !== "dispatch"
             ? "dept_target"

@@ -64,7 +64,8 @@ const DEPT_STATUSES: Record<DeptFilterKey, string[]> = {
   // A Spare stands where its latest readiness lot does: ready, then packed.
   // A Pump is Fully packed once its packing date is in.
   // No Pending: what reaches Assembly & Packing is ready or packed already.
-  assembly: ["Partial ready", "Fully ready", "Partially packed", "Fully packed"],
+  // A Spare lot ready but not packed yet is In Progress.
+  assembly: ["In Progress", "Partially packed", "Fully packed"],
   // Which one depends on the SO's Bill Type — a Challan order never gets a PI.
   // N/A is the paid-after-receipt case: no PI is due at all.
   // PIs raised against the SO's payment terms — After Receipt lines are not

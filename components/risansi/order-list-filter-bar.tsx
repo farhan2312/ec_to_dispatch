@@ -404,6 +404,8 @@ export function OrderListFilterBar({
             // Assembly & Packing, Billing and Dispatch work from Planning's readiness date too.
             if (f.value === "readiness")
               return !dept || ["planning", "assembly", "billing", "dispatch"].includes(activeDept ?? "");
+            // Assembly & Packing's planned packing date (Spare lots).
+            if (f.value === "packing") return !dept || ["planning", "assembly", "dispatch"].includes(activeDept ?? "");
             if (f.value === "dispatch_target") return !dept && !noDispatchTarget;
             // Completion dates come from sign-offs, which are switched off.
             if (f.value === "completed_on") return SIGN_OFF_ENABLED;
@@ -415,7 +417,9 @@ export function OrderListFilterBar({
           selected={filter.dateField}
           onChange={(next) => {
             const fallback =
-              dept === "planning" || dept === "assembly"
+              dept === "assembly"
+                ? "packing"
+                : dept === "planning"
                 ? "readiness"
                 : dept
                   ? hasTarget

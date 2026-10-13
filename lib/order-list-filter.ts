@@ -162,6 +162,8 @@ export type OrderListFilter = {
    * says so without hiding anything.
    */
   ready: boolean;
+  /** A Spare lot packed but on no packing slip yet (Planning, Assembly & Packing, the Orders list). */
+  noSlip: boolean;
   /**
    * One of the SO's own fields, filled or still pending. Pending only counts
    * where the field applies — PO No. on an FR order is not owed.
@@ -276,6 +278,7 @@ export function parseOrderListFilter(
     // Dispatch is not chased against its dispatch target any more.
     overdue: get("overdue") === "1" && dept !== "dispatch",
     ready: get("ready") === "1",
+    noSlip: get("noslip") === "1" && (!dept || dept === "planning" || dept === "assembly"),
     field,
     // Only where the controls are shown — a hidden filter would narrow
     // without saying so.
@@ -354,6 +357,7 @@ export function isOrderListFiltered(f: OrderListFilter): boolean {
     f.packingStatuses.length ||
     f.field ||
     f.ready ||
+    f.noSlip ||
     f.overdue ||
     f.search ||
     f.zones.length ||
@@ -377,6 +381,7 @@ export function orderListFilterParams(f: OrderListFilter): URLSearchParams {
   if (f.dept) p.set("dept", f.dept);
   if (f.overdue) p.set("overdue", "1");
   if (f.ready) p.set("ready", "1");
+  if (f.noSlip) p.set("noslip", "1");
   if (f.clearance.length) p.set("clear", f.clearance.join(","));
   if (f.holdReasons.length) p.set("hreason", f.holdReasons.join(","));
   if (f.paymentTerms.length) p.set("pterm", f.paymentTerms.join(","));
@@ -407,6 +412,7 @@ export function describeOrderListFilter(f: OrderListFilter): string {
   if (f.search) parts.push(`Search: ${f.search}`);
   if (f.overdue) parts.push("Overdue only");
   if (f.ready) parts.push("Ready to dispatch");
+  if (f.noSlip) parts.push("Packed, no slip");
   if (f.field) {
     const label = FIELD_FILTER_FIELDS.find((x) => x.column === f.field!.column)?.label ?? f.field.column;
     parts.push(`${label}: ${f.field.state === "filled" ? "filled" : "pending"}`);

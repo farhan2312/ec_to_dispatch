@@ -113,6 +113,7 @@ export function sharedFacets(f: OrderMakingFilter): OrderListFilter {
     to: f.dateField === "so_date" ? f.to : null,
     overdue: false,
     ready: false,
+    noSlip: false,
     field: null,
     paymentTerms: [],
     billModes: f.billModes,

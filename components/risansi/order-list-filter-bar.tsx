@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, Check, ChevronDown, PackageCheck, X } from "lucide-react";
+import { AlertTriangle, Check, ChevronDown, PackageCheck, PackageX, X } from "lucide-react";
 import { UrlSearchInput, useUrlTable } from "./url-table";
 import { MultiSelectFilter, SingleSelectFilter } from "./multi-select-filter";
 import { DEPT_VIEWS } from "@/lib/dept-view";
@@ -51,6 +51,7 @@ const FILTER_KEYS = [
   "to",
   "overdue",
   "ready",
+  "noslip",
   "field",
   "fstate",
   "pterm",
@@ -361,6 +362,22 @@ export function OrderListFilterBar({
           >
             <AlertTriangle className="h-3.5 w-3.5" />
             Overdue only
+          </button>
+        )}
+        {/* Planning, Assembly & Packing, the Orders list: a lot packed but on no packing slip. */}
+        {(!dept || dept === "planning" || dept === "assembly") && (
+          <button
+            type="button"
+            onClick={() => setParams({ noslip: filter.noSlip ? null : "1" })}
+            aria-pressed={filter.noSlip}
+            className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-medium transition-colors ${
+              filter.noSlip
+                ? "border-rose-500/40 bg-rose-500/10 text-rose-700"
+                : "border-input-border text-foreground hover:bg-background"
+            }`}
+          >
+            <PackageX className="h-3.5 w-3.5" />
+            Packed, no slip
           </button>
         )}
         {/* Dispatch comes after Assembly & Packing: this is the shortlist
